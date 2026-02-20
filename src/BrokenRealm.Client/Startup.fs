@@ -11,12 +11,12 @@ module Program =
         
         let builder = WebAssemblyHostBuilder.CreateDefault(args)
         
-        builder.RootComponents.Add<Main.MyApp>("#main")
-        
         builder.Services
             .AddRadzenComponents()
             .AddBlazoredLocalStorage()
         |> ignore
+        
+        builder.RootComponents.Add<App>("#main")
         
         builder.Build().RunAsync() |> ignore
         
