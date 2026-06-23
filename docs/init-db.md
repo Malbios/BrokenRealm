@@ -1,0 +1,1 @@
+Get-Content db/init.sql | docker exec -i broken-realm-postgres psql -U broken-realm -d broken-realm

@@ -5,6 +5,12 @@
 
 *.orig
 
+.vscode/*.user
+dist/
+.env
+*.db
+.DS_Store
+
 # User-specific files
 *.rsuser
 *.suo

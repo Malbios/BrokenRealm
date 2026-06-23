@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="1859ad3f-cf90-4e43-a72b-bcd1a1cdbc84" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.BrokenRealm/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.BrokenRealm/.idea/indexLayout.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.BrokenRealm/.idea/vcs.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/BrokenRealm.sln" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/BrokenRealm.Client.fsproj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/BrokenRealm.bolero.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Main.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Model.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Pages/Main.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Pages/Test.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Persistence.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Properties/launchSettings.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Routes.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Startup.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/Update.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/wwwroot/css/index.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Client/wwwroot/index.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Common/Async.fs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Common/BrokenRealm.Common.fsproj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Core/BrokenRealm.Core.fsproj" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/BrokenRealm.Core/Model.fs" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 4,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3FKCFaGCdbTOWUBD1VY0NKdFUo7" />
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "C:/Users/abrae",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "postgresql"
+    ]
+  }
+}]]></component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="1859ad3f-cf90-4e43-a72b-bcd1a1cdbc84" name="Changes" comment="" />
+      <created>1781814272956</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1781814272956</updated>
+    </task>
+    <servers />
+  </component>
+</project>
