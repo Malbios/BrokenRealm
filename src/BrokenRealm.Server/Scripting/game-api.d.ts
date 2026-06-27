@@ -30,6 +30,7 @@ declare interface VerbContext {
   actor: VerbObjectSummary & {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
+    locationReferences: Record<string, string>;
     inventory: Record<string, number>;
     locationId: string;
     locationContents: VerbObjectSummary[];
@@ -50,6 +51,7 @@ declare interface AnonymousBehaviorContext {
   actor: VerbObjectSummary & {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
+    locationReferences: Record<string, string>;
     inventory: Record<string, number>;
     locationId: string;
     locationContents: VerbObjectSummary[];

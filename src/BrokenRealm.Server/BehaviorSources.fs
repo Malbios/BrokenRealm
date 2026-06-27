@@ -39,14 +39,32 @@ const CRAFT_RECIPES: Record<string, CraftRecipe> = {
       descriptionKey: "object.wooden-stool.description",
       behaviorModuleId: "thing-behaviors",
       behaviorClassName: "PlaceableBehavior",
-      tags: "thing,stool,placeable",
+      tags: "thing,stool,placeable,seating",
       aliasesEn: "stool,wooden stool",
       aliasesDe: "hocker,holzhocker"
     },
     successKey: "craft.stool.success",
     roomKey: "craft.stool.room"
+  },
+  bench: {
+    costs: { wood: 3 },
+    placement: {
+      nameKey: "object.wooden-bench.name",
+      descriptionKey: "object.wooden-bench.description",
+      behaviorModuleId: "thing-behaviors",
+      behaviorClassName: "PlaceableBehavior",
+      tags: "thing,bench,placeable,seating",
+      aliasesEn: "bench,wooden bench",
+      aliasesDe: "bank,holzbank"
+    },
+    successKey: "craft.bench.success",
+    roomKey: "craft.bench.room"
   }
 };
+
+function findLocationContent(context: VerbContext, objectId: string) {
+  return context.actor.locationContents.find(object => object.id === objectId) ?? null;
+}
 
 function craftFromRecipe(recipeId: string, context: VerbContext): VerbResult {
   const recipe = CRAFT_RECIPES[recipeId];
@@ -146,6 +164,20 @@ class PlayerBehavior extends GameBehavior {
         { culture: "en", pattern: "make {recipe}" },
         { culture: "de", pattern: "fertige {recipe}" },
         { culture: "de", pattern: "baue {recipe}" }
+      ]
+    },
+    {
+      methodName: "push",
+      patterns: [
+        { culture: "en", pattern: "push {object} {direction}" },
+        { culture: "de", pattern: "schiebe {object} nach {direction}" }
+      ]
+    },
+    {
+      methodName: "moveObject",
+      patterns: [
+        { culture: "en", pattern: "move {object} to {destination}" },
+        { culture: "de", pattern: "verschiebe {object} nach {destination}" }
       ]
     }
   ];
@@ -266,6 +298,36 @@ class PlayerBehavior extends GameBehavior {
 
   craft(context: VerbContext): VerbResult {
     return craftFromRecipe(context.args.recipe, context);
+  }
+
+  push(context: VerbContext): VerbResult {
+    const object = findLocationContent(context, context.args.object);
+    if (!object || !object.tags.includes("placeable")) {
+      return { effects: [{ type: "message", key: "move_object.not_here", args: {} }] };
+    }
+    const destinationId = context.actor.locationReferences[context.args.direction];
+    if (!destinationId) {
+      return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
+    }
+    return {
+      effects: [
+        { type: "moveObject", objectId: object.id, destinationId },
+        { type: "message", key: "push_object.success", args: { object: object.id, direction: context.args.direction } }
+      ]
+    };
+  }
+
+  moveObject(context: VerbContext): VerbResult {
+    const object = findLocationContent(context, context.args.object);
+    if (!object || object.tags.includes("carried")) {
+      return { effects: [{ type: "message", key: "move_object.not_here", args: {} }] };
+    }
+    return {
+      effects: [
+        { type: "moveObject", objectId: object.id, destinationId: context.args.destination },
+        { type: "message", key: "move_object.success", args: { object: object.id, destination: context.args.destination } }
+      ]
+    };
   }
 }
 
@@ -444,6 +506,9 @@ class PlaceableBehavior extends ThingBehavior {
     if (context.this.tags.includes("stool")) {
       return { effects: [{ type: "message", key: "use.stool", args: {} }] };
     }
+    if (context.this.tags.includes("bench")) {
+      return { effects: [{ type: "message", key: "use.bench", args: {} }] };
+    }
     return { effects: [{ type: "message", key: "use.placeable", args: {} }] };
   }
 
@@ -454,6 +519,8 @@ class PlaceableBehavior extends ThingBehavior {
     const effects: ScriptEffect[] = [{ type: "destroyObject", objectId: context.this.id }];
     if (context.this.tags.includes("stool")) {
       effects.push({ type: "addInventory", itemId: "wood", amount: 1 });
+    } else if (context.this.tags.includes("bench")) {
+      effects.push({ type: "addInventory", itemId: "wood", amount: 2 });
     }
     effects.push({ type: "message", key: "dismantle.success", args: {} });
     return { effects };
@@ -466,10 +533,10 @@ const thingBehaviorClasses = { ThingBehavior, PlaceableBehavior };"""
         """class VillageBehavior extends LocationBehavior {
   override look(context: VerbContext): VerbResult {
     const parent = super.look(context);
-    const stoolCount = context.this.contents.filter(object => object.tags.includes("stool")).length;
+    const seatingCount = context.this.contents.filter(object => object.tags.includes("seating")).length;
     const effects = [...parent.effects];
-    if (stoolCount > 0) {
-      effects.push({ type: "message", key: "location.village.has_seating", args: { count: String(stoolCount) } });
+    if (seatingCount > 0) {
+      effects.push({ type: "message", key: "location.village.has_seating", args: { count: String(seatingCount) } });
     }
     if (Number(context.this.properties.comfort ?? 0) > 0) {
       effects.push({ type: "message", key: "location.village.comfortable", args: {} });
@@ -478,8 +545,8 @@ const thingBehaviorClasses = { ThingBehavior, PlaceableBehavior };"""
   }
 
   override tick(context: VerbContext): VerbResult {
-    const stoolCount = context.this.contents.filter(object => object.tags.includes("stool")).length;
-    const comfort = stoolCount > 0 ? 1 : 0;
+    const seatingCount = context.this.contents.filter(object => object.tags.includes("seating")).length;
+    const comfort = seatingCount > 0 ? 1 : 0;
     const current = Number(context.this.properties.comfort ?? 0);
     if (current === comfort) {
       return { effects: [] };
@@ -527,14 +594,31 @@ const coreBehaviorClasses = { GameBehavior };"""
       descriptionKey: "object.wooden-stool.description",
       behaviorModuleId: "thing-behaviors",
       behaviorClassName: "PlaceableBehavior",
-      tags: "thing,stool,placeable",
+      tags: "thing,stool,placeable,seating",
       aliasesEn: "stool,wooden stool",
       aliasesDe: "hocker,holzhocker"
     },
     successKey: "craft.stool.success",
     roomKey: "craft.stool.room"
+  },
+  bench: {
+    costs: { wood: 3 },
+    placement: {
+      nameKey: "object.wooden-bench.name",
+      descriptionKey: "object.wooden-bench.description",
+      behaviorModuleId: "thing-behaviors",
+      behaviorClassName: "PlaceableBehavior",
+      tags: "thing,bench,placeable,seating",
+      aliasesEn: "bench,wooden bench",
+      aliasesDe: "bank,holzbank"
+    },
+    successKey: "craft.bench.success",
+    roomKey: "craft.bench.room"
   }
 };
+function findLocationContent(context, objectId) {
+  return context.actor.locationContents.find(object => object.id === objectId) ?? null;
+}
 function craftFromRecipe(recipeId, context) {
   const recipe = CRAFT_RECIPES[recipeId];
   if (!recipe) return { effects: [{ type: "message", key: "craft.unknown", args: { recipe: recipeId } }] };
@@ -587,6 +671,14 @@ class PlayerBehavior extends GameBehavior {
     { methodName: "craft", patterns: [
       { culture: "en", pattern: "craft {recipe}" }, { culture: "en", pattern: "make {recipe}" },
       { culture: "de", pattern: "fertige {recipe}" }, { culture: "de", pattern: "baue {recipe}" }
+    ] },
+    { methodName: "push", patterns: [
+      { culture: "en", pattern: "push {object} {direction}" },
+      { culture: "de", pattern: "schiebe {object} nach {direction}" }
+    ] },
+    { methodName: "moveObject", patterns: [
+      { culture: "en", pattern: "move {object} to {destination}" },
+      { culture: "de", pattern: "verschiebe {object} nach {destination}" }
     ] }
   ];
   inventory(context) {
@@ -662,6 +754,24 @@ class PlayerBehavior extends GameBehavior {
     ] };
   }
   craft(context) { return craftFromRecipe(context.args.recipe, context); }
+  push(context) {
+    const object = findLocationContent(context, context.args.object);
+    if (!object || !object.tags.includes("placeable")) return { effects: [{ type: "message", key: "move_object.not_here", args: {} }] };
+    const destinationId = context.actor.locationReferences[context.args.direction];
+    if (!destinationId) return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
+    return { effects: [
+      { type: "moveObject", objectId: object.id, destinationId },
+      { type: "message", key: "push_object.success", args: { object: object.id, direction: context.args.direction } }
+    ] };
+  }
+  moveObject(context) {
+    const object = findLocationContent(context, context.args.object);
+    if (!object || object.tags.includes("carried")) return { effects: [{ type: "message", key: "move_object.not_here", args: {} }] };
+    return { effects: [
+      { type: "moveObject", objectId: object.id, destinationId: context.args.destination },
+      { type: "message", key: "move_object.success", args: { object: object.id, destination: context.args.destination } }
+    ] };
+  }
 }
 const playerBehaviorClasses = { PlayerBehavior };"""
 
@@ -770,12 +880,14 @@ class PlaceableBehavior extends ThingBehavior {
   ];
   use(context) {
     if (context.this.tags.includes("stool")) return { effects: [{ type: "message", key: "use.stool", args: {} }] };
+    if (context.this.tags.includes("bench")) return { effects: [{ type: "message", key: "use.bench", args: {} }] };
     return { effects: [{ type: "message", key: "use.placeable", args: {} }] };
   }
   dismantle(context) {
     if (!context.this.tags.includes("placeable")) return { effects: [{ type: "message", key: "dismantle.not_placeable", args: {} }] };
     const effects = [{ type: "destroyObject", objectId: context.this.id }];
     if (context.this.tags.includes("stool")) effects.push({ type: "addInventory", itemId: "wood", amount: 1 });
+    else if (context.this.tags.includes("bench")) effects.push({ type: "addInventory", itemId: "wood", amount: 2 });
     effects.push({ type: "message", key: "dismantle.success", args: {} });
     return { effects };
   }
@@ -786,15 +898,15 @@ const thingBehaviorClasses = { ThingBehavior, PlaceableBehavior };"""
         """class VillageBehavior extends LocationBehavior {
   look(context) {
     const parent = super.look(context);
-    const stoolCount = context.this.contents.filter(object => object.tags.includes("stool")).length;
+    const seatingCount = context.this.contents.filter(object => object.tags.includes("seating")).length;
     const effects = [...parent.effects];
-    if (stoolCount > 0) effects.push({ type: "message", key: "location.village.has_seating", args: { count: String(stoolCount) } });
+    if (seatingCount > 0) effects.push({ type: "message", key: "location.village.has_seating", args: { count: String(seatingCount) } });
     if (Number(context.this.properties.comfort ?? 0) > 0) effects.push({ type: "message", key: "location.village.comfortable", args: {} });
     return { effects };
   }
   tick(context) {
-    const stoolCount = context.this.contents.filter(object => object.tags.includes("stool")).length;
-    const comfort = stoolCount > 0 ? 1 : 0;
+    const seatingCount = context.this.contents.filter(object => object.tags.includes("seating")).length;
+    const comfort = seatingCount > 0 ? 1 : 0;
     const current = Number(context.this.properties.comfort ?? 0);
     if (current === comfort) return { effects: [] };
     return { effects: [{ type: "replaceValue", path: ["comfort"], value: comfort }] };

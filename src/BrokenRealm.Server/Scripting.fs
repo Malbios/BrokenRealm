@@ -323,6 +323,7 @@ module Scripting =
 
     let private actorSummary (state: GameState) (actor: GameObject) =
         let locationId = PlayerObjects.locationId actor
+        let location = state.Objects[locationId]
 
         let locationContents =
             state.Objects
@@ -338,6 +339,7 @@ module Scripting =
            tags = actor.Tags |> Set.toArray
            properties = objectProperties actor
            references = actor.References
+           locationReferences = location.References
            inventory = PlayerObjects.inventory state actor.Id
            locationId = locationId
            locationContents = locationContents |> List.toArray

@@ -15,10 +15,44 @@ module CommandMatching =
         |> List.map snd
         |> List.filter PlayerObjects.isPlayer
 
+    let private roomObjectAliases culture (state: GameState) (locationId: ObjectId) (actorId: ObjectId) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject ->
+            gameObject.LocationId = Some locationId
+            && gameObject.Id <> actorId
+            && not (CarriedItems.isCarriedStack gameObject))
+        |> List.collect (fun gameObject ->
+            (normalize gameObject.Id, gameObject.Id)
+            :: (gameObject.Aliases
+                |> Map.tryFind culture
+                |> Option.defaultValue []
+                |> List.map (fun alias -> normalize alias, gameObject.Id)))
+        |> Map.ofList
+
+    let private roomDestinationAliases culture (state: GameState) =
+        state.Objects
+        |> Map.toList
+        |> List.collect (fun (_, gameObject) ->
+            if
+                gameObject.LocationId.IsNone
+                && not (PlayerObjects.isPlayer gameObject)
+                && not (CarriedItems.isCarriedStack gameObject)
+            then
+                (normalize gameObject.Id, gameObject.Id)
+                :: (gameObject.Aliases
+                    |> Map.tryFind culture
+                    |> Option.defaultValue []
+                    |> List.map (fun alias -> normalize alias, gameObject.Id))
+            else
+                [])
+        |> Map.ofList
+
     let private isFreeTextPlaceholder name =
         name = "label" || name = "text"
 
-    let private tryArgument culture state _locationId target (name: string) (value: string) =
+    let private tryArgument culture (state: GameState) locationId target (name: string) (value: string) =
         if isFreeTextPlaceholder name then
             Some(value.Trim() : string)
         else
@@ -31,11 +65,15 @@ module CommandMatching =
                 | "item" -> Localizer.itemAliases culture
                 | "direction" -> Localizer.directionAliases culture
                 | "object" ->
-                    target.Aliases
-                    |> Map.tryFind culture
-                    |> Option.defaultValue []
-                    |> List.map (fun alias -> normalize alias, target.Id)
-                    |> Map.ofList
+                    if PlayerObjects.isPlayer target then
+                        roomObjectAliases culture state locationId target.Id
+                    else
+                        target.Aliases
+                        |> Map.tryFind culture
+                        |> Option.defaultValue []
+                        |> List.map (fun alias -> normalize alias, target.Id)
+                        |> Map.ofList
+                | "destination" -> roomDestinationAliases culture state
                 | "player" ->
                     allPlayers state
                     |> List.collect (fun player ->
@@ -47,13 +85,23 @@ module CommandMatching =
                     |> Map.ofList
                 | "recipe" ->
                     match culture with
-                    | De -> Map.ofList [ "hocker", "stool"; "holzhocker", "stool" ]
-                    | _ -> Map.ofList [ "stool", "stool"; "wooden stool", "stool" ]
+                    | De ->
+                        Map.ofList
+                            [ "hocker", "stool"
+                              "holzhocker", "stool"
+                              "bank", "bench"
+                              "holzbank", "bench" ]
+                    | _ ->
+                        Map.ofList
+                            [ "stool", "stool"
+                              "wooden stool", "stool"
+                              "bench", "bench"
+                              "wooden bench", "bench" ]
                 | _ -> Map.empty
 
             aliases |> Map.tryFind (normalize value)
 
-    let private matchPattern culture state locationId target rawInput pattern =
+    let private matchPattern culture (state: GameState) locationId target rawInput pattern =
         let input = normalize rawInput
         let normalizedPattern = normalize pattern
         let parts = placeholderRegex.Split normalizedPattern
@@ -120,7 +168,7 @@ module CommandMatching =
                 state.Objects
                 |> Map.toList
                 |> List.map snd
-                |> List.filter (fun object -> object.LocationId = Some locationId && object.Id <> actor.Id)
+                |> List.filter (fun gameObject -> gameObject.LocationId = Some locationId && gameObject.Id <> actor.Id)
                 |> List.sortBy _.Id
 
             actor :: location :: visibleContents

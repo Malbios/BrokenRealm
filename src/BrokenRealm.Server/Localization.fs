@@ -131,6 +131,22 @@ module Localizer =
         | De, "craft.stool.success" -> "Du fertigst einen Holzhocker und stellst ihn ab."
         | En, "craft.stool.room" -> "{actor} crafts a wooden stool."
         | De, "craft.stool.room" -> "{actor} fertigt einen Holzhocker."
+        | En, "object.wooden-bench.name" -> "a wooden bench"
+        | De, "object.wooden-bench.name" -> "eine Holzbank"
+        | En, "object.wooden-bench.description" -> "A sturdy bench assembled from forest wood."
+        | De, "object.wooden-bench.description" -> "Eine stabile Bank aus Waldbauholz."
+        | En, "craft.bench.success" -> "You craft a wooden bench and set it down."
+        | De, "craft.bench.success" -> "Du fertigst eine Holzbank und stellst sie ab."
+        | En, "craft.bench.room" -> "{actor} crafts a wooden bench."
+        | De, "craft.bench.room" -> "{actor} fertigt eine Holzbank."
+        | En, "use.bench" -> "You rest on the wooden bench for a moment."
+        | De, "use.bench" -> "Du ruhst dich kurz auf der Holzbank aus."
+        | En, "move_object.not_here" -> "You do not see that here."
+        | De, "move_object.not_here" -> "Das siehst du hier nicht."
+        | En, "move_object.success" -> "You move {object} to {destination}."
+        | De, "move_object.success" -> "Du verschiebst {object} nach {destination}."
+        | En, "push_object.success" -> "You push {object} to the {direction}."
+        | De, "push_object.success" -> "Du schiebst {object} nach {direction}."
         | En, "craft.insufficient" -> "You need {amount} {item} for that."
         | De, "craft.insufficient" -> "Dafür brauchst du {amount} {item}."
         | En, "craft.unknown" -> "You do not know how to craft {recipe}."
@@ -212,6 +228,8 @@ module ResponseFormatting =
                 | "player" -> Localizer.objectName state culture value
                 | "actor" -> Localizer.emoteActorName state culture value
                 | "location" -> Localizer.objectName state culture value
+                | "object" -> Localizer.displayObjectName state culture value
+                | "destination" -> Localizer.objectName state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }

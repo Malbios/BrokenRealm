@@ -13,6 +13,7 @@
     <Compile Include="WorldMechanicsTests.fs" />
     <Compile Include="LegacySnapshotTests.fs" />
     <Compile Include="HttpSmokeTests.fs" />
+    <Compile Include="PlaceableMovementTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
