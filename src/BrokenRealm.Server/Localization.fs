@@ -69,6 +69,20 @@ module Localizer =
         | De, "inventory.empty" -> "Inventar: leer."
         | En, "inventory.list" -> "Inventory: {items}."
         | De, "inventory.list" -> "Inventar: {items}."
+        | En, "item.wood.stack" -> "a pile of wood"
+        | De, "item.wood.stack" -> "ein Holzhaufen"
+        | En, "drop.success" -> "You drop {item}."
+        | De, "drop.success" -> "Du legst {item} ab."
+        | En, "drop.none" -> "You are not carrying any {item}."
+        | De, "drop.none" -> "Du trägst kein {item}."
+        | En, "give.success" -> "You give {item} to {player}."
+        | De, "give.success" -> "Du gibst {player} {item}."
+        | En, "give.none" -> "You are not carrying any {item}."
+        | De, "give.none" -> "Du trägst kein {item}."
+        | En, "give.not_here" -> "That player is not here."
+        | De, "give.not_here" -> "Dieser Spieler ist nicht hier."
+        | En, "give.self" -> "You cannot give an item to yourself."
+        | De, "give.self" -> "Du kannst dir nichts selbst geben."
         | En, "command.unknown" -> "I do not understand that command."
         | De, "command.unknown" -> "Ich verstehe diesen Befehl nicht."
         | En, "script.error" -> "The script failed: {error}"
@@ -108,6 +122,7 @@ module ResponseFormatting =
                 | "items" -> formatInventoryItems culture value
                 | "direction" -> Localizer.directionName culture value
                 | "objects" -> formatObjects state culture value
+                | "player" -> Localizer.objectName state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }

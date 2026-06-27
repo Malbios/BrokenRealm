@@ -1,5 +1,6 @@
 declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number; objectId?: string }
+  | { type: "transferItem"; itemId: string; amount: number; destinationId: string; objectId?: string }
   | { type: "moveObject"; destinationId: string; objectId?: string }
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
@@ -27,6 +28,8 @@ declare interface VerbContext {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
     inventory: Record<string, number>;
+    locationId: string;
+    locationContents: VerbObjectSummary[];
   };
 }
 
@@ -44,6 +47,8 @@ declare interface AnonymousBehaviorContext {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
     inventory: Record<string, number>;
+    locationId: string;
+    locationContents: VerbObjectSummary[];
   };
 }
 

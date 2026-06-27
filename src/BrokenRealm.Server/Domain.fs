@@ -129,6 +129,7 @@ type MatchedBehaviorMethod =
 type ScriptEffect =
     | AddInventory of objectId: ObjectId option * itemId: ItemId * amount: int
     | MoveObject of objectId: ObjectId option * destinationId: ObjectId
+    | TransferItem of objectId: ObjectId option * itemId: ItemId * amount: int * destinationId: ObjectId
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
     | EmitMessage of Message

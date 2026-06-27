@@ -59,6 +59,33 @@ module Kernel =
             Error("Unknown destination object id: " + destinationId)
         | MoveObject(objectId, _) ->
             resolvePlayerTarget state actingCharacterId objectId |> Result.map ignore
+        | TransferItem(objectId, itemId, _, destinationId) when not (state.ItemIds.Contains itemId) ->
+            Error("Unknown item id: " + itemId)
+        | TransferItem(objectId, _, amount, _) when amount <= 0 || amount > 100 ->
+            Error "transferItem effects require an amount from 1 to 100."
+        | TransferItem(objectId, _, _, destinationId) when not (state.Objects.ContainsKey destinationId) ->
+            Error("Unknown destination object id: " + destinationId)
+        | TransferItem(objectId, _, _, destinationId) ->
+            match resolvePlayerTarget state actingCharacterId objectId with
+            | Error error -> Error error
+            | Ok sourcePlayerId ->
+                let sourceLocationId = PlayerObjects.locationId (PlayerObjects.get state sourcePlayerId)
+
+                match PlayerObjects.tryGet state destinationId with
+                | Some destinationPlayer when destinationPlayer.Id = sourcePlayerId ->
+                    Error "You cannot give an item to yourself."
+                | Some destinationPlayer ->
+                    let destinationLocationId = PlayerObjects.locationId destinationPlayer
+
+                    if sourceLocationId <> destinationLocationId then
+                        Error "That player is not here."
+                    else
+                        Ok()
+                | None ->
+                    if destinationId <> sourceLocationId then
+                        Error "Invalid drop destination."
+                    else
+                        Ok()
         | ReplaceValue(path, replacement) ->
             match validateValueReferences state "replacement" replacement with
             | Error error -> Error error
@@ -224,6 +251,12 @@ module Kernel =
                     let player = PlayerObjects.get state playerId
                     let updated = PlayerObjects.withLocation player destinationId
                     Ok({ state with Objects = Map.add playerId updated state.Objects }, messages, remainingInvocations)
+            | TransferItem(objectId, itemId, amount, destinationId) ->
+                match resolvePlayerTarget state characterId objectId with
+                | Error error -> Error error
+                | Ok sourcePlayerId ->
+                    CarriedItems.transferItem state sourcePlayerId itemId amount destinationId
+                    |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
             | ReplaceValue(path, replacement) ->
                 tryReplaceObjectValue path replacement state.Objects[targetId]
                 |> Result.map (fun target ->

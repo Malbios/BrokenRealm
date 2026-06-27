@@ -165,6 +165,13 @@ module Scripting =
             match readString "destinationId" effect with
             | Some destinationId -> Ok(MoveObject(objectId, destinationId))
             | None -> Error "moveObject effects require a destinationId."
+        | Some "transferItem" ->
+            let objectId = readString "objectId" effect
+
+            match readString "itemId" effect, readInt "amount" effect, readString "destinationId" effect with
+            | Some itemId, Some amount, Some destinationId when amount > 0 && amount <= 100 ->
+                Ok(TransferItem(objectId, itemId, amount, destinationId))
+            | _ -> Error "transferItem effects require itemId, destinationId, and an amount from 1 to 100."
         | Some "replaceValue" ->
             match decodeValuePath effect, effect.TryGetProperty("value") with
             | Ok path, (true, value) -> decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(path, decoded))
@@ -260,14 +267,32 @@ module Scripting =
         gameObject.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
         properties
 
+    let private objectSummary (gameObject: GameObject) =
+        {| id = gameObject.Id
+           name = gameObject.Name
+           descriptionKey = gameObject.DescriptionKey |> Option.defaultValue ""
+           tags = gameObject.Tags |> Set.toArray |}
+
     let private actorSummary (state: GameState) (actor: GameObject) =
+        let locationId = PlayerObjects.locationId actor
+
+        let locationContents =
+            state.Objects
+            |> Map.toList
+            |> List.map snd
+            |> List.filter (fun gameObject -> gameObject.LocationId = Some locationId && gameObject.Id <> actor.Id)
+            |> List.sortBy _.Id
+            |> List.map objectSummary
+
         {| id = actor.Id
            name = actor.Name
            descriptionKey = actor.DescriptionKey |> Option.defaultValue ""
            tags = actor.Tags |> Set.toArray
            properties = objectProperties actor
            references = actor.References
-           inventory = PlayerObjects.inventory state actor.Id |}
+           inventory = PlayerObjects.inventory state actor.Id
+           locationId = locationId
+           locationContents = locationContents |> List.toArray |}
 
     let private executeWithinLimits limits invocation (state: GameState) (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actor: GameObject) source =
         let context =
@@ -279,14 +304,7 @@ module Scripting =
                    tags = target.Tags |> Set.toArray
                    properties = objectProperties target
                    references = target.References
-                   contents =
-                    contents
-                    |> List.map (fun object ->
-                        {| id = object.Id
-                           name = object.Name
-                           descriptionKey = object.DescriptionKey |> Option.defaultValue ""
-                           tags = object.Tags |> Set.toArray |})
-                    |> List.toArray |}
+                   contents = contents |> List.map objectSummary |> List.toArray |}
                actor = actorSummary state actor |}
 
         executeContextWithinLimits limits invocation context source

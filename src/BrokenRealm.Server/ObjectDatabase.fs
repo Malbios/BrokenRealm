@@ -128,20 +128,30 @@ module ObjectDatabase =
               PasswordHash = Some(Auth.hashPassword "prototype") }
 
         let prototypePlayer =
-            PlayerObjects.create
+            { PlayerObjects.create
                 GameSnapshots.PrototypeCharacterId
                 "prototype player"
                 "object.prototype-player.name"
                 prototypeAccount.Id
                 forest.Id
+              with
+                  Aliases =
+                      Map.ofList
+                          [ En, [ "prototype player"; "player" ]
+                            De, [ "prototyp-spieler"; "spieler" ] ] }
 
         let prototypeScout =
-            PlayerObjects.create
+            { PlayerObjects.create
                 GameSnapshots.PrototypeScoutCharacterId
                 "prototype scout"
                 "object.prototype-scout.name"
                 prototypeAccount.Id
                 village.Id
+              with
+                  Aliases =
+                      Map.ofList
+                          [ En, [ "prototype scout"; "scout" ]
+                            De, [ "prototyp-späher"; "späher" ] ] }
 
         { ItemIds = Set.ofList [ "wood" ]
           BehaviorModules = behaviorModules

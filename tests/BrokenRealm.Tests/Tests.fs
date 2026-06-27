@@ -831,6 +831,104 @@ module KernelTests =
         Assert.Equal("Inventar: 2 Holz.", line)
 
     [<Fact>]
+    let ``Drop removes one item and places a stack in the room`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        Assert.Equal(2, gathered.State.Player.Inventory["wood"])
+
+        let dropped = Kernel.submitCommand En "drop wood" gathered.State
+
+        Assert.Equal(1, dropped.State.Player.Inventory["wood"])
+
+        let roomStacks = CarriedItems.stacksIn dropped.State "forest"
+
+        Assert.Equal(1, roomStacks.Length)
+
+        match roomStacks[0].Properties |> Map.tryFind CarriedItems.QuantityProperty with
+        | Some(IntegerValue quantity) -> Assert.Equal(1L, quantity)
+        | _ -> Assert.True(false, "Expected a floor stack with quantity 1.")
+
+        Assert.Contains(dropped.Messages, fun message -> message.Key = "drop.success")
+
+    [<Fact>]
+    let ``German drop command removes one carried item`` () =
+        let gathered = Kernel.submitCommand De "sammle holz" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand De "lege holz ab" gathered.State
+
+        Assert.Equal(1, dropped.State.Player.Inventory["wood"])
+        Assert.Contains(dropped.Messages, fun message -> message.Key = "drop.success")
+
+    [<Fact>]
+    let ``Drop with empty inventory reports drop none`` () =
+        let result = Kernel.submitCommand En "drop wood" ObjectDatabase.initialState
+
+        Assert.Empty(result.State.Player.Inventory)
+
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("drop.none", message.Key)
+        Assert.Equal("wood", message.Args["item"])
+
+    [<Fact>]
+    let ``Give transfers one item to another player in the same room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let gathered = Kernel.submitCommand En "gather wood" state
+        let given = Kernel.submitCommand En "give wood to scout" gathered.State
+
+        Assert.Equal(1, given.State.Player.Inventory["wood"])
+        Assert.Equal(1, (PlayerObjects.inventory given.State GameSnapshots.PrototypeScoutCharacterId)["wood"])
+        Assert.Contains(given.Messages, fun message -> message.Key = "give.success")
+
+    [<Fact>]
+    let ``Give fails when recipient is not in the same room`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let given = Kernel.submitCommand En "give wood to scout" gathered.State
+
+        Assert.Equal(2, given.State.Player.Inventory["wood"])
+        Assert.Equal(0, Map.count (PlayerObjects.inventory given.State GameSnapshots.PrototypeScoutCharacterId))
+
+        let message = given.Messages |> List.exactlyOne
+        Assert.Equal("give.not_here", message.Key)
+
+    [<Fact>]
+    let ``Give with empty inventory reports give none`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let result = Kernel.submitCommand En "give wood to scout" state
+
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("give.none", message.Key)
+        Assert.Equal("wood", message.Args["item"])
+
+    [<Fact>]
+    let ``Give command matches player aliases in the same room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let matched = CommandMatching.tryMatch En "give wood to scout" state
+
+        match matched with
+        | Some value ->
+            Assert.Equal(GameSnapshots.PrototypeCharacterId, value.ObjectId)
+            Assert.Equal("give", value.MethodName)
+            Assert.Equal("wood", value.Args["item"])
+            Assert.Equal(GameSnapshots.PrototypeScoutCharacterId, value.Args["player"])
+        | None -> Assert.True(false, "Expected give command to match.")
+
+    [<Fact>]
     let ``Updating forest gather source changes later gather behavior`` () =
         let updatedSource = BehaviorSources.forest.Replace("const amount = 2;", "const amount = 5;")
         let updatedCompiled = forestCompiled.Replace("const amount = 2;", "const amount = 5;")

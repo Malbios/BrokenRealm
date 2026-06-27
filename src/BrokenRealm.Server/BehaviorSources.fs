@@ -27,6 +27,20 @@ const coreBehaviorClasses = { GameBehavior };"""
         { culture: "de", pattern: "inventar" },
         { culture: "de", pattern: "inv" }
       ]
+    },
+    {
+      methodName: "drop",
+      patterns: [
+        { culture: "en", pattern: "drop {item}" },
+        { culture: "de", pattern: "lege {item} ab" }
+      ]
+    },
+    {
+      methodName: "give",
+      patterns: [
+        { culture: "en", pattern: "give {item} to {player}" },
+        { culture: "de", pattern: "gib {item} an {player}" }
+      ]
     }
   ];
 
@@ -36,6 +50,42 @@ const coreBehaviorClasses = { GameBehavior };"""
       ? [{ type: "message", key: "inventory.empty", args: {} }]
       : [{ type: "message", key: "inventory.list", args: { items: context.actor.inventory } }];
     return { effects };
+  }
+
+  drop(context: VerbContext): VerbResult {
+    const itemId = context.args.item;
+    const amount = context.actor.inventory[itemId] ?? 0;
+    if (amount < 1) {
+      return { effects: [{ type: "message", key: "drop.none", args: { item: itemId } }] };
+    }
+    return {
+      effects: [
+        { type: "transferItem", itemId, amount: 1, destinationId: context.actor.locationId },
+        { type: "message", key: "drop.success", args: { item: itemId } }
+      ]
+    };
+  }
+
+  give(context: VerbContext): VerbResult {
+    const itemId = context.args.item;
+    const playerId = context.args.player;
+    if (playerId === context.actor.id) {
+      return { effects: [{ type: "message", key: "give.self", args: {} }] };
+    }
+    const amount = context.actor.inventory[itemId] ?? 0;
+    if (amount < 1) {
+      return { effects: [{ type: "message", key: "give.none", args: { item: itemId } }] };
+    }
+    const recipient = context.actor.locationContents.find(object => object.id === playerId);
+    if (!recipient || !recipient.tags.includes("player")) {
+      return { effects: [{ type: "message", key: "give.not_here", args: {} }] };
+    }
+    return {
+      effects: [
+        { type: "transferItem", itemId, amount: 1, destinationId: playerId },
+        { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+      ]
+    };
   }
 }
 
@@ -219,6 +269,12 @@ const coreBehaviorClasses = { GameBehavior };"""
     { methodName: "inventory", patterns: [
       { culture: "en", pattern: "inventory" }, { culture: "en", pattern: "inv" },
       { culture: "de", pattern: "inventar" }, { culture: "de", pattern: "inv" }
+    ] },
+    { methodName: "drop", patterns: [
+      { culture: "en", pattern: "drop {item}" }, { culture: "de", pattern: "lege {item} ab" }
+    ] },
+    { methodName: "give", patterns: [
+      { culture: "en", pattern: "give {item} to {player}" }, { culture: "de", pattern: "gib {item} an {player}" }
     ] }
   ];
   inventory(context) {
@@ -227,6 +283,36 @@ const coreBehaviorClasses = { GameBehavior };"""
       ? [{ type: "message", key: "inventory.empty", args: {} }]
       : [{ type: "message", key: "inventory.list", args: { items: context.actor.inventory } }];
     return { effects };
+  }
+  drop(context) {
+    const itemId = context.args.item;
+    const amount = context.actor.inventory[itemId] ?? 0;
+    if (amount < 1) {
+      return { effects: [{ type: "message", key: "drop.none", args: { item: itemId } }] };
+    }
+    return { effects: [
+      { type: "transferItem", itemId, amount: 1, destinationId: context.actor.locationId },
+      { type: "message", key: "drop.success", args: { item: itemId } }
+    ] };
+  }
+  give(context) {
+    const itemId = context.args.item;
+    const playerId = context.args.player;
+    if (playerId === context.actor.id) {
+      return { effects: [{ type: "message", key: "give.self", args: {} }] };
+    }
+    const amount = context.actor.inventory[itemId] ?? 0;
+    if (amount < 1) {
+      return { effects: [{ type: "message", key: "give.none", args: { item: itemId } }] };
+    }
+    const recipient = context.actor.locationContents.find(object => object.id === playerId);
+    if (!recipient || !recipient.tags.includes("player")) {
+      return { effects: [{ type: "message", key: "give.not_here", args: {} }] };
+    }
+    return { effects: [
+      { type: "transferItem", itemId, amount: 1, destinationId: playerId },
+      { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+    ] };
   }
 }
 const playerBehaviorClasses = { PlayerBehavior };"""

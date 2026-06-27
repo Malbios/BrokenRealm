@@ -65,11 +65,18 @@ module CarriedItems =
         { stack with
             Properties = Map.add QuantityProperty (IntegerValue(int64 quantity)) stack.Properties }
 
-    let addInventory (state: GameState) (playerId: ObjectId) (itemId: ItemId) (amount: int) =
+    let stacksIn (state: GameState) (containerId: ObjectId) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject -> gameObject.LocationId = Some containerId && isCarriedStack gameObject)
+        |> List.sortBy _.Id
+
+    let private addToContainer (state: GameState) (containerId: ObjectId) (itemId: ItemId) (amount: int) =
         if amount <= 0 then
             state
         else
-            match stacksFor state playerId |> List.tryFind (fun stack -> stackItemId stack = Some itemId) with
+            match stacksIn state containerId |> List.tryFind (fun stack -> stackItemId stack = Some itemId) with
             | Some existing ->
                 let updatedQuantity = stackQuantity existing |> Option.defaultValue 0 |> (+) amount
                 let updatedStack = withStackQuantity existing updatedQuantity
@@ -77,20 +84,45 @@ module CarriedItems =
                 { state with Objects = Map.add existing.Id updatedStack state.Objects }
             | None ->
                 let stackId = ObjectIds.create()
-                let stack = createStack stackId playerId itemId amount
+                let stack = createStack stackId containerId itemId amount
 
                 { state with Objects = Map.add stackId stack state.Objects }
+
+    let addInventory (state: GameState) (playerId: ObjectId) (itemId: ItemId) (amount: int) =
+        addToContainer state playerId itemId amount
+
+    let removeQuantity (state: GameState) (containerId: ObjectId) (itemId: ItemId) (amount: int) =
+        if amount <= 0 then
+            Error "transferItem effects require an amount from 1 to 100."
+        else
+            match stacksIn state containerId |> List.tryFind (fun stack -> stackItemId stack = Some itemId) with
+            | None -> Error $"You are not carrying any {itemId}."
+            | Some stack ->
+                match stackQuantity stack with
+                | None -> Error $"Carried stack {stack.Id} must have a positive quantity."
+                | Some quantity when quantity < amount -> Error $"You do not have enough {itemId}."
+                | Some quantity when quantity = amount ->
+                    Ok({ state with Objects = Map.remove stack.Id state.Objects })
+                | Some quantity ->
+                    let updatedStack = withStackQuantity stack (quantity - amount)
+                    Ok({ state with Objects = Map.add stack.Id updatedStack state.Objects })
+
+    let transferItem (state: GameState) (fromContainerId: ObjectId) (itemId: ItemId) (amount: int) (destinationId: ObjectId) =
+        removeQuantity state fromContainerId itemId amount
+        |> Result.map (fun stateAfterRemoval -> addToContainer stateAfterRemoval destinationId itemId amount)
 
     let validateCarriedStack (state: GameState) (gameObject: GameObject) =
         if not (isCarriedStack gameObject) then
             Ok()
         else
             [ match gameObject.LocationId with
-              | None -> Some $"Carried stack {gameObject.Id} must have a carrying player location."
-              | Some playerId ->
-                  match state.Objects |> Map.tryFind playerId with
-                  | Some carrier when carrier.Tags.Contains "player" -> None
-                  | _ -> Some $"Carried stack {gameObject.Id} references unknown player id: {playerId}"
+              | None -> Some $"Carried stack {gameObject.Id} must have a container location."
+              | Some containerId ->
+                  match state.Objects |> Map.tryFind containerId with
+                  | None -> Some $"Carried stack {gameObject.Id} references unknown container id: {containerId}"
+                  | Some container when isCarriedStack container ->
+                      Some $"Carried stack {gameObject.Id} cannot be contained in another carried stack."
+                  | Some _ -> None
               match stackItemId gameObject with
               | None -> Some $"Carried stack {gameObject.Id} is missing itemId."
               | Some itemId when not (state.ItemIds.Contains itemId) ->
