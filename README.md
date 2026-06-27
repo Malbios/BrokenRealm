@@ -87,6 +87,10 @@ Admin editor transport:
 
 The browser admin panel loads the object and verb catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit the selected verb source in memory. On save, the server runs TypeScript checking/compilation first. If compilation fails, structured diagnostics are shown as Monaco markers and readable messages, and the previously running verb stays active. There is no authentication yet.
 
+## Script limits
+
+Admin-authored verbs run with centralized limits: 4 MB tracked memory, 250 ms execution time, 64,000 source characters, 32 returned effects, 16 message effects, 16 arguments per message, and 1,024 characters per message argument value. Limit failures return stable diagnostics and reject the entire effect batch without mutating game state.
+
 ## Scope
 
 There is no durable database, Docker setup, authentication, or SignalR. State and edited verb source are held in memory and reset when the server restarts.

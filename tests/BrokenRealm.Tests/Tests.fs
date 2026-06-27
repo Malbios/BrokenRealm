@@ -180,6 +180,28 @@ module KernelTests =
         Assert.Equal("script.error", message.Key)
         Assert.Equal("Unknown item id: stone", message.Args["error"])
 
+    [<Fact>]
+    let ``Rejected effect batches never partially mutate state`` () =
+        let messages =
+            List.replicate Scripting.defaultLimits.MaxEffects "{ type: 'message', key: 'test' }"
+            |> String.concat ","
+
+        let source =
+            $"function execute(context) {{ return {{ effects: [{{ type: 'addInventory', itemId: 'wood', amount: 1 }},{messages}] }}; }}"
+
+        let state =
+            match Kernel.tryUpdateVerbSource (fun _ -> Ok source) "forest" "gather" source ObjectDatabase.initialState with
+            | Ok(Some state) -> state
+            | Ok None -> failwith "Expected gather verb to update."
+            | Error diagnostics -> failwith (String.concat "\n" diagnostics)
+
+        let result = Kernel.submitCommand En "gather wood" state
+
+        Assert.Empty(result.State.Player.Inventory)
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("script.error", message.Key)
+        Assert.Equal("Scripts may return at most 32 effects.", message.Args["error"])
+
 module ScriptingTests =
     let private forest = ObjectDatabase.initialState.Objects["forest"]
 
@@ -230,8 +252,94 @@ module ScriptingTests =
         let result = Scripting.executeVerb forest Map.empty Map.empty source
 
         match result with
-        | Error error -> Assert.Contains("boom", error)
+        | Error error -> Assert.Equal("Script execution failed.", error)
         | Ok _ -> Assert.True(false, "Expected script execution to fail.")
+
+    [<Fact>]
+    let ``Infinite scripts are stopped by the execution timeout`` () =
+        let limits = { Scripting.defaultLimits with Timeout = System.TimeSpan.FromMilliseconds(25.0) }
+        let source = "function execute(context) { while (true) {} }"
+
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Script execution timed out.", error)
+        | Ok _ -> Assert.True(false, "Expected script execution to time out.")
+
+    [<Fact>]
+    let ``Scripts are stopped when they exceed the memory limit`` () =
+        let limits =
+            { Scripting.defaultLimits with
+                MemoryBytes = 250_000L
+                Timeout = System.TimeSpan.FromSeconds(2.0) }
+
+        let source =
+            "function execute(context) { const values = []; while (true) { values.push('x'.repeat(1000)); } }"
+
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Script exceeded its memory limit.", error)
+        | Ok _ -> Assert.True(false, "Expected script execution to exceed its memory limit.")
+
+    [<Fact>]
+    let ``Scripts cannot return too many effects`` () =
+        let effects =
+            List.replicate (Scripting.defaultLimits.MaxEffects + 1) "{ type: 'message', key: 'test' }"
+            |> String.concat ","
+
+        let source = $"function execute(context) {{ return {{ effects: [{effects}] }}; }}"
+        let result = Scripting.executeVerb forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Scripts may return at most 32 effects.", error)
+        | Ok _ -> Assert.True(false, "Expected excessive effects to be rejected.")
+
+    [<Fact>]
+    let ``Scripts cannot return too many messages`` () =
+        let effects =
+            List.replicate (Scripting.defaultLimits.MaxMessages + 1) "{ type: 'message', key: 'test' }"
+            |> String.concat ","
+
+        let source = $"function execute(context) {{ return {{ effects: [{effects}] }}; }}"
+        let result = Scripting.executeVerb forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Scripts may return at most 16 message effects.", error)
+        | Ok _ -> Assert.True(false, "Expected excessive messages to be rejected.")
+
+    [<Fact>]
+    let ``Message argument values have a bounded size`` () =
+        let oversized = String.replicate (Scripting.defaultLimits.MaxMessageArgumentCharacters + 1) "x"
+        let source = $"function execute(context) {{ return {{ effects: [{{ type: 'message', key: 'test', args: {{ value: '{oversized}' }} }}] }}; }}"
+        let result = Scripting.executeVerb forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Message argument values may contain at most 1024 characters.", error)
+        | Ok _ -> Assert.True(false, "Expected oversized message arguments to be rejected.")
+
+    [<Fact>]
+    let ``Message argument counts are bounded`` () =
+        let args =
+            [ 1 .. Scripting.defaultLimits.MaxMessageArguments + 1 ]
+            |> List.map (fun index -> $"value{index}: 'x'")
+            |> String.concat ","
+
+        let source = $"function execute(context) {{ return {{ effects: [{{ type: 'message', key: 'test', args: {{ {args} }} }}] }}; }}"
+        let result = Scripting.executeVerb forest Map.empty Map.empty source
+
+        match result with
+        | Error error -> Assert.Equal("Message effects may contain at most 16 arguments.", error)
+        | Ok _ -> Assert.True(false, "Expected excessive message arguments to be rejected.")
+
+    [<Fact>]
+    let ``Verb source length is bounded before execution`` () =
+        let limits = { Scripting.defaultLimits with MaxSourceCharacters = 10 }
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty "function execute() {}"
+
+        match result with
+        | Error error -> Assert.Equal("Verb source may contain at most 10 characters.", error)
+        | Ok _ -> Assert.True(false, "Expected oversized source to be rejected.")
 
     [<Fact>]
     let ``Script context includes object properties`` () =
@@ -274,3 +382,17 @@ module ScriptingTests =
         | Ok [ MovePlayer destinationId ] -> Assert.Equal("village", destinationId)
         | Ok _ -> Assert.True(false, "Expected one movement effect.")
         | Error error -> Assert.True(false, error)
+
+module ScriptCompilerTests =
+    [<Fact>]
+    let ``Compiler rejects oversized source before invoking TypeScript`` () =
+        let source = String.replicate (Scripting.defaultLimits.MaxSourceCharacters + 1) "x"
+        let result = ScriptCompiler.compile "." source
+
+        match result with
+        | Error [ diagnostic ] ->
+            Assert.Equal("Verb source may contain at most 64000 characters.", diagnostic.message)
+            Assert.Equal(0, diagnostic.line)
+            Assert.Equal(0, diagnostic.column)
+        | Error _ -> Assert.True(false, "Expected one source-length diagnostic.")
+        | Ok _ -> Assert.True(false, "Expected oversized source to be rejected.")

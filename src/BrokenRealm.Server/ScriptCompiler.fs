@@ -48,7 +48,7 @@ module ScriptCompiler =
               line = 0
               column = 0 }
 
-    let compile contentRoot source =
+    let private compileWithinLimits contentRoot source =
         match tryFindServerRoot contentRoot with
         | None -> Error [ { message = "Could not find src/BrokenRealm.Server/Scripting/game-api.d.ts."; line = 0; column = 0 } ]
         | Some serverRoot ->
@@ -128,3 +128,12 @@ module ScriptCompiler =
                     ()
 
                 result
+
+    let compile contentRoot (source: string) =
+        if source.Length > Scripting.defaultLimits.MaxSourceCharacters then
+            Error
+                [ { message = $"Verb source may contain at most {Scripting.defaultLimits.MaxSourceCharacters} characters."
+                    line = 0
+                    column = 0 } ]
+        else
+            compileWithinLimits contentRoot source

@@ -157,6 +157,18 @@ Known effects:
 
 The kernel validates effects before applying them.
 
+Script execution limits are centralized in `Scripting.defaultLimits`:
+
+- 4 MB tracked memory
+- 250 ms execution timeout
+- 64,000 source characters
+- 32 effects per result
+- 16 message effects per result
+- 16 arguments per message
+- 1,024 characters per message argument value
+
+Limit failures use stable sanitized diagnostics. Effects are decoded and validated as a complete batch before the kernel applies any state changes.
+
 ## Current Vertical Slice
 
 The browser UI has:
