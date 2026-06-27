@@ -320,7 +320,7 @@ module Scripting =
         executeAnonymousBehaviorMethodAtPath className methodName [||] value args actorInventory source
 
     let inspectBehaviorModule (registryName: string) (source: string) =
-        let diagnostic message = { message = message; line = 0; column = 0 }
+        let diagnostic message = { message = message; file = ""; line = 0; column = 0 }
 
         if not (identifierPattern.IsMatch registryName) then
             Error(diagnostic "Behavior registry names must be valid JavaScript identifiers.")

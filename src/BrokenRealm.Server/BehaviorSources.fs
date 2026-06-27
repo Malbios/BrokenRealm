@@ -1,6 +1,8 @@
 namespace BrokenRealm.Server
 
 module BehaviorSources =
+    let moduleMarkerPrefix = "// @brokenrealm-module "
+
     let core =
         """type CommandDefinition = {
   methodName: string;
@@ -322,3 +324,8 @@ const anonymousBehaviorClasses = { TrailTokenBehavior };"""
 
     let join (sources: string list) =
         System.String.Join(System.Environment.NewLine + System.Environment.NewLine, sources)
+
+    let joinModules (modules: (string * string) list) =
+        modules
+        |> List.map (fun (moduleId, source) -> moduleMarkerPrefix + moduleId + System.Environment.NewLine + source)
+        |> join

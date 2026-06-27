@@ -278,6 +278,16 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.diagnostic-link {
+  cursor: pointer;
+}
+
+.diagnostic-link:hover,
+.diagnostic-link:focus {
+  border-color: rgba(255, 180, 168, 0.52);
+  outline: none;
+}
+
 @media (max-width: 640px) {
   .shell {
     padding: 0;

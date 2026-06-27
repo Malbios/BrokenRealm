@@ -308,7 +308,7 @@ module Kernel =
         state.BehaviorModules |> Map.tryFind moduleId
 
     let private graphError message =
-        { message = message; line = 0; column = 0 }
+        { message = message; file = ""; line = 0; column = 0 }
 
     let private tryTopologicalOrder (modules: Map<string, BehaviorModule>) =
         let rec visit moduleId visiting visited order =
@@ -424,14 +424,15 @@ module Kernel =
                                 let compilationUnit =
                                     order
                                     |> List.filter (fun id -> Set.contains id closure)
-                                    |> List.map (fun id -> modules[id].Source)
-                                    |> BehaviorSources.join
+                                    |> List.map (fun id -> id, modules[id].Source)
+                                    |> BehaviorSources.joinModules
 
                                 match compile compilationUnit with
                                 | Error diagnostics -> Error diagnostics
                                 | Ok compiledSource ->
                                     match inspect affectedModule.RegistryName compiledSource with
-                                    | Error diagnostic -> Error [ diagnostic ]
+                                    | Error diagnostic ->
+                                        Error [ if diagnostic.file = "" then { diagnostic with file = affectedId } else diagnostic ]
                                     | Ok classes ->
                                         Ok(
                                             modules

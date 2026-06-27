@@ -25,7 +25,19 @@ module ScriptCompiler =
     let private normalizePath (path: string) =
         path.Replace("\\", "/")
 
-    let private normalizeDiagnostic (tempRoot: string) (inputPath: string) (apiPath: string) (diagnostic: string) =
+    let private moduleLocation (source: string) sourceLine =
+        let lines = source.Replace("\r\n", "\n").Split('\n')
+
+        lines
+        |> Array.mapi (fun index line -> index + 1, line)
+        |> Array.filter (fun (lineNumber, line) ->
+            lineNumber <= sourceLine && line.StartsWith(BehaviorSources.moduleMarkerPrefix, StringComparison.Ordinal))
+        |> Array.tryLast
+        |> Option.map (fun (markerLine, marker) ->
+            marker.Substring(BehaviorSources.moduleMarkerPrefix.Length).Trim(), max 1 (sourceLine - markerLine))
+        |> Option.defaultValue ("behavior", max 1 sourceLine)
+
+    let private normalizeDiagnostic (source: string) (tempRoot: string) (inputPath: string) (apiPath: string) (diagnostic: string) =
         let tempRoot = normalizePath tempRoot
         let inputPath = normalizePath inputPath
         let apiPath = normalizePath apiPath
@@ -40,20 +52,25 @@ module ScriptCompiler =
         let matched = Regex.Match(normalized, @"^verb\.ts\((\d+),(\d+)\):\s*(?:error\s+TS\d+:\s*)?(.*)$")
 
         if matched.Success then
+            let sourceLine = max 1 (Int32.Parse(matched.Groups[1].Value) - 1)
+            let file, line = moduleLocation source sourceLine
+
             { message = matched.Groups[3].Value
-              line = max 1 (Int32.Parse(matched.Groups[1].Value) - 1)
+              file = file
+              line = line
               column = Int32.Parse(matched.Groups[2].Value) }
         else
             { message = normalized
+              file = ""
               line = 0
               column = 0 }
 
     let private compileWithinLimits contentRoot source =
         match tryFindServerRoot contentRoot with
-        | None -> Error [ { message = "Could not find src/BrokenRealm.Server/Scripting/game-api.d.ts."; line = 0; column = 0 } ]
+        | None -> Error [ { message = "Could not find src/BrokenRealm.Server/Scripting/game-api.d.ts."; file = ""; line = 0; column = 0 } ]
         | Some serverRoot ->
             match tryFindClientRoot contentRoot serverRoot with
-            | None -> Error [ { message = "Could not find src/BrokenRealm.Client for the TypeScript compiler."; line = 0; column = 0 } ]
+            | None -> Error [ { message = "Could not find src/BrokenRealm.Client for the TypeScript compiler."; file = ""; line = 0; column = 0 } ]
             | Some clientRoot ->
                 let tempRoot = Path.Combine(Path.GetTempPath(), "BrokenRealm", "verb-compile-" + Guid.NewGuid().ToString("N"))
                 let inputPath = Path.Combine(tempRoot, "verb.ts")
@@ -99,16 +116,16 @@ module ScriptCompiler =
                             with _ ->
                                 ()
 
-                            Error [ { message = "TypeScript compilation timed out."; line = 0; column = 0 } ]
+                            Error [ { message = "TypeScript compilation timed out."; file = ""; line = 0; column = 0 } ]
                         elif compilerProcess.ExitCode <> 0 then
                             let diagnostics =
                                 (stdout + Environment.NewLine + stderr).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
                                 |> Array.toList
-                                |> List.map (normalizeDiagnostic tempRoot inputPath apiPath)
+                                |> List.map (normalizeDiagnostic source tempRoot inputPath apiPath)
 
                             Error(
                                 if List.isEmpty diagnostics then
-                                    [ { message = "TypeScript compilation failed."; line = 0; column = 0 } ]
+                                    [ { message = "TypeScript compilation failed."; file = ""; line = 0; column = 0 } ]
                                 else
                                     diagnostics)
                         else
@@ -117,9 +134,9 @@ module ScriptCompiler =
                             if File.Exists(outputPath) then
                                 Ok(File.ReadAllText(outputPath))
                             else
-                                Error [ { message = "TypeScript compiler did not produce JavaScript output."; line = 0; column = 0 } ]
+                                Error [ { message = "TypeScript compiler did not produce JavaScript output."; file = ""; line = 0; column = 0 } ]
                     with ex ->
-                        Error [ { message = ex.Message; line = 0; column = 0 } ]
+                        Error [ { message = ex.Message; file = ""; line = 0; column = 0 } ]
 
                 try
                     if Directory.Exists(tempRoot) then
@@ -133,6 +150,7 @@ module ScriptCompiler =
         if source.Length > Scripting.defaultLimits.MaxSourceCharacters then
             Error
                 [ { message = $"Behavior source may contain at most {Scripting.defaultLimits.MaxSourceCharacters} characters."
+                    file = ""
                     line = 0
                     column = 0 } ]
         else

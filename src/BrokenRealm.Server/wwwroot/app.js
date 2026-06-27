@@ -20,7 +20,6 @@ let behaviorModules = [];
 const moduleModels = new Map();
 const modulePayloads = new Map();
 const savedSources = new Map();
-let dependencyLibraries = [];
 function appendLine(text, className = "line") {
     if (!log)
         return;
@@ -37,25 +36,47 @@ function setStatus(text, isError = false) {
     scriptStatus.textContent = text;
     scriptStatus.classList.toggle("error-line", isError);
 }
-function setEditorMarkers(diagnostics) {
-    const model = editor?.getModel();
-    if (!model || !window.monaco)
+function setEditorMarkers(diagnostics, selectedId = selectedModuleId()) {
+    if (!window.monaco)
         return;
-    const markers = diagnostics
-        .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
-        .map((diagnostic) => ({
-        severity: 8,
-        message: diagnostic.message,
-        startLineNumber: diagnostic.line,
-        startColumn: diagnostic.column,
-        endLineNumber: diagnostic.line,
-        endColumn: diagnostic.column + 1,
-    }));
-    window.monaco.editor.setModelMarkers(model, "brokenrealm", markers);
+    moduleModels.forEach((model) => window.monaco?.editor.setModelMarkers(model, "brokenrealm", []));
+    const byModule = new Map();
+    diagnostics.forEach((diagnostic) => {
+        const moduleId = diagnostic.file && diagnostic.file !== "behavior" ? diagnostic.file : selectedId;
+        if (!moduleId)
+            return;
+        byModule.set(moduleId, [...(byModule.get(moduleId) ?? []), diagnostic]);
+    });
+    byModule.forEach((moduleDiagnostics, moduleId) => {
+        const model = moduleModels.get(moduleId);
+        if (!model)
+            return;
+        const markers = moduleDiagnostics
+            .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
+            .map((diagnostic) => ({
+            severity: 8,
+            message: diagnostic.message,
+            startLineNumber: diagnostic.line,
+            startColumn: diagnostic.column,
+            endLineNumber: diagnostic.line,
+            endColumn: diagnostic.column + 1,
+        }));
+        window.monaco?.editor.setModelMarkers(model, "brokenrealm", markers);
+    });
 }
-function setDiagnostics(diagnostics) {
+async function setDiagnostics(diagnostics) {
     if (!scriptStatus)
         return;
+    for (const diagnostic of diagnostics) {
+        if (diagnostic.file && diagnostic.file !== "behavior" && !moduleModels.has(diagnostic.file)) {
+            try {
+                ensureModuleModel(await fetchBehaviorModule(diagnostic.file));
+            }
+            catch {
+                // Keep the textual diagnostic when its source is no longer available.
+            }
+        }
+    }
     setEditorMarkers(diagnostics);
     scriptStatus.replaceChildren();
     scriptStatus.classList.add("error-line");
@@ -63,8 +84,34 @@ function setDiagnostics(diagnostics) {
     list.className = "diagnostics";
     diagnostics.forEach((diagnostic) => {
         const item = document.createElement("li");
-        const location = diagnostic.line > 0 ? `Line ${diagnostic.line}, column ${diagnostic.column}: ` : "";
+        const file = diagnostic.file || selectedModuleId() || "behavior";
+        const location = diagnostic.line > 0 ? `${file}:${diagnostic.line}:${diagnostic.column}: ` : file ? `${file}: ` : "";
         item.textContent = `${location}${diagnostic.message}`;
+        if (moduleModels.has(file) && behaviorModuleSelect) {
+            item.tabIndex = 0;
+            item.classList.add("diagnostic-link");
+            const openDiagnostic = () => {
+                behaviorModuleSelect.value = file;
+                const model = moduleModels.get(file);
+                const payload = modulePayloads.get(file);
+                if (model && editor) {
+                    editor.setModel(model);
+                    editor.setPosition({ lineNumber: Math.max(1, diagnostic.line), column: Math.max(1, diagnostic.column) });
+                    editor.revealLineInCenter(Math.max(1, diagnostic.line));
+                    editor.focus();
+                    updateEditorTitle(file);
+                    if (payload) {
+                        renderModuleDetails(payload);
+                        void configureDependencyLibraries(payload);
+                    }
+                }
+            };
+            item.addEventListener("click", openDiagnostic);
+            item.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ")
+                    openDiagnostic();
+            });
+        }
         list.appendChild(item);
     });
     scriptStatus.appendChild(list);
@@ -138,12 +185,20 @@ async function fetchBehaviorModule(moduleId, refresh = false) {
     modulePayloads.set(moduleId, payload);
     return payload;
 }
-async function configureDependencyLibraries(payload) {
+function ensureModuleModel(payload) {
     const monaco = window.monaco;
     if (!monaco)
-        return;
-    dependencyLibraries.forEach((library) => library.dispose());
-    dependencyLibraries = [];
+        return null;
+    const existing = moduleModels.get(payload.moduleId);
+    if (existing)
+        return existing;
+    const model = monaco.editor.createModel(payload.source, "typescript", monaco.Uri.parse(`inmemory://behaviors/${payload.moduleId}.ts`));
+    moduleModels.set(payload.moduleId, model);
+    savedSources.set(payload.moduleId, payload.source);
+    model.onDidChangeContent(() => updateEditorTitle(payload.moduleId));
+    return model;
+}
+async function configureDependencyLibraries(payload) {
     const visited = new Set();
     const addDependencies = async (moduleId) => {
         if (visited.has(moduleId))
@@ -152,7 +207,7 @@ async function configureDependencyLibraries(payload) {
         const dependency = await fetchBehaviorModule(moduleId);
         for (const nestedId of dependency.dependencies)
             await addDependencies(nestedId);
-        dependencyLibraries.push(monaco.languages.typescript.typescriptDefaults.addExtraLib(dependency.source, `inmemory://dependencies/${dependency.moduleId}.ts`));
+        ensureModuleModel(dependency);
     };
     for (const dependencyId of payload.dependencies)
         await addDependencies(dependencyId);
@@ -279,13 +334,9 @@ async function loadScript() {
         return;
     }
     if (editor && window.monaco) {
-        let model = moduleModels.get(moduleId);
-        if (!model) {
-            model = window.monaco.editor.createModel(payload.source, "typescript", window.monaco.Uri.parse(`inmemory://behaviors/${moduleId}.ts`));
-            moduleModels.set(moduleId, model);
-            savedSources.set(moduleId, payload.source);
-            model.onDidChangeContent(() => updateEditorTitle(moduleId));
-        }
+        const model = ensureModuleModel(payload);
+        if (!model)
+            return;
         editor.setModel(model);
     }
     else {
@@ -320,7 +371,7 @@ async function saveCurrentScript() {
         try {
             const payload = (await response.json());
             if (payload.diagnostics && payload.diagnostics.length > 0) {
-                setDiagnostics(payload.diagnostics);
+                await setDiagnostics(payload.diagnostics);
                 return;
             }
         }

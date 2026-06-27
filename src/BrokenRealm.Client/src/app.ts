@@ -7,6 +7,9 @@ type MonacoEditor = {
   layout(): void;
   getModel(): MonacoModel | null;
   setModel(model: MonacoModel): void;
+  setPosition(position: { lineNumber: number; column: number }): void;
+  revealLineInCenter(lineNumber: number): void;
+  focus(): void;
 };
 
 type MonacoDisposable = { dispose(): void };
@@ -66,6 +69,7 @@ type ScriptErrorResponse = {
 
 type CompilerDiagnostic = {
   message: string;
+  file: string;
   line: number;
   column: number;
 };
@@ -106,7 +110,6 @@ let behaviorModules: AdminBehaviorModule[] = [];
 const moduleModels = new Map<string, MonacoModel>();
 const modulePayloads = new Map<string, ScriptResponse>();
 const savedSources = new Map<string, string>();
-let dependencyLibraries: MonacoDisposable[] = [];
 
 function appendLine(text: string, className = "line"): void {
   if (!log) return;
@@ -125,26 +128,47 @@ function setStatus(text: string, isError = false): void {
   scriptStatus.classList.toggle("error-line", isError);
 }
 
-function setEditorMarkers(diagnostics: CompilerDiagnostic[]): void {
-  const model = editor?.getModel();
-  if (!model || !window.monaco) return;
+function setEditorMarkers(diagnostics: CompilerDiagnostic[], selectedId = selectedModuleId()): void {
+  if (!window.monaco) return;
 
-  const markers = diagnostics
-    .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
-    .map((diagnostic) => ({
-      severity: 8,
-      message: diagnostic.message,
-      startLineNumber: diagnostic.line,
-      startColumn: diagnostic.column,
-      endLineNumber: diagnostic.line,
-      endColumn: diagnostic.column + 1,
-    }));
+  moduleModels.forEach((model) => window.monaco?.editor.setModelMarkers(model, "brokenrealm", []));
+  const byModule = new Map<string, CompilerDiagnostic[]>();
 
-  window.monaco.editor.setModelMarkers(model, "brokenrealm", markers);
+  diagnostics.forEach((diagnostic) => {
+    const moduleId = diagnostic.file && diagnostic.file !== "behavior" ? diagnostic.file : selectedId;
+    if (!moduleId) return;
+    byModule.set(moduleId, [...(byModule.get(moduleId) ?? []), diagnostic]);
+  });
+
+  byModule.forEach((moduleDiagnostics, moduleId) => {
+    const model = moduleModels.get(moduleId);
+    if (!model) return;
+    const markers = moduleDiagnostics
+      .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
+      .map((diagnostic) => ({
+        severity: 8,
+        message: diagnostic.message,
+        startLineNumber: diagnostic.line,
+        startColumn: diagnostic.column,
+        endLineNumber: diagnostic.line,
+        endColumn: diagnostic.column + 1,
+      }));
+    window.monaco?.editor.setModelMarkers(model, "brokenrealm", markers);
+  });
 }
 
-function setDiagnostics(diagnostics: CompilerDiagnostic[]): void {
+async function setDiagnostics(diagnostics: CompilerDiagnostic[]): Promise<void> {
   if (!scriptStatus) return;
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.file && diagnostic.file !== "behavior" && !moduleModels.has(diagnostic.file)) {
+      try {
+        ensureModuleModel(await fetchBehaviorModule(diagnostic.file));
+      } catch {
+        // Keep the textual diagnostic when its source is no longer available.
+      }
+    }
+  }
 
   setEditorMarkers(diagnostics);
 
@@ -156,8 +180,33 @@ function setDiagnostics(diagnostics: CompilerDiagnostic[]): void {
 
   diagnostics.forEach((diagnostic) => {
     const item = document.createElement("li");
-    const location = diagnostic.line > 0 ? `Line ${diagnostic.line}, column ${diagnostic.column}: ` : "";
+    const file = diagnostic.file || selectedModuleId() || "behavior";
+    const location = diagnostic.line > 0 ? `${file}:${diagnostic.line}:${diagnostic.column}: ` : file ? `${file}: ` : "";
     item.textContent = `${location}${diagnostic.message}`;
+    if (moduleModels.has(file) && behaviorModuleSelect) {
+      item.tabIndex = 0;
+      item.classList.add("diagnostic-link");
+      const openDiagnostic = (): void => {
+        behaviorModuleSelect.value = file;
+        const model = moduleModels.get(file);
+        const payload = modulePayloads.get(file);
+        if (model && editor) {
+          editor.setModel(model);
+          editor.setPosition({ lineNumber: Math.max(1, diagnostic.line), column: Math.max(1, diagnostic.column) });
+          editor.revealLineInCenter(Math.max(1, diagnostic.line));
+          editor.focus();
+          updateEditorTitle(file);
+          if (payload) {
+            renderModuleDetails(payload);
+            void configureDependencyLibraries(payload);
+          }
+        }
+      };
+      item.addEventListener("click", openDiagnostic);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") openDiagnostic();
+      });
+    }
     list.appendChild(item);
   });
 
@@ -239,12 +288,24 @@ async function fetchBehaviorModule(moduleId: string, refresh = false): Promise<S
   return payload;
 }
 
-async function configureDependencyLibraries(payload: ScriptResponse): Promise<void> {
+function ensureModuleModel(payload: ScriptResponse): MonacoModel | null {
   const monaco = window.monaco;
-  if (!monaco) return;
+  if (!monaco) return null;
+  const existing = moduleModels.get(payload.moduleId);
+  if (existing) return existing;
 
-  dependencyLibraries.forEach((library) => library.dispose());
-  dependencyLibraries = [];
+  const model = monaco.editor.createModel(
+    payload.source,
+    "typescript",
+    monaco.Uri.parse(`inmemory://behaviors/${payload.moduleId}.ts`),
+  );
+  moduleModels.set(payload.moduleId, model);
+  savedSources.set(payload.moduleId, payload.source);
+  model.onDidChangeContent(() => updateEditorTitle(payload.moduleId));
+  return model;
+}
+
+async function configureDependencyLibraries(payload: ScriptResponse): Promise<void> {
   const visited = new Set<string>();
 
   const addDependencies = async (moduleId: string): Promise<void> => {
@@ -252,12 +313,7 @@ async function configureDependencyLibraries(payload: ScriptResponse): Promise<vo
     visited.add(moduleId);
     const dependency = await fetchBehaviorModule(moduleId);
     for (const nestedId of dependency.dependencies) await addDependencies(nestedId);
-    dependencyLibraries.push(
-      monaco.languages.typescript.typescriptDefaults.addExtraLib(
-        dependency.source,
-        `inmemory://dependencies/${dependency.moduleId}.ts`,
-      ),
-    );
+    ensureModuleModel(dependency);
   };
 
   for (const dependencyId of payload.dependencies) await addDependencies(dependencyId);
@@ -397,17 +453,8 @@ async function loadScript(): Promise<void> {
   }
 
   if (editor && window.monaco) {
-    let model = moduleModels.get(moduleId);
-    if (!model) {
-      model = window.monaco.editor.createModel(
-        payload.source,
-        "typescript",
-        window.monaco.Uri.parse(`inmemory://behaviors/${moduleId}.ts`),
-      );
-      moduleModels.set(moduleId, model);
-      savedSources.set(moduleId, payload.source);
-      model.onDidChangeContent(() => updateEditorTitle(moduleId));
-    }
+    const model = ensureModuleModel(payload);
+    if (!model) return;
     editor.setModel(model);
   } else {
     setScriptSource(payload.source);
@@ -446,7 +493,7 @@ async function saveCurrentScript(): Promise<void> {
     try {
       const payload = (await response.json()) as ScriptErrorResponse;
       if (payload.diagnostics && payload.diagnostics.length > 0) {
-        setDiagnostics(payload.diagnostics);
+        await setDiagnostics(payload.diagnostics);
         return;
       }
     } catch {

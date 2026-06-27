@@ -4,7 +4,7 @@ open BrokenRealm.Server
 open Xunit
 
 module KernelTests =
-    let private diagnostic message = { message = message; line = 0; column = 0 }
+    let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }
 
     let private forestSource = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.location; BehaviorSources.forest ]
     let private forestCompiled =
@@ -731,6 +731,7 @@ module ScriptCompilerTests =
         match result with
         | Error [ diagnostic ] ->
             Assert.Equal("Behavior source may contain at most 64000 characters.", diagnostic.message)
+            Assert.Equal("", diagnostic.file)
             Assert.Equal(0, diagnostic.line)
             Assert.Equal(0, diagnostic.column)
         | Error _ -> Assert.True(false, "Expected one source-length diagnostic.")
@@ -767,6 +768,22 @@ module BehaviorClassRuntimeTests =
             Assert.Contains("invokeAnonymous", declarations)
             Assert.Contains("AnonymousBehaviorContext", declarations)
         | None -> Assert.True(false, "Expected the scripting declarations to be available.")
+
+    [<Fact>]
+    let ``Compiler diagnostics map to behavior module local lines`` () =
+        let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
+        let source =
+            BehaviorSources.joinModules
+                [ "valid-module", "const validValue: string = 'ok';"
+                  "broken-module", "const brokenValue: string = 42;" ]
+
+        match ScriptCompiler.compile repoRoot source with
+        | Error diagnostics ->
+            let diagnostic = diagnostics |> List.find (fun diagnostic -> diagnostic.file = "broken-module")
+            Assert.Equal(1, diagnostic.line)
+            Assert.True(diagnostic.column > 0)
+            Assert.Contains("number", diagnostic.message)
+        | Ok _ -> Assert.True(false, "Expected the broken module to fail compilation.")
 
     [<Fact>]
     let ``Compiled behavior classes use native super dispatch`` () =

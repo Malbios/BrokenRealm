@@ -156,6 +156,7 @@ type BehaviorModuleUpdateResponse =
 [<CLIMutable>]
 type CompilerDiagnostic =
     { message: string
+      file: string
       line: int
       column: int }
 

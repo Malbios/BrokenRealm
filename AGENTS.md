@@ -251,6 +251,7 @@ The browser UI has:
 - dependency-aware TypeScript IntelliSense using the selected module's transitive behavior sources
 - one Monaco model per behavior module, preserving undo history and unsaved edits while switching modules
 - structured class, dependency, affected-module, and affected-object metadata visible before save
+- compiler diagnostics mapped to behavior module IDs and module-local locations; Monaco marks the corresponding cached model and diagnostic entries open that module
 
 Admin can change behavior methods or command metadata, save the module, and later player commands use the atomically activated class hierarchy.
 
@@ -304,4 +305,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Map server compiler diagnostics back to their originating behavior module and module-local line, including diagnostics in dependency compilation units.
+1. Add explicit unsaved-change navigation guards and a compile-without-activate action before expanding the editor further.
