@@ -154,7 +154,7 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (!text) {
       return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
     }
-    return { effects: [{ type: "message", key: "emote.self", args: { text } }] };
+    return { effects: [{ type: "message", key: "emote.self", args: { actor: context.actor.id, text } }] };
   }
 }
 
@@ -419,7 +419,7 @@ const coreBehaviorClasses = { GameBehavior };"""
   emote(context) {
     const text = (context.args.text ?? "").trim();
     if (!text) return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
-    return { effects: [{ type: "message", key: "emote.self", args: { text } }] };
+    return { effects: [{ type: "message", key: "emote.self", args: { actor: context.actor.id, text } }] };
   }
 }
 const playerBehaviorClasses = { PlayerBehavior };"""

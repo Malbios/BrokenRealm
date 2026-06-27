@@ -989,7 +989,7 @@ module KernelTests =
         let result = Kernel.submitCommand En "emote waves happily" ObjectDatabase.initialState
         let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("You waves happily.", line)
+        Assert.Equal("a prototype player waves happily.", line)
 
     [<Fact>]
     let ``Colon emote alias matches actor emote`` () =
@@ -1000,6 +1000,11 @@ module KernelTests =
             Assert.Equal("emote", value.MethodName)
             Assert.Equal("smiles", value.Args["text"])
         | None -> Assert.True(false, "Expected colon emote to match.")
+
+        let result = Kernel.submitCommand En ": smiles" ObjectDatabase.initialState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("a prototype player smiles.", line)
 
     [<Fact>]
     let ``German star emote alias matches actor emote`` () =

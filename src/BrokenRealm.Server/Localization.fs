@@ -91,7 +91,7 @@ module Localizer =
         | De, "say.self" -> "Du sagst: \"{text}\"."
         | En, "say.empty" -> "Say what?"
         | De, "say.empty" -> "Was möchtest du sagen?"
-        | En, "emote.self" -> "You {text}."
+        | En, "emote.self" -> "{actor} {text}."
         | De, "emote.self" -> "Du {text}."
         | En, "emote.empty" -> "Emote what?"
         | De, "emote.empty" -> "Was möchtest du ausdrücken?"
@@ -135,6 +135,7 @@ module ResponseFormatting =
                 | "direction" -> Localizer.directionName culture value
                 | "objects" -> formatObjects state culture value
                 | "player" -> Localizer.objectName state culture value
+                | "actor" -> Localizer.objectName state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }
