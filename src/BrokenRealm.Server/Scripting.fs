@@ -247,10 +247,21 @@ module Scripting =
         with ex ->
             Error(sanitizeException ex)
 
-    let private executeWithinLimits limits invocation (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) source =
+    let private objectProperties (gameObject: GameObject) =
         let properties = Dictionary<string, obj>()
-        target.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
+        gameObject.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
+        properties
 
+    let private actorSummary (actor: GameObject) =
+        {| id = actor.Id
+           name = actor.Name
+           descriptionKey = actor.DescriptionKey |> Option.defaultValue ""
+           tags = actor.Tags |> Set.toArray
+           properties = objectProperties actor
+           references = actor.References
+           inventory = PlayerObjects.inventory actor |}
+
+    let private executeWithinLimits limits invocation (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actor: GameObject) source =
         let context =
             {| args = args
                this =
@@ -258,7 +269,7 @@ module Scripting =
                    name = target.Name
                    descriptionKey = target.DescriptionKey |> Option.defaultValue ""
                    tags = target.Tags |> Set.toArray
-                   properties = properties
+                   properties = objectProperties target
                    references = target.References
                    contents =
                     contents
@@ -268,43 +279,43 @@ module Scripting =
                            descriptionKey = object.DescriptionKey |> Option.defaultValue ""
                            tags = object.Tags |> Set.toArray |})
                     |> List.toArray |}
-               actor = {| inventory = actorInventory |} |}
+               actor = actorSummary actor |}
 
         executeContextWithinLimits limits invocation context source
 
-    let executeVerbWithLimits limits target args actorInventory (source: string) =
+    let executeVerbWithLimits limits target args actor (source: string) =
         if source.Length > limits.MaxSourceCharacters then
             Error $"Script source may contain at most {limits.MaxSourceCharacters} characters."
         else
-            executeWithinLimits limits (fun context -> "execute(" + context + ")") target [] args actorInventory source
+            executeWithinLimits limits (fun context -> "execute(" + context + ")") target [] args actor source
 
-    let executeVerb target args actorInventory source =
-        executeVerbWithLimits defaultLimits target args actorInventory source
+    let executeVerb target args actor source =
+        executeVerbWithLimits defaultLimits target args actor source
 
     let private identifierPattern = Regex("^[A-Za-z_$][A-Za-z0-9_$]*$", RegexOptions.CultureInvariant)
 
-    let executeBehaviorMethodWithLimits limits (className: string) (methodName: string) target args actorInventory (source: string) =
+    let executeBehaviorMethodWithLimits limits (className: string) (methodName: string) target args actor (source: string) =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
             Error "Behavior class and method names must be valid JavaScript identifiers."
         elif source.Length > limits.MaxSourceCharacters then
             Error $"Behavior source may contain at most {limits.MaxSourceCharacters} characters."
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
-            executeWithinLimits limits invocation target [] args actorInventory source
+            executeWithinLimits limits invocation target [] args actor source
 
-    let executeBehaviorMethod className methodName target args actorInventory source =
-        executeBehaviorMethodWithLimits defaultLimits className methodName target args actorInventory source
+    let executeBehaviorMethod className methodName target args actor source =
+        executeBehaviorMethodWithLimits defaultLimits className methodName target args actor source
 
-    let executeBehaviorMethodWithContents (className: string) (methodName: string) target contents args actorInventory (source: string) =
+    let executeBehaviorMethodWithContents (className: string) (methodName: string) target contents args actor (source: string) =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
             Error "Behavior class and method names must be valid JavaScript identifiers."
         elif source.Length > defaultLimits.MaxSourceCharacters then
             Error $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters."
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
-            executeWithinLimits defaultLimits invocation target contents args actorInventory source
+            executeWithinLimits defaultLimits invocation target contents args actor source
 
-    let executeAnonymousBehaviorMethodAtPath (className: string) (methodName: string) storagePath (value: AnonymousBehaviorValue) args actorInventory (source: string) =
+    let executeAnonymousBehaviorMethodAtPath (className: string) (methodName: string) storagePath (value: AnonymousBehaviorValue) args actor (source: string) =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
             Error "Behavior class and method names must be valid JavaScript identifiers."
         elif source.Length > defaultLimits.MaxSourceCharacters then
@@ -312,12 +323,12 @@ module Scripting =
         else
             let properties = Dictionary<string, obj>()
             value.Properties |> Map.iter (fun key property -> properties[key] <- gameValueToObject property)
-            let context = {| args = args; this = {| storagePath = storagePath; properties = properties |}; actor = {| inventory = actorInventory |} |}
+            let context = {| args = args; this = {| storagePath = storagePath; properties = properties |}; actor = actorSummary actor |}
             let invocation contextJson = $"(new {className}()).{methodName}({contextJson})"
             executeContextWithinLimits defaultLimits invocation context source
 
-    let executeAnonymousBehaviorMethod className methodName value args actorInventory source =
-        executeAnonymousBehaviorMethodAtPath className methodName [||] value args actorInventory source
+    let executeAnonymousBehaviorMethod className methodName value args actor source =
+        executeAnonymousBehaviorMethodAtPath className methodName [||] value args actor source
 
     let inspectBehaviorModule (registryName: string) (source: string) =
         let diagnostic message = { message = message; file = ""; line = 0; column = 0 }

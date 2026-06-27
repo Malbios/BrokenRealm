@@ -10,7 +10,15 @@ module BehaviorSources =
 };
 
 class GameBehavior {
-  static commands: CommandDefinition[] = [
+  static commands: CommandDefinition[] = [];
+}
+
+const coreBehaviorClasses = { GameBehavior };"""
+
+    let player =
+        """class PlayerBehavior extends GameBehavior {
+  static override commands: CommandDefinition[] = [
+    ...super.commands,
     {
       methodName: "inventory",
       patterns: [
@@ -31,7 +39,7 @@ class GameBehavior {
   }
 }
 
-const coreBehaviorClasses = { GameBehavior };"""
+const playerBehaviorClasses = { PlayerBehavior };"""
 
     let location =
         """class LocationBehavior extends GameBehavior {
@@ -200,7 +208,14 @@ const anonymousBehaviorClasses = { TrailTokenBehavior };"""
 
     let coreCompiled =
         """class GameBehavior {
+  static commands = [];
+}
+const coreBehaviorClasses = { GameBehavior };"""
+
+    let playerCompiled =
+        """class PlayerBehavior extends GameBehavior {
   static commands = [
+    ...super.commands,
     { methodName: "inventory", patterns: [
       { culture: "en", pattern: "inventory" }, { culture: "en", pattern: "inv" },
       { culture: "de", pattern: "inventar" }, { culture: "de", pattern: "inv" }
@@ -214,12 +229,11 @@ const anonymousBehaviorClasses = { TrailTokenBehavior };"""
     return { effects };
   }
 }
-const coreBehaviorClasses = { GameBehavior };"""
+const playerBehaviorClasses = { PlayerBehavior };"""
 
     let locationCompiled =
         """class LocationBehavior extends GameBehavior {
   static commands = [
-    ...super.commands,
     { methodName: "look", patterns: [
       { culture: "en", pattern: "look" }, { culture: "en", pattern: "l" },
       { culture: "de", pattern: "schau" }, { culture: "de", pattern: "umsehen" },

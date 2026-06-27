@@ -160,7 +160,10 @@ module Kernel =
             |> List.tryPick (fun object ->
                 match validateObjectProperties state object with
                 | Error error -> Some error
-                | Ok() -> None)
+                | Ok() ->
+                    match PlayerObjects.validatePlayerObject state object with
+                    | Error error -> Some error
+                    | Ok() -> None)
             |> Option.map Error
             |> Option.defaultValue (Ok())
 
@@ -197,13 +200,15 @@ module Kernel =
         | Ok() ->
             match effect with
             | AddInventory(itemId, amount) ->
-                let character = state.Characters[characterId]
-                let updated = { character with Inventory = character.Inventory |> addInventory itemId amount }
-                Ok({ state with Characters = Map.add characterId updated state.Characters }, messages, remainingInvocations)
+                let player = PlayerObjects.get state characterId
+                let updated =
+                    PlayerObjects.withInventory player (PlayerObjects.inventory player |> addInventory itemId amount)
+
+                Ok({ state with Objects = Map.add characterId updated state.Objects }, messages, remainingInvocations)
             | MovePlayer destinationId ->
-                let character = state.Characters[characterId]
-                let updated = { character with LocationId = destinationId }
-                Ok({ state with Characters = Map.add characterId updated state.Characters }, messages, remainingInvocations)
+                let player = PlayerObjects.get state characterId
+                let updated = PlayerObjects.withLocation player destinationId
+                Ok({ state with Objects = Map.add characterId updated state.Objects }, messages, remainingInvocations)
             | ReplaceValue(path, replacement) ->
                 tryReplaceObjectValue path replacement state.Objects[targetId]
                 |> Result.map (fun target ->
@@ -227,7 +232,7 @@ module Kernel =
                                 |> List.toArray
 
                             Scripting.executeAnonymousBehaviorMethodAtPath
-                                value.BehaviorClassName methodName storagePath value args state.Characters[characterId].Inventory behaviorModule.CompiledSource
+                                value.BehaviorClassName methodName storagePath value args (PlayerObjects.get state characterId) behaviorModule.CompiledSource
                             |> Result.bind (fun effects ->
                                 applyEffects characterId targetId (depth + 1) effects state messages (remainingInvocations - 1))
                     | Ok _ -> Error "invokeAnonymous path does not select an anonymous behavior value."
@@ -261,7 +266,7 @@ module Kernel =
                         target
                         contents
                         matched.Args
-                        state.Characters[characterId].Inventory
+                        (PlayerObjects.get state characterId)
                         matched.CompiledSource
 
             match execution with
@@ -278,7 +283,7 @@ module Kernel =
                       Messages = messages }
 
     let submitCommandForCharacter characterId culture text (state: GameState) =
-        match state.Characters |> Map.tryFind characterId with
+        match PlayerObjects.tryGet state characterId with
         | None ->
             { State = state
               Messages = [ message "script.error" (Map.ofList [ "error", $"Unknown character id: {characterId}" ]) ] }
@@ -302,7 +307,7 @@ module Kernel =
                 methodName
                 value
                 args
-                state.Characters[characterId].Inventory
+                (PlayerObjects.get state characterId)
                 behaviorModule.CompiledSource
 
     let executeAnonymousValueMethod methodName args value state =
@@ -325,7 +330,7 @@ module Kernel =
                         |> List.toArray
 
                     Scripting.executeAnonymousBehaviorMethodAtPath
-                        value.BehaviorClassName methodName storagePath value args state.Characters[characterId].Inventory behaviorModule.CompiledSource
+                        value.BehaviorClassName methodName storagePath value args (PlayerObjects.get state characterId) behaviorModule.CompiledSource
                     |> Result.bind (fun effects -> applyEffects characterId ownerId 0 effects state [] maxAnonymousInvocations)
                     |> Result.map (fun (state, messages, _) -> { State = state; Messages = messages })
             | Ok _ -> Error "Value path does not select an anonymous behavior value."

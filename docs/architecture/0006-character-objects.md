@@ -190,7 +190,20 @@ Work proceeds in small vertical slices. Each step keeps `dotnet test` green and 
 
 ## Implementation status
 
-Not yet implemented.
+Implemented:
+
+- `player-behaviors:PlayerBehavior` with actor-local `inventory` command
+- seeded `prototype-player` and `prototype-scout` as permanent player objects in `Objects`
+- actor-first command matching (actor → location → contents)
+- enriched `VerbContext.actor` in `game-api.d.ts` and script execution
+- snapshot format version 3 with `playerRevisions`; v1/v2 snapshots migrate forward
+- removal of parallel `CharacterState` / `Characters` runtime map
+
+Not yet implemented:
+
+- generalized `moveObject` / explicit object-targeted inventory effects (legacy `movePlayer` / `addInventory` names remain)
+- carried items as contained permanent objects
+- localized display names for player objects in room contents
 
 Depends on:
 

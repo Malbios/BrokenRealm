@@ -28,23 +28,49 @@ module SnapshotMigrations =
         { snapshot with
             FormatVersion = 2
             Accounts = accounts
-            Characters = characters }
+            Characters = characters
+            PlayerRevisions = Map.empty }
+
+    let private characterToPlayerObject (character: CharacterSnapshot) =
+        let name =
+            if character.Id = GameSnapshots.PrototypeCharacterId then
+                "prototype player"
+            elif character.Id = GameSnapshots.PrototypeScoutCharacterId then
+                "prototype scout"
+            else
+                character.Id.Replace('-', ' ')
+
+        let nameKey = $"object.{character.Id}.name"
+
+        PlayerObjects.create character.Id name nameKey character.AccountId character.LocationId character.Inventory
 
     let private ensurePrototypeDevelopmentCharacters snapshot =
-        let seedCharacters =
-            ObjectDatabase.initialState.Characters
-            |> Map.filter (fun _ character -> character.AccountId = GameSnapshots.PrototypeAccountId)
+        let seedPlayers =
+            ObjectDatabase.initialState.Objects
+            |> Map.toList
+            |> List.choose (fun (_, gameObject) ->
+                if PlayerObjects.isPlayer gameObject then
+                    Some
+                        { Id = gameObject.Id
+                          AccountId = PlayerObjects.accountId gameObject
+                          Revision = 0L
+                          LocationId = PlayerObjects.locationId gameObject
+                          Inventory = PlayerObjects.inventory gameObject }
+                else
+                    None)
+            |> List.map (fun character -> character.Id, character)
+            |> Map.ofList
 
         let accounts =
             if Map.containsKey GameSnapshots.PrototypeAccountId snapshot.Accounts then
                 snapshot.Accounts
-            elif Map.isEmpty seedCharacters then
+            elif Map.isEmpty seedPlayers then
                 snapshot.Accounts
             else
                 Map.add GameSnapshots.PrototypeAccountId prototypeAccount snapshot.Accounts
 
         let characters =
-            seedCharacters
+            seedPlayers
             |> Map.fold (fun characters characterId seedCharacter ->
                 match Map.tryFind characterId characters with
                 | Some (existing: CharacterSnapshot) ->
@@ -67,15 +93,48 @@ module SnapshotMigrations =
             Accounts = accounts
             Characters = characters }
 
+    let private migrateV2 snapshot =
+        let playerObjects =
+            snapshot.Characters
+            |> Map.map (fun _ character -> characterToPlayerObject character)
+
+        let objects =
+            playerObjects
+            |> Map.fold (fun objects playerId playerObject -> Map.add playerId playerObject objects) snapshot.World.Objects
+
+        let playerRevisions =
+            snapshot.Characters
+            |> Map.map (fun _ character -> character.Revision)
+
+        { snapshot with
+            FormatVersion = 3
+            World = { snapshot.World with Objects = objects }
+            Characters = Map.empty
+            PlayerRevisions = playerRevisions }
+
     let migrate snapshot =
         if snapshot.FormatVersion > GameSnapshots.CurrentFormatVersion then
             Error $"Snapshot format version {snapshot.FormatVersion} is newer than this server supports ({GameSnapshots.CurrentFormatVersion})."
         elif snapshot.FormatVersion < 1 then
             Error $"Snapshot format version {snapshot.FormatVersion} is not supported."
-        elif snapshot.FormatVersion = 1 then
-            migrateV1 snapshot |> ensurePrototypeDevelopmentCharacters |> Ok
         else
-            ensurePrototypeDevelopmentCharacters snapshot |> Ok
+            let migrated =
+                if snapshot.FormatVersion = 1 then
+                    migrateV1 snapshot
+                else
+                    snapshot
+
+            let withSeed =
+                if migrated.FormatVersion < 3 then
+                    ensurePrototypeDevelopmentCharacters migrated
+                else
+                    migrated
+
+            Ok(
+                if withSeed.FormatVersion < 3 then
+                    migrateV2 withSeed
+                else
+                    withSeed)
 
 module SnapshotHydration =
     let private behaviorModulesFromSnapshot (modules: Map<string, BehaviorModuleSnapshot>) =
@@ -92,14 +151,6 @@ module SnapshotHydration =
         accounts
         |> Map.map (fun _ account ->
             ({ Id = account.Id; DisplayName = account.DisplayName }: AccountState))
-
-    let private charactersFromSnapshot (characters: Map<CharacterId, CharacterSnapshot>) =
-        characters
-        |> Map.map (fun _ character ->
-            { Id = character.Id
-              AccountId = character.AccountId
-              LocationId = character.LocationId
-              Inventory = character.Inventory })
 
     let private validateObjectIds (objects: Map<ObjectId, GameObject>) =
         objects
@@ -125,27 +176,30 @@ module SnapshotHydration =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
-    let private validateCharacterRecords (snapshot: GameSnapshot) =
-        snapshot.Characters
-        |> Map.toList
-        |> List.tryPick (fun (characterId, character) ->
-            if characterId <> character.Id then
-                Some $"Character map key '{characterId}' does not match embedded character id '{character.Id}'."
-            elif not (snapshot.Accounts.ContainsKey character.AccountId) then
-                Some $"Character {character.Id} references unknown account id: {character.AccountId}"
-            elif not (snapshot.World.Objects.ContainsKey character.LocationId) then
-                Some $"Character {character.Id} references unknown location id: {character.LocationId}"
-            elif
-                character.Inventory
-                |> Map.toList
-                |> List.exists (fun (itemId, quantity) ->
-                    not (snapshot.World.ItemIds.Contains itemId) || quantity < 0)
-            then
-                Some $"Character {character.Id} has invalid inventory entries."
-            else
-                None)
-        |> Option.map Error
-        |> Option.defaultValue (Ok())
+    let private validateLegacyCharacterRecords (snapshot: GameSnapshot) =
+        if snapshot.FormatVersion >= 3 then
+            Ok()
+        else
+            snapshot.Characters
+            |> Map.toList
+            |> List.tryPick (fun (characterId, character) ->
+                if characterId <> character.Id then
+                    Some $"Character map key '{characterId}' does not match embedded character id '{character.Id}'."
+                elif not (snapshot.Accounts.ContainsKey character.AccountId) then
+                    Some $"Character {character.Id} references unknown account id: {character.AccountId}"
+                elif not (snapshot.World.Objects.ContainsKey character.LocationId) then
+                    Some $"Character {character.Id} references unknown location id: {character.LocationId}"
+                elif
+                    character.Inventory
+                    |> Map.toList
+                    |> List.exists (fun (itemId, quantity) ->
+                        not (snapshot.World.ItemIds.Contains itemId) || quantity < 0)
+                then
+                    Some $"Character {character.Id} has invalid inventory entries."
+                else
+                    None)
+            |> Option.map Error
+            |> Option.defaultValue (Ok())
 
     let private validateBehaviorModuleRecords (modules: Map<string, BehaviorModuleSnapshot>) =
         modules
@@ -166,7 +220,7 @@ module SnapshotHydration =
     let validateSnapshot snapshot =
         [ validateObjectIds snapshot.World.Objects
           validateAccountRecords snapshot.Accounts
-          validateCharacterRecords snapshot
+          validateLegacyCharacterRecords snapshot
           validateBehaviorModuleRecords snapshot.World.BehaviorModules ]
         |> List.tryPick (function
             | Error error -> Some(Error error)
@@ -193,8 +247,7 @@ module SnapshotHydration =
                     { ItemIds = snapshot.World.ItemIds
                       BehaviorModules = activeBehaviorModules
                       Objects = snapshot.World.Objects
-                      Accounts = accountsFromSnapshot snapshot.Accounts
-                      Characters = charactersFromSnapshot snapshot.Characters }
+                      Accounts = accountsFromSnapshot snapshot.Accounts }
 
                 Kernel.validateGameState state
                 |> Result.map (fun () -> state, snapshot)))

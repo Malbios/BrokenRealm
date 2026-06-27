@@ -16,6 +16,7 @@ module ObjectDatabase =
 
     let initialState =
         let coreCompiled = BehaviorSources.coreCompiled
+        let playerCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.playerCompiled ]
         let locationCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.locationCompiled ]
         let forestCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.forestCompiled ]
         let villageCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.villageCompiled ]
@@ -23,6 +24,12 @@ module ObjectDatabase =
 
         let behaviorModules =
             [ behaviorModule "core-behaviors" "coreBehaviorClasses" [] BehaviorSources.core coreCompiled
+              behaviorModule
+                  "player-behaviors"
+                  "playerBehaviorClasses"
+                  [ "core-behaviors" ]
+                  BehaviorSources.player
+                  playerCompiled
               behaviorModule
                   "location-behaviors"
                   "locationBehaviorClasses"
@@ -119,23 +126,31 @@ module ObjectDatabase =
             { Id = GameSnapshots.PrototypeAccountId
               DisplayName = Some "Prototype account" }
 
-        let prototypeCharacter =
-            { Id = GameSnapshots.PrototypeCharacterId
-              AccountId = prototypeAccount.Id
-              LocationId = forest.Id
-              Inventory = Map.empty }
+        let prototypePlayer =
+            PlayerObjects.create
+                GameSnapshots.PrototypeCharacterId
+                "prototype player"
+                "object.prototype-player.name"
+                prototypeAccount.Id
+                forest.Id
+                Map.empty
 
         let prototypeScout =
-            { Id = GameSnapshots.PrototypeScoutCharacterId
-              AccountId = prototypeAccount.Id
-              LocationId = village.Id
-              Inventory = Map.empty }
+            PlayerObjects.create
+                GameSnapshots.PrototypeScoutCharacterId
+                "prototype scout"
+                "object.prototype-scout.name"
+                prototypeAccount.Id
+                village.Id
+                Map.empty
 
         { ItemIds = Set.ofList [ "wood" ]
           BehaviorModules = behaviorModules
-          Objects = Map.ofList [ forest.Id, forest; village.Id, village; fallenLog.Id, fallenLog ]
-          Accounts = Map.ofList [ prototypeAccount.Id, prototypeAccount ]
-          Characters =
+          Objects =
             Map.ofList
-                [ prototypeCharacter.Id, prototypeCharacter
-                  prototypeScout.Id, prototypeScout ] }
+                [ forest.Id, forest
+                  village.Id, village
+                  fallenLog.Id, fallenLog
+                  prototypePlayer.Id, prototypePlayer
+                  prototypeScout.Id, prototypeScout ]
+          Accounts = Map.ofList [ prototypeAccount.Id, prototypeAccount ] }

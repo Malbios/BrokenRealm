@@ -86,18 +86,11 @@ type AccountState =
     { Id: AccountId
       DisplayName: string option }
 
-type CharacterState =
-    { Id: CharacterId
-      AccountId: AccountId
-      LocationId: ObjectId
-      Inventory: Map<ItemId, Quantity> }
-
 type GameState =
     { ItemIds: Set<ItemId>
       BehaviorModules: Map<string, BehaviorModule>
       Objects: Map<ObjectId, GameObject>
-      Accounts: Map<AccountId, AccountState>
-      Characters: Map<CharacterId, CharacterState> }
+      Accounts: Map<AccountId, AccountState> }
 
 type GameSession =
     { Id: SessionId

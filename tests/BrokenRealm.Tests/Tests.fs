@@ -7,8 +7,29 @@ open Xunit
 
 [<AutoOpen>]
 module GameStateTestCompatibility =
+    type CharacterView =
+        { Id: CharacterId
+          AccountId: AccountId
+          LocationId: ObjectId
+          Inventory: Map<ItemId, Quantity> }
+
+    let private toView (player: GameObject) =
+        { Id = player.Id
+          AccountId = PlayerObjects.accountId player
+          LocationId = PlayerObjects.locationId player
+          Inventory = PlayerObjects.inventory player }
+
+    let toPlayerObject (view: CharacterView) =
+        PlayerObjects.create view.Id view.Id view.Id view.AccountId view.LocationId view.Inventory
+
     type GameState with
-        member state.Player = state.Characters[GameSnapshots.PrototypeCharacterId]
+        member state.Player = toView (PlayerObjects.get state GameSnapshots.PrototypeCharacterId)
+
+        member state.WithPlayer(playerId, updater: GameObject -> GameObject) =
+            let player = PlayerObjects.get state playerId
+            { state with Objects = Map.add playerId (updater player) state.Objects }
+
+    let testActor = ObjectDatabase.initialState.Objects[GameSnapshots.PrototypeCharacterId]
 
 module PersistenceTests =
     let private timestamp = DateTimeOffset(2026, 6, 27, 12, 0, 0, TimeSpan.Zero)
@@ -20,7 +41,8 @@ module PersistenceTests =
         let forest = snapshot.World.BehaviorModules["forest-behaviors"]
 
         Assert.Equal(GameSnapshots.CurrentFormatVersion, snapshot.FormatVersion)
-        Assert.Equal(GameSnapshots.PrototypeCharacterId, snapshot.Characters[GameSnapshots.PrototypeCharacterId].Id)
+        Assert.True(snapshot.World.Objects.ContainsKey GameSnapshots.PrototypeCharacterId)
+        Assert.True(PlayerObjects.isPlayer snapshot.World.Objects[GameSnapshots.PrototypeCharacterId])
         Assert.Equal(BehaviorSources.forest, forest.Source)
         Assert.Equal(0L, forest.SourceRevision)
         Assert.Equal(0L, forest.ActivationRevision)
@@ -109,14 +131,16 @@ module PersistenceTests =
     let ``Snapshots track character revisions independently`` () =
         let prototype = ObjectDatabase.initialState.Player
         let second = { prototype with Id = "second-character"; LocationId = "village" }
+        let secondObject = toPlayerObject second
         let initial =
             { ObjectDatabase.initialState with
-                Characters = ObjectDatabase.initialState.Characters |> Map.add second.Id second }
+                Objects = ObjectDatabase.initialState.Objects |> Map.add second.Id secondObject }
         let store = InMemoryGameStore(initial, fun () -> timestamp)
         let stored = store.Read()
-        let changedSecond = { stored.State.Characters[second.Id] with Inventory = Map.ofList [ "wood", 3 ] }
+        let changedSecond =
+            PlayerObjects.withInventory stored.State.Objects[second.Id] (Map.ofList [ "wood", 3 ])
         let changedState =
-            { stored.State with Characters = Map.add second.Id changedSecond stored.State.Characters }
+            { stored.State with Objects = Map.add second.Id changedSecond stored.State.Objects }
 
         match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, changedState) with
         | Ok committed ->
@@ -163,7 +187,8 @@ module SnapshotPersistenceTests =
             Assert.Equal(snapshot.World.Revision, decoded.World.Revision)
             Assert.Equal<Set<ItemId>>(snapshot.World.ItemIds, decoded.World.ItemIds)
             Assert.Equal(snapshot.World.Objects.Count, decoded.World.Objects.Count)
-            Assert.Equal(snapshot.Characters.Count, decoded.Characters.Count)
+            Assert.Equal(snapshot.PlayerRevisions.Count, decoded.PlayerRevisions.Count)
+            Assert.Equal(snapshot.World.Objects.Count, decoded.World.Objects.Count)
             Assert.Equal<GameValue>(
                 snapshot.World.Objects["forest"].Properties["trailToken"],
                 decoded.World.Objects["forest"].Properties["trailToken"])
@@ -190,14 +215,16 @@ module SnapshotPersistenceTests =
             { FormatVersion = 1
               World = createSnapshot().World
               Accounts = Map.empty
-              Characters = Map.ofList [ character.Id, character ] }
+              Characters = Map.ofList [ character.Id, character ]
+              PlayerRevisions = Map.empty }
 
         match SnapshotMigrations.migrate legacy with
         | Ok migrated ->
-            Assert.Equal(2, migrated.FormatVersion)
+            Assert.Equal(3, migrated.FormatVersion)
             Assert.True(migrated.Accounts.ContainsKey GameSnapshots.PrototypeAccountId)
-            Assert.Equal(GameSnapshots.PrototypeAccountId, migrated.Characters[character.Id].AccountId)
-            Assert.True(migrated.Characters.ContainsKey GameSnapshots.PrototypeScoutCharacterId)
+            Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeCharacterId)
+            Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeScoutCharacterId)
+            Assert.Equal(GameSnapshots.PrototypeAccountId, PlayerObjects.accountId migrated.World.Objects[character.Id])
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
@@ -235,7 +262,8 @@ module SnapshotPersistenceTests =
                 | Ok(state, _) -> state
                 | Error error -> failwith error
 
-            Assert.Equal(2, reloaded.Characters[GameSnapshots.PrototypeCharacterId].Inventory["wood"])
+            let player = reloaded.Objects[GameSnapshots.PrototypeCharacterId]
+            Assert.Equal(2, (PlayerObjects.inventory player)["wood"])
         finally
             if File.Exists path then
                 File.Delete path
@@ -263,13 +291,13 @@ module KernelTests =
         let second = { prototype with Id = "second-character"; LocationId = "village" }
         let state =
             { ObjectDatabase.initialState with
-                Characters = ObjectDatabase.initialState.Characters |> Map.add second.Id second }
+                Objects = ObjectDatabase.initialState.Objects |> Map.add second.Id (toPlayerObject second) }
 
         let result = Kernel.submitCommandForCharacter second.Id De "gehe nach süden" state
 
-        Assert.Equal("forest", result.State.Characters[second.Id].LocationId)
-        Assert.Equal("forest", result.State.Characters[GameSnapshots.PrototypeCharacterId].LocationId)
-        Assert.Empty(result.State.Characters[GameSnapshots.PrototypeCharacterId].Inventory)
+        Assert.Equal("forest", PlayerObjects.locationId result.State.Objects[second.Id])
+        Assert.Equal("forest", result.State.Player.LocationId)
+        Assert.Empty(result.State.Player.Inventory)
 
     [<Fact>]
     let ``Unknown character commands fail without changing state`` () =
@@ -318,7 +346,7 @@ module KernelTests =
         let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules |> List.map _.moduleId)
 
         let forest = modules |> List.find (fun behaviorModule -> behaviorModule.moduleId = "forest-behaviors")
@@ -330,9 +358,9 @@ module KernelTests =
         let modules, objects = Kernel.behaviorImpact "core-behaviors" ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
-        Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], objects)
+        Assert.Equal<string list>([ "fallen-log"; "forest"; "prototype-player"; "prototype-scout"; "village" ], objects)
 
     [<Fact>]
     let ``Updating a base module recompiles dependents in dependency order`` () =
@@ -358,9 +386,9 @@ module KernelTests =
         match result with
         | Ok(Some update) ->
             Assert.Equal<string list>(
-                [ "core-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "thing-behaviors"; "village-behaviors" ],
+                [ "core-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
-            Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], update.AffectedObjects)
+            Assert.Equal<string list>([ "fallen-log"; "forest"; "prototype-player"; "prototype-scout"; "village" ], update.AffectedObjects)
             Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
             Assert.Contains(editedCore, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
             Assert.Contains(BehaviorSources.location, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
@@ -465,7 +493,7 @@ module KernelTests =
             | Error diagnostic -> failwith diagnostic.message
 
         let forestCommands = classes["ForestBehavior"].Commands |> List.map _.MethodName
-        Assert.Equal<string list>([ "inventory"; "look"; "move"; "gather"; "renameTrail" ], forestCommands)
+        Assert.Equal<string list>([ "look"; "move"; "gather"; "renameTrail" ], forestCommands)
 
     [<Fact>]
     let ``Updating class command metadata changes localized dispatch`` () =
@@ -530,7 +558,7 @@ module KernelTests =
     let ``Forest contents are derived from permanent object locations`` () =
         let contents = Kernel.contentsOf ObjectDatabase.initialState "forest"
 
-        Assert.Equal<string list>([ "fallen-log" ], contents |> List.map _.Id)
+        Assert.Equal<string list>([ "fallen-log"; "prototype-player" ], contents |> List.map _.Id)
 
     [<Theory>]
     [<InlineData("examine log", "en")>]
@@ -558,17 +586,20 @@ module KernelTests =
     let ``Look lists visible contents with localized object names`` () =
         let english = Kernel.submitCommand En "look" ObjectDatabase.initialState
         let englishLines = english.Messages |> List.map (ResponseFormatting.localizeMessage english.State En)
-        Assert.Contains("You see a fallen log.", englishLines)
+        Assert.Contains(englishLines, fun line -> line.Contains("fallen log"))
+        Assert.Contains(englishLines, fun line -> line.Contains("prototype-player"))
 
         let german = Kernel.submitCommand De "schau" ObjectDatabase.initialState
         let germanLines = german.Messages |> List.map (ResponseFormatting.localizeMessage german.State De)
-        Assert.Contains("Du siehst einen umgestürzten Baumstamm.", germanLines)
+        Assert.Contains(germanLines, fun line -> line.Contains("umgestürzten Baumstamm"))
 
     [<Fact>]
     let ``Objects outside the current location are not visible or matchable`` () =
         let villageState = (Kernel.submitCommand En "go north" ObjectDatabase.initialState).State
 
-        Assert.Empty(Kernel.contentsOf villageState "village")
+        let villageContents = Kernel.contentsOf villageState "village" |> List.map _.Id
+        Assert.Contains("prototype-player", villageContents)
+        Assert.DoesNotContain("fallen-log", villageContents)
         Assert.True(CommandMatching.tryMatch En "examine log" villageState |> Option.isNone)
 
         let result = Kernel.submitCommand En "examine log" villageState
@@ -788,12 +819,13 @@ module KernelTests =
 
 module ScriptingTests =
     let private forest = ObjectDatabase.initialState.Objects["forest"]
+    let private testActor = ObjectDatabase.initialState.Objects[GameSnapshots.PrototypeCharacterId]
 
     [<Fact>]
     let ``Script must return effects array`` () =
         let source = "function execute(context) { return {}; }"
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Script must return an object with an effects array.", error)
@@ -803,7 +835,7 @@ module ScriptingTests =
     let ``Script effects must be an array`` () =
         let source = "function execute(context) { return { effects: {} }; }"
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Script effects must be an array.", error)
@@ -813,7 +845,7 @@ module ScriptingTests =
     let ``Unknown script effect types are rejected`` () =
         let source = "function execute(context) { return { effects: [{ type: 'teleport' }] }; }"
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Unknown script effect type: teleport", error)
@@ -823,7 +855,7 @@ module ScriptingTests =
     let ``Malformed addInventory effects are rejected`` () =
         let source = "function execute(context) { return { effects: [{ type: 'addInventory', itemId: 'wood', amount: 0 }] }; }"
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("addInventory effects require itemId and an amount from 1 to 100.", error)
@@ -833,7 +865,7 @@ module ScriptingTests =
     let ``Runtime script exceptions are returned as errors`` () =
         let source = "function execute(context) { throw new Error('boom'); }"
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Script execution failed.", error)
@@ -844,7 +876,7 @@ module ScriptingTests =
         let limits = { Scripting.defaultLimits with Timeout = System.TimeSpan.FromMilliseconds(25.0) }
         let source = "function execute(context) { while (true) {} }"
 
-        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty source
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Script execution timed out.", error)
@@ -860,7 +892,7 @@ module ScriptingTests =
         let source =
             "function execute(context) { const values = []; while (true) { values.push('x'.repeat(1000)); } }"
 
-        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty source
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Script exceeded its memory limit.", error)
@@ -873,7 +905,7 @@ module ScriptingTests =
             |> String.concat ","
 
         let source = $"function execute(context) {{ return {{ effects: [{effects}] }}; }}"
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Scripts may return at most 32 effects.", error)
@@ -886,7 +918,7 @@ module ScriptingTests =
             |> String.concat ","
 
         let source = $"function execute(context) {{ return {{ effects: [{effects}] }}; }}"
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Scripts may return at most 16 message effects.", error)
@@ -896,7 +928,7 @@ module ScriptingTests =
     let ``Message argument values have a bounded size`` () =
         let oversized = String.replicate (Scripting.defaultLimits.MaxMessageArgumentCharacters + 1) "x"
         let source = $"function execute(context) {{ return {{ effects: [{{ type: 'message', key: 'test', args: {{ value: '{oversized}' }} }}] }}; }}"
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Message argument values may contain at most 1024 characters.", error)
@@ -910,7 +942,7 @@ module ScriptingTests =
             |> String.concat ","
 
         let source = $"function execute(context) {{ return {{ effects: [{{ type: 'message', key: 'test', args: {{ {args} }} }}] }}; }}"
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Error error -> Assert.Equal("Message effects may contain at most 16 arguments.", error)
@@ -919,7 +951,7 @@ module ScriptingTests =
     [<Fact>]
     let ``Script source length is bounded before execution`` () =
         let limits = { Scripting.defaultLimits with MaxSourceCharacters = 10 }
-        let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty "function execute() {}"
+        let result = Scripting.executeVerbWithLimits limits forest Map.empty testActor "function execute() {}"
 
         match result with
         | Error error -> Assert.Equal("Script source may contain at most 10 characters.", error)
@@ -940,7 +972,7 @@ module ScriptingTests =
   };
 }"""
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Ok [ EmitMessage message ] ->
@@ -981,7 +1013,7 @@ module ScriptingTests =
   return { effects: [{ type: "message", key: "typed.ok" }] };
 }"""
 
-        match Scripting.executeVerb typedForest Map.empty Map.empty source with
+        match Scripting.executeVerb typedForest Map.empty testActor source with
         | Ok [ EmitMessage message ] -> Assert.Equal("typed.ok", message.Key)
         | Ok _ -> Assert.True(false, "Expected one message effect.")
         | Error error -> Assert.True(false, error)
@@ -997,7 +1029,7 @@ module ScriptingTests =
   };
 }"""
 
-        let result = Scripting.executeVerb forest Map.empty Map.empty source
+        let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
         | Ok [ MovePlayer destinationId ] -> Assert.Equal("village", destinationId)
@@ -1097,7 +1129,7 @@ module BehaviorClassRuntimeTests =
         let compiled = compileBehavior forestSource |> Result.defaultWith failwith
 
         let result =
-            Scripting.executeBehaviorMethod "ForestBehavior" "look" forest Map.empty Map.empty compiled
+            Scripting.executeBehaviorMethod "ForestBehavior" "look" forest Map.empty testActor compiled
 
         match result with
         | Ok [ EmitMessage description; EmitMessage atmosphere ] ->
@@ -1112,10 +1144,10 @@ module BehaviorClassRuntimeTests =
         let args = Map.ofList [ "item", "wood" ]
 
         let fromCompiler =
-            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty compiled
+            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args testActor compiled
 
         let checkedIn =
-            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty forestCompiled
+            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args testActor forestCompiled
 
         Assert.Equal<Result<ScriptEffect list, string>>(fromCompiler, checkedIn)
 
@@ -1145,10 +1177,10 @@ module BehaviorClassRuntimeTests =
               Properties = Map.ofList [ "label", StringValue "test token" ] }
 
         let fromCompiler =
-            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty Map.empty compiled
+            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty testActor compiled
 
         let fromCheckedIn =
-            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty Map.empty checkedIn
+            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty testActor checkedIn
 
         Assert.Equal<Result<ScriptEffect list, string>>(fromCompiler, fromCheckedIn)
 
@@ -1157,7 +1189,7 @@ module BehaviorClassRuntimeTests =
     [<InlineData("ForestBehavior", "look()")>]
     let ``Behavior invocation rejects invalid identifiers`` className methodName =
         let result =
-            Scripting.executeBehaviorMethod className methodName forest Map.empty Map.empty ""
+            Scripting.executeBehaviorMethod className methodName forest Map.empty testActor ""
 
         match result with
         | Error error -> Assert.Equal("Behavior class and method names must be valid JavaScript identifiers.", error)

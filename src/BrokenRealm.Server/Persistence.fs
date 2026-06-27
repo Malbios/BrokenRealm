@@ -32,7 +32,8 @@ type GameSnapshot =
     { FormatVersion: int
       World: WorldSnapshot
       Accounts: Map<AccountId, AccountSnapshot>
-      Characters: Map<CharacterId, CharacterSnapshot> }
+      Characters: Map<CharacterId, CharacterSnapshot>
+      PlayerRevisions: Map<CharacterId, int64> }
 
 type StoredGameState =
     { State: GameState
@@ -47,7 +48,7 @@ type CommitConflict =
 
 module GameSnapshots =
     [<Literal>]
-    let CurrentFormatVersion = 2
+    let CurrentFormatVersion = 3
 
     [<Literal>]
     let PrototypeAccountId = "prototype-account"
@@ -67,6 +68,19 @@ module GameSnapshots =
           ActivationRevision = activationRevision
           ActivatedAt = now }
 
+    let private nonPlayerObjects (objects: Map<ObjectId, GameObject>) =
+        objects |> Map.filter (fun _ gameObject -> not (PlayerObjects.isPlayer gameObject))
+
+    let private playerIds (state: GameState) =
+        state.Objects
+        |> Map.toList
+        |> List.choose (fun (id, gameObject) -> if PlayerObjects.isPlayer gameObject then Some id else None)
+
+    let private playerRevisionSeed (state: GameState) =
+        playerIds state
+        |> List.map (fun id -> id, 0L)
+        |> Map.ofList
+
     let create now (state: GameState) =
         let behaviors =
             state.BehaviorModules
@@ -81,14 +95,8 @@ module GameSnapshots =
           Accounts =
             state.Accounts
             |> Map.map (fun _ account -> { Id = account.Id; DisplayName = account.DisplayName })
-          Characters =
-            state.Characters
-            |> Map.map (fun id character ->
-                { Id = id
-                  AccountId = character.AccountId
-                  Revision = 0L
-                  LocationId = character.LocationId
-                  Inventory = character.Inventory }) }
+          Characters = Map.empty
+          PlayerRevisions = playerRevisionSeed state }
 
     let private updateBehaviors now previous (modules: Map<string, BehaviorModule>) =
         modules
@@ -103,6 +111,11 @@ module GameSnapshots =
                 captureBehavior now (stored.SourceRevision + 1L) (stored.ActivationRevision + 1L) behaviorModule
             | None -> captureBehavior now 0L 0L behaviorModule)
 
+    let private playerChanged (previousPlayer: GameObject) (currentPlayer: GameObject) =
+        previousPlayer.LocationId <> currentPlayer.LocationId
+        || PlayerObjects.inventory previousPlayer <> PlayerObjects.inventory currentPlayer
+        || PlayerObjects.accountId previousPlayer <> PlayerObjects.accountId currentPlayer
+
     let update now previous (state: GameState) =
         let behaviorModules = updateBehaviors now previous.World.BehaviorModules state.BehaviorModules
         let accounts =
@@ -114,27 +127,26 @@ module GameSnapshots =
 
         let worldChanged =
             previous.World.ItemIds <> state.ItemIds
-            || previous.World.Objects <> state.Objects
+            || nonPlayerObjects previous.World.Objects <> nonPlayerObjects state.Objects
             || previous.World.BehaviorModules <> behaviorModules
             || previous.Accounts <> accounts
-        let characters =
-            state.Characters
-            |> Map.map (fun id character ->
-                match previous.Characters |> Map.tryFind id with
-                | Some stored ->
-                    { stored with
-                        AccountId = character.AccountId
-                        Revision =
-                            stored.Revision
-                            + (if stored.LocationId <> character.LocationId || stored.Inventory <> character.Inventory then 1L else 0L)
-                        LocationId = character.LocationId
-                        Inventory = character.Inventory }
-                | None ->
-                    { Id = id
-                      AccountId = character.AccountId
-                      Revision = 0L
-                      LocationId = character.LocationId
-                      Inventory = character.Inventory })
+
+        let playerRevisions =
+            playerIds state
+            |> List.map (fun playerId ->
+                let currentPlayer = state.Objects[playerId]
+
+                match previous.World.Objects |> Map.tryFind playerId with
+                | Some previousPlayer ->
+                    let revision =
+                        match previous.PlayerRevisions |> Map.tryFind playerId with
+                        | Some storedRevision ->
+                            storedRevision + (if playerChanged previousPlayer currentPlayer then 1L else 0L)
+                        | None -> 0L
+
+                    playerId, revision
+                | None -> playerId, 0L)
+            |> Map.ofList
 
         { FormatVersion = CurrentFormatVersion
           World =
@@ -143,7 +155,8 @@ module GameSnapshots =
               BehaviorModules = behaviorModules
               Objects = state.Objects }
           Accounts = accounts
-          Characters = characters }
+          Characters = Map.empty
+          PlayerRevisions = playerRevisions }
 
 type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset, ?seedSnapshot: GameSnapshot) =
     let clock = defaultArg clock (fun () -> DateTimeOffset.UtcNow)
@@ -158,13 +171,13 @@ type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset, 
         lock gate (fun () ->
             { State = runtimeState
               WorldRevision = snapshot.World.Revision
-              CharacterRevisions = snapshot.Characters |> Map.map (fun _ character -> character.Revision) })
+              CharacterRevisions = snapshot.PlayerRevisions })
 
     member _.GetSnapshot() = lock gate (fun () -> snapshot)
 
     member _.TryCommit(expectedWorldRevision, expectedCharacterRevisions, state: GameState) =
         lock gate (fun () ->
-            let actualCharacterRevisions = snapshot.Characters |> Map.map (fun _ character -> character.Revision)
+            let actualCharacterRevisions = snapshot.PlayerRevisions
             if expectedWorldRevision <> snapshot.World.Revision
                || expectedCharacterRevisions <> actualCharacterRevisions then
                 Error
@@ -178,4 +191,4 @@ type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset, 
                 Ok
                     { State = runtimeState
                       WorldRevision = snapshot.World.Revision
-                      CharacterRevisions = snapshot.Characters |> Map.map (fun _ character -> character.Revision) })
+                      CharacterRevisions = snapshot.PlayerRevisions })

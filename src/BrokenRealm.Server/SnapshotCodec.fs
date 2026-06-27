@@ -677,6 +677,27 @@ module SnapshotCodec =
                 (Ok Map.empty)
         | _ -> Error "Expected a JSON object."
 
+    let private encodeRevisionMap values =
+        let object = JsonObject()
+        values
+        |> Map.iter (fun (key: string) (revision: int64) ->
+            object[key] <- JsonValue.Create(revision))
+        object
+
+    let private decodeRevisionMap node =
+        match node with
+        | JsonObject entries ->
+            entries
+            |> Seq.fold
+                (fun result (KeyValue(key, value)) ->
+                    result
+                    |> Result.bind (fun collected ->
+                        match value with
+                        | JsonNumber revision -> Ok(Map.add key (int64 revision) collected)
+                        | _ -> Error $"Player revision '{key}' must be a number."))
+                (Ok Map.empty)
+        | _ -> Error "Player revisions must be a JSON object."
+
     let encode (snapshot: GameSnapshot) =
         let root = JsonObject()
         let world = JsonObject()
@@ -693,7 +714,12 @@ module SnapshotCodec =
         root["formatVersion"] <- JsonValue.Create(snapshot.FormatVersion)
         root["world"] <- world
         root["accounts"] <- encodeAccountMap snapshot.Accounts
-        root["characters"] <- encodeCharacterMap snapshot.Characters
+
+        if snapshot.FormatVersion >= 3 then
+            root["playerRevisions"] <- encodeRevisionMap snapshot.PlayerRevisions
+        else
+            root["characters"] <- encodeCharacterMap snapshot.Characters
+
         root
 
     let decode (root: JsonObject) =
@@ -759,15 +785,22 @@ module SnapshotCodec =
                     | null -> Ok Map.empty
                     | _ -> Error "Snapshot accounts must be a JSON object when present."
 
-            let! characters =
-                requireProperty "characters" root
-                |> Result.bind (decodeCharacterMap requireAccountId)
+            let! characters, playerRevisions =
+                if formatVersion >= 3 then
+                    requireProperty "playerRevisions" root
+                    |> Result.bind decodeRevisionMap
+                    |> Result.map (fun revisions -> Map.empty, revisions)
+                else
+                    requireProperty "characters" root
+                    |> Result.bind (decodeCharacterMap requireAccountId)
+                    |> Result.map (fun characters -> characters, Map.empty)
 
             return
                 { FormatVersion = formatVersion
                   World = world
                   Accounts = accounts
-                  Characters = characters }
+                  Characters = characters
+                  PlayerRevisions = playerRevisions }
         }
 
     let serialize snapshot =

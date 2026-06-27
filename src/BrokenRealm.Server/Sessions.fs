@@ -8,16 +8,10 @@ module Sessions =
     let CookieName = "brokenrealm_session"
 
     let ownedCharacters (accountId: AccountId) (state: GameState) =
-        state.Characters
-        |> Map.toList
-        |> List.choose (fun (_, character) ->
-            if character.AccountId = accountId then
-                Some
-                    { id = character.Id
-                      locationId = character.LocationId }
-            else
-                None)
-        |> List.sortBy _.id
+        PlayerObjects.playersByAccount state accountId
+        |> List.map (fun player ->
+            { id = player.Id
+              locationId = PlayerObjects.locationId player })
 
     let toResponse (session: GameSession) (state: GameState) =
         { accountId = session.AccountId
@@ -25,9 +19,9 @@ module Sessions =
           characters = ownedCharacters session.AccountId state }
 
     let validateCharacterSelection accountId characterId (state: GameState) =
-        match state.Characters |> Map.tryFind characterId with
+        match PlayerObjects.tryGet state characterId with
         | None -> Error $"Unknown character id: {characterId}"
-        | Some character when character.AccountId <> accountId ->
+        | Some player when PlayerObjects.accountId player <> accountId ->
             Error $"Character {characterId} is not owned by account {accountId}."
         | Some _ -> Ok characterId
 

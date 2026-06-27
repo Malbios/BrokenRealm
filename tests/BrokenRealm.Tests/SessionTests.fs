@@ -10,26 +10,28 @@ module SessionTests =
 
         Assert.True(state.Accounts.ContainsKey GameSnapshots.PrototypeAccountId)
 
-        state.Characters
-        |> Map.iter (fun _ character ->
-            Assert.Equal(GameSnapshots.PrototypeAccountId, character.AccountId))
+        PlayerObjects.playersByAccount state GameSnapshots.PrototypeAccountId
+        |> List.iter (fun player ->
+            Assert.Equal(GameSnapshots.PrototypeAccountId, PlayerObjects.accountId player))
 
     [<Fact>]
     let ``Session selection rejects characters owned by another account`` () =
         let store = SessionStore()
         let session = store.CreateAnonymousPrototypeSession()
-        let otherAccountCharacter =
-            { ObjectDatabase.initialState.Characters[GameSnapshots.PrototypeCharacterId] with
-                Id = "other-account-character"
-                AccountId = "other-account" }
+        let otherAccountPlayer =
+            PlayerObjects.create
+                "other-account-character"
+                "other account character"
+                "object.other-account-character.name"
+                "other-account"
+                "forest"
+                Map.empty
 
         let state =
             { ObjectDatabase.initialState with
-                Characters =
-                    ObjectDatabase.initialState.Characters
-                    |> Map.add otherAccountCharacter.Id otherAccountCharacter }
+                Objects = ObjectDatabase.initialState.Objects |> Map.add otherAccountPlayer.Id otherAccountPlayer }
 
-        match store.SelectCharacter(session.Id, otherAccountCharacter.Id, state) with
+        match store.SelectCharacter(session.Id, otherAccountPlayer.Id, state) with
         | Error error -> Assert.Contains("not owned by account", error)
         | Ok _ -> Assert.True(false, "Expected foreign character selection to be rejected.")
 
@@ -43,3 +45,11 @@ module SessionTests =
         with
         | Ok updated -> Assert.Equal(GameSnapshots.PrototypeScoutCharacterId, updated.SelectedCharacterId)
         | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Inventory matches on the player object before the room`` () =
+        let state = ObjectDatabase.initialState
+
+        match CommandMatching.tryMatchForCharacter GameSnapshots.PrototypeCharacterId En "inventory" state with
+        | Some matched -> Assert.Equal(GameSnapshots.PrototypeCharacterId, matched.ObjectId)
+        | None -> Assert.True(false, "Expected inventory to match the player object.")

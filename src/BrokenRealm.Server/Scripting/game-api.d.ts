@@ -8,23 +8,23 @@ declare type ScriptEffect =
 declare type ObjectId = string;
 declare type GameValue = null | string | number | boolean | GameValue[] | { [key: string]: GameValue };
 
+declare interface VerbObjectSummary {
+  id: string;
+  name: string;
+  descriptionKey: string;
+  tags: string[];
+}
+
 declare interface VerbContext {
   args: Record<string, string>;
-  this: {
-    id: string;
-    name: string;
-    descriptionKey: string;
-    tags: string[];
+  this: VerbObjectSummary & {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
-    contents: {
-      id: ObjectId;
-      name: string;
-      descriptionKey: string;
-      tags: string[];
-    }[];
+    contents: VerbObjectSummary[];
   };
-  actor: {
+  actor: VerbObjectSummary & {
+    properties: Record<string, GameValue>;
+    references: Record<string, string>;
     inventory: Record<string, number>;
   };
 }
@@ -39,7 +39,9 @@ declare interface AnonymousBehaviorContext {
     storagePath: (string | number)[];
     properties: Record<string, GameValue>;
   };
-  actor: {
+  actor: VerbObjectSummary & {
+    properties: Record<string, GameValue>;
+    references: Record<string, string>;
     inventory: Record<string, number>;
   };
 }
