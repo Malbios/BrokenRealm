@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BrokenRealm</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="terminal" aria-label="BrokenRealm">
+      <div class="topbar">
+        <h1>BrokenRealm</h1>
+        <div class="toolbar">
+          <div class="tabs" role="tablist" aria-label="Mode">
+            <button id="player-tab" class="tab active" type="button">Player</button>
+            <button id="admin-tab" class="tab" type="button">Admin</button>
+          </div>
+          <label class="language">
+            <span>Language</span>
+            <select id="culture">
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="player-panel" class="panel active">
+        <div id="log" class="log" aria-live="polite"></div>
+        <form id="command-form" class="command-row">
+          <span class="prompt">&gt;</span>
+          <input id="command" name="command" autocomplete="off" autofocus>
+          <button type="submit">Send</button>
+        </form>
+      </div>
+      <div id="admin-panel" class="panel admin-panel">
+        <div class="editor-head">
+          <div>
+            <h2>forest:gather</h2>
+            <p>Editable verb source stored on the forest object.</p>
+          </div>
+          <button id="save-script" type="button">Save</button>
+        </div>
+        <div id="script-editor" class="script-editor" aria-label="Verb source editor"></div>
+        <textarea id="script-source" class="fallback-editor" spellcheck="false" hidden></textarea>
+        <div id="script-status" class="status" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

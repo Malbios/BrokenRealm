@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-label="Quiet forest">
+  <rect width="1600" height="1000" fill="#101a14"/>
+  <path d="M0 710 C250 620 420 650 610 590 C850 515 1090 545 1600 455 L1600 1000 L0 1000 Z" fill="#17251b"/>
+  <path d="M0 800 C260 735 500 765 760 710 C1040 650 1260 665 1600 610 L1600 1000 L0 1000 Z" fill="#0e1812"/>
+  <g fill="#203725">
+    <path d="M90 760 L170 530 L250 760 Z"/>
+    <path d="M230 720 L325 455 L420 720 Z"/>
+    <path d="M530 760 L620 500 L710 760 Z"/>
+    <path d="M840 725 L940 430 L1040 725 Z"/>
+    <path d="M1130 750 L1215 505 L1300 750 Z"/>
+    <path d="M1350 720 L1455 425 L1560 720 Z"/>
+  </g>
+  <g fill="#152419">
+    <path d="M20 845 L130 575 L240 845 Z"/>
+    <path d="M380 850 L505 530 L630 850 Z"/>
+    <path d="M690 815 L800 540 L910 815 Z"/>
+    <path d="M1010 850 L1140 520 L1270 850 Z"/>
+    <path d="M1260 835 L1385 520 L1510 835 Z"/>
+  </g>
+  <g stroke="#263d2b" stroke-width="18" stroke-linecap="round">
+    <path d="M315 1000 L315 665"/>
+    <path d="M936 1000 L936 620"/>
+    <path d="M1216 1000 L1216 700"/>
+  </g>
+</svg>

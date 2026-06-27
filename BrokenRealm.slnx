@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BrokenRealm.Server/BrokenRealm.Server.fsproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BrokenRealm.Tests/BrokenRealm.Tests.fsproj" />
+  </Folder>
+</Solution>

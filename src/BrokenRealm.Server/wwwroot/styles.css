@@ -1,0 +1,269 @@
+:root {
+  color-scheme: dark;
+  font-family: Consolas, "Cascadia Mono", "Segoe UI Mono", monospace;
+  background: #101312;
+  color: #e5efe8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(22, 36, 29, 0.88), rgba(9, 12, 11, 0.98)),
+    url("/forest.svg");
+  background-size: cover;
+  background-position: center;
+}
+
+.shell {
+  display: grid;
+  min-height: 100vh;
+  padding: 32px;
+  place-items: center;
+}
+
+.terminal {
+  width: min(960px, 100%);
+  min-height: min(720px, calc(100vh - 64px));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border: 1px solid rgba(177, 206, 183, 0.25);
+  border-radius: 8px;
+  background: rgba(9, 14, 12, 0.9);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(177, 206, 183, 0.16);
+  background: rgba(21, 31, 26, 0.88);
+}
+
+h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.language {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #b8c7bc;
+  font-size: 14px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  min-height: 36px;
+  padding: 0 12px;
+  background: #121a16;
+}
+
+.tab.active {
+  border-color: rgba(137, 209, 143, 0.55);
+  background: #244b37;
+}
+
+select,
+input,
+textarea,
+button {
+  min-height: 40px;
+  border: 1px solid rgba(177, 206, 183, 0.25);
+  border-radius: 6px;
+  background: #121a16;
+  color: #eff8f1;
+  font: inherit;
+}
+
+select {
+  padding: 0 10px;
+}
+
+.panel {
+  display: none;
+  min-height: 0;
+}
+
+.panel.active {
+  display: grid;
+}
+
+#player-panel {
+  grid-template-rows: 1fr auto;
+}
+
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.line {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.input-line {
+  color: #9cc7ff;
+}
+
+.error-line {
+  color: #ffb4a8;
+}
+
+.status {
+  white-space: pre-wrap;
+}
+
+.admin-panel {
+  grid-template-rows: auto minmax(360px, 1fr) auto;
+  gap: 14px;
+  padding: 18px;
+}
+
+.editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.editor-head h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.editor-head p {
+  margin: 6px 0 0;
+  color: #b8c7bc;
+  font-size: 14px;
+}
+
+.script-editor,
+.fallback-editor {
+  min-height: 360px;
+  border: 1px solid rgba(177, 206, 183, 0.18);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0b110e;
+}
+
+.fallback-editor {
+  width: 100%;
+  resize: vertical;
+  padding: 12px;
+  color: #e5efe8;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(177, 206, 183, 0.16);
+  background: rgba(11, 17, 14, 0.95);
+}
+
+.prompt {
+  color: #89d18f;
+  font-weight: 700;
+}
+
+input {
+  width: 100%;
+  padding: 0 12px;
+}
+
+button {
+  padding: 0 16px;
+  background: #244b37;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2d6046;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.diagnostics {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostics li {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 180, 168, 0.22);
+  border-radius: 6px;
+  background: rgba(80, 28, 22, 0.22);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 0;
+  }
+
+  .terminal {
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar,
+  .editor-head {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .command-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .command-row button {
+    grid-column: 2;
+  }
+}
