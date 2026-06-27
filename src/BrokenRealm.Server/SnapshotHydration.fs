@@ -143,6 +143,55 @@ module SnapshotMigrations =
         else
             snapshot
 
+    let rec private valueBehaviorModuleIds value =
+        match value with
+        | AnonymousValue anonymous ->
+            anonymous.BehaviorModuleId
+            :: (anonymous.Properties |> Map.toList |> List.collect (fun (_, nested) -> valueBehaviorModuleIds nested))
+        | ListValue values -> values |> List.collect valueBehaviorModuleIds
+        | MapValue values -> values |> Map.toList |> List.collect (fun (_, nested) -> valueBehaviorModuleIds nested)
+        | _ -> []
+
+    let objectBehaviorModuleIds (gameObject: GameObject) =
+        gameObject.BehaviorModuleId
+        :: (gameObject.Properties |> Map.toList |> List.collect (fun (_, value) -> valueBehaviorModuleIds value))
+
+    let private referencedBehaviorModuleIds (objects: Map<ObjectId, GameObject>) =
+        objects
+        |> Map.toList
+        |> List.collect (fun (_, gameObject) -> objectBehaviorModuleIds gameObject)
+        |> Set.ofList
+
+    let private seedBehaviorModuleSnapshots activatedAt =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.map (fun _ behaviorModule ->
+            { Id = behaviorModule.Id
+              RegistryName = behaviorModule.RegistryName
+              Dependencies = behaviorModule.Dependencies
+              Source = behaviorModule.Source
+              SourceRevision = 0L
+              ActivationRevision = 0L
+              ActivatedAt = activatedAt })
+
+    let repairMissingBehaviorModules snapshot =
+        let referenced = referencedBehaviorModuleIds snapshot.World.Objects
+        let seed = seedBehaviorModuleSnapshots DateTimeOffset.UtcNow
+
+        let repairedModules =
+            referenced
+            |> Set.fold
+                (fun modules moduleId ->
+                    if Map.containsKey moduleId modules then
+                        modules
+                    elif Map.containsKey moduleId seed then
+                        Map.add moduleId seed[moduleId] modules
+                    else
+                        modules)
+                snapshot.World.BehaviorModules
+
+        { snapshot with
+            World = { snapshot.World with BehaviorModules = repairedModules } }
+
     let migrate snapshot =
         if snapshot.FormatVersion > GameSnapshots.CurrentFormatVersion then
             Error $"Snapshot format version {snapshot.FormatVersion} is newer than this server supports ({GameSnapshots.CurrentFormatVersion})."
@@ -167,7 +216,9 @@ module SnapshotMigrations =
                 else
                     withSeed
 
-            Ok(migrateV3 afterV2)
+            migrateV3 afterV2
+            |> repairMissingBehaviorModules
+            |> Ok
 
 module SnapshotHydration =
     let private behaviorModulesFromSnapshot (modules: Map<string, BehaviorModuleSnapshot>) =
@@ -271,11 +322,25 @@ module SnapshotHydration =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
+    let private validateObjectBehaviorModuleReferences (objects: Map<ObjectId, GameObject>) (modules: Map<string, BehaviorModuleSnapshot>) =
+        objects
+        |> Map.toList
+        |> List.collect (fun (_, gameObject) -> SnapshotMigrations.objectBehaviorModuleIds gameObject)
+        |> List.distinct
+        |> List.tryPick (fun moduleId ->
+            if Map.containsKey moduleId modules then
+                None
+            else
+                Some $"Object references behavior module '{moduleId}' that is missing from the snapshot.")
+        |> Option.map Error
+        |> Option.defaultValue (Ok())
+
     let validateSnapshot snapshot =
         [ validateObjectIds snapshot.World.Objects
           validateAccountRecords snapshot.Accounts
           validateLegacyCharacterRecords snapshot
-          validateBehaviorModuleRecords snapshot.World.BehaviorModules ]
+          validateBehaviorModuleRecords snapshot.World.BehaviorModules
+          validateObjectBehaviorModuleReferences snapshot.World.Objects snapshot.World.BehaviorModules ]
         |> List.tryPick (function
             | Error error -> Some(Error error)
             | Ok() -> None)
@@ -286,7 +351,9 @@ module SnapshotHydration =
         (inspect: string -> string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>)
         snapshot
         =
-        validateSnapshot snapshot
+        SnapshotMigrations.migrate snapshot
+        |> Result.bind (fun migrated ->
+        validateSnapshot migrated
         |> Result.bind (fun () ->
             let runtimeBehaviorModules =
                 behaviorModulesFromSnapshot snapshot.World.BehaviorModules
@@ -306,7 +373,7 @@ module SnapshotHydration =
                       Accounts = accountsFromSnapshot snapshot.Accounts }
 
                 Kernel.validateGameState state
-                |> Result.map (fun () -> state, snapshot)))
+                |> Result.map (fun () -> state, migrated))))
 
 type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -> DateTimeOffset, ?seedSnapshot: GameSnapshot) =
     let inner = InMemoryGameStore(initialState, ?clock = clock, ?seedSnapshot = seedSnapshot)

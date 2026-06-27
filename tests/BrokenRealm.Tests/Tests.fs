@@ -278,6 +278,24 @@ module SnapshotPersistenceTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Migration repairs missing seed behavior modules referenced by stored objects`` () =
+        let snapshot = createSnapshot ()
+
+        let legacySnapshot =
+            { snapshot with
+                World =
+                    { snapshot.World with
+                        BehaviorModules = snapshot.World.BehaviorModules |> Map.remove "player-behaviors" } }
+
+        match SnapshotMigrations.migrate legacySnapshot with
+        | Ok repaired ->
+            Assert.True(repaired.World.BehaviorModules.ContainsKey "player-behaviors")
+            Assert.True(
+                repaired.World.BehaviorModules["player-behaviors"].Source.Contains("PlayerBehavior"),
+                "Expected repaired snapshot to restore player-behaviors source from seed.")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``Hydration restores missing seed behavior modules required by stored objects`` () =
         let snapshot = createSnapshot ()
 

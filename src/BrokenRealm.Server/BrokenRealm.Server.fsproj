@@ -25,6 +25,7 @@
     <Compile Include="SnapshotCodec.fs" />
     <Compile Include="SnapshotBackup.fs" />
     <Compile Include="SnapshotHydration.fs" />
+    <Compile Include="WebApplicationFactoryEntry.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
