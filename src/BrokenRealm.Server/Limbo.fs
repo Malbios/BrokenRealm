@@ -56,3 +56,18 @@ module Limbo =
                             Args = Map.ofList [ "actor", characterId; "roomId", destinationId ] } ]
 
                     Ok(newState, messages, true)
+
+    let limboAllPlayers (state: GameState) =
+        state.Objects
+        |> Map.toList
+        |> List.choose (fun (_, gameObject) ->
+            if PlayerObjects.isPlayer gameObject then
+                Some gameObject.Id
+            else
+                None)
+        |> List.fold
+            (fun current characterId ->
+                match enterLimbo current characterId with
+                | Ok updated -> updated
+                | Error _ -> current)
+            state

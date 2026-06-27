@@ -61,4 +61,7 @@ Implemented:
 Not yet implemented:
 
 - session-expiry sweeps beyond explicit logout
-- startup mass-limbo after server restart (snapshots may still load characters as in-world until the next disconnect)
+
+Startup hygiene:
+
+- `GameStoreBootstrap.createGameStore` runs `Limbo.limboAllPlayers` on both fresh and hydrated snapshots before the first flush, so no player begins in-world until an active session calls `POST /game/session/enter`.

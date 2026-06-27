@@ -128,8 +128,18 @@ type MatchedBehaviorMethod =
 
 type ScriptEffect =
     | AddInventory of objectId: ObjectId option * itemId: ItemId * amount: int
+    | RemoveInventory of objectId: ObjectId option * itemId: ItemId * amount: int
     | MoveObject of objectId: ObjectId option * destinationId: ObjectId
     | TransferItem of sourceId: ObjectId option * itemId: ItemId * amount: int * destinationId: ObjectId
+    | CreateObject of
+        locationId: ObjectId *
+        nameKey: string *
+        descriptionKey: string option *
+        behaviorModuleId: string *
+        behaviorClassName: string *
+        tags: string list *
+        aliases: Map<Culture, string list> *
+        properties: Map<string, GameValue>
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
     | EmitMessage of Message

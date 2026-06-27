@@ -158,6 +158,8 @@ English:
 - `give wood to scout` / `give 2 wood to scout`
 - `say hello` / `say`
 - `emote wave` / `: wave` (type text for first-person self-view: `You {text}.`)
+- `craft stool` / `make stool` (costs 2 wood; places a wooden stool in the room)
+- `use stool` / `sit on stool`
 - `go north`
 - `walk north`
 - `examine log`
@@ -178,6 +180,8 @@ German:
 - `gib holz an scout` / `gib 2 holz an scout`
 - `sag hallo` / `sag` / `sage`
 - `emote winkst` / `* winkst` (German self-view: `Du {text}.`; room lines reuse the same fragment)
+- `fertige hocker` / `baue hocker`
+- `benutze hocker` / `setz dich auf hocker`
 - `gehe nach norden`
 - `geh nach süden`
 - `untersuche baumstamm`
@@ -235,12 +239,14 @@ The scripting boundary converts these to ordinary JavaScript values. Object refe
 
 `VerbContext.this.contents` contains neutral summaries of directly contained permanent objects. Location `look` methods use those IDs to emit neutral content-list messages; the F# response formatter resolves localized object names. Localized object aliases are used only for input matching and resolve to stable object IDs before behavior dispatch.
 
-Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `ForestBehavior implements Gatherable`; interfaces provide compile-time requirements but no runtime behavior.
+Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `ForestBehavior implements Gatherable` and `PlaceableBehavior implements Placeable`; interfaces provide compile-time requirements but no runtime behavior.
 
 Known effects:
 
 - `{ type: "addInventory", itemId: "wood", amount: number, objectId?: string }`
+- `{ type: "removeInventory", itemId: string, amount: number, objectId?: string }`
 - `{ type: "transferItem", itemId: string, amount: number, destinationId: string, sourceId?: string }`
+- `{ type: "createObject", locationId: string, nameKey: string, descriptionKey?: string, behaviorModuleId: string, behaviorClassName: string, tags: string, aliasesEn?: string, aliasesDe?: string, properties?: GameValue map }` (kernel assigns a new `obj_` id)
 - `{ type: "moveObject", destinationId: string, objectId?: string }` (legacy decode alias: `movePlayer`)
 - `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
 - `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
@@ -329,12 +335,12 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add richer world verbs and mechanics on the singleplayer path (crafting hooks, more object interactions, timed systems once limbo is in force).
-2. Add richer social verbs (`pose`, targeted speech) only when a vertical slice needs them; optional co-presence does not require whisper-first multiplayer chat.
+1. Hold a planning session for the next singleplayer empire/sandbox mechanics slice (recipes, structures, timed systems).
+2. Extend crafting/placement beyond the wooden-stool proof (`createObject` templates, recipe tables, destructible or movable furniture).
 3. Select and implement a durable database adapter only after the file-backed JSON snapshot contract has proven insufficient in development.
 
 ## Planned Later
 
 ### Offline character limbo
 
-Implemented per `docs/architecture/0008-offline-character-limbo.md`. Disconnect/logout clears live-world presence (`LocationId = None`, `lastSafeLocationId` persisted), commands return `limbo.not_in_play`, and `POST /game/session/enter` restores play with `move.arrive.room`. The browser auto-calls enter after session load when the selected character is in limbo.
+Implemented per `docs/architecture/0008-offline-character-limbo.md`. Disconnect/logout clears live-world presence (`LocationId = None`, `lastSafeLocationId` persisted), commands return `limbo.not_in_play`, and `POST /game/session/enter` restores play with `move.arrive.room`. The browser auto-calls enter after session load when the selected character is in limbo. `GameStoreBootstrap` also limbos every player on process startup before the first snapshot flush.

@@ -353,10 +353,11 @@ module GameStoreBootstrap =
         let store =
             if File.Exists snapshotPath then
                 match tryLoad contentRoot snapshotPath with
-                | Ok(state, snapshot) -> FileGameStore(snapshotPath, state, seedSnapshot = snapshot)
+                | Ok(state, snapshot) ->
+                    FileGameStore(snapshotPath, Limbo.limboAllPlayers state, seedSnapshot = snapshot)
                 | Error error -> failwith $"Failed to hydrate game snapshot from '{snapshotPath}': {error}"
             else
-                FileGameStore(snapshotPath, ObjectDatabase.initialState)
+                FileGameStore(snapshotPath, Limbo.limboAllPlayers ObjectDatabase.initialState)
 
         store.Flush()
         store

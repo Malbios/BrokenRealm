@@ -1,6 +1,8 @@
 declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number; objectId?: string }
+  | { type: "removeInventory"; itemId: string; amount: number; objectId?: string }
   | { type: "transferItem"; itemId: string; amount: number; destinationId: string; sourceId?: string }
+  | { type: "createObject"; locationId: string; nameKey: string; descriptionKey?: string; behaviorModuleId: string; behaviorClassName: string; tags: string; aliasesEn?: string; aliasesDe?: string; properties?: Record<string, GameValue> }
   | { type: "moveObject"; destinationId: string; objectId?: string }
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
@@ -56,6 +58,10 @@ declare interface AnonymousBehaviorContext {
 
 declare interface Gatherable {
   gather(context: VerbContext): VerbResult;
+}
+
+declare interface Placeable {
+  use(context: VerbContext): VerbResult;
 }
 
 declare function execute(context: VerbContext): VerbResult;

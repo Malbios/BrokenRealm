@@ -155,6 +155,51 @@ module Scripting =
             match readString "itemId" effect, readInt "amount" effect with
             | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(AddInventory(objectId, itemId, amount))
             | _ -> Error "addInventory effects require itemId and an amount from 1 to 100."
+        | Some "removeInventory" ->
+            let objectId = readString "objectId" effect
+
+            match readString "itemId" effect, readInt "amount" effect with
+            | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(RemoveInventory(objectId, itemId, amount))
+            | _ -> Error "removeInventory effects require itemId and an amount from 1 to 100."
+        | Some "createObject" ->
+            match
+                readString "locationId" effect,
+                readString "nameKey" effect,
+                readString "behaviorModuleId" effect,
+                readString "behaviorClassName" effect,
+                readString "tags" effect
+            with
+            | Some locationId, Some nameKey, Some behaviorModuleId, Some behaviorClassName, Some tags ->
+                let descriptionKey = readString "descriptionKey" effect
+                let aliasesEn = readString "aliasesEn" effect |> Option.defaultValue ""
+                let aliasesDe = readString "aliasesDe" effect |> Option.defaultValue ""
+
+                let properties =
+                    match effect.TryGetProperty("properties") with
+                    | true, value when value.ValueKind = JsonValueKind.Object ->
+                        value.EnumerateObject()
+                        |> Seq.fold
+                            (fun result property ->
+                                result
+                                |> Result.bind (fun values ->
+                                    decodeGameValue property.Value
+                                    |> Result.map (fun decoded -> Map.add property.Name decoded values)))
+                            (Ok Map.empty)
+                    | _ -> Ok Map.empty
+
+                properties
+                |> Result.map (fun decodedProperties ->
+                    CreateObject(
+                        locationId,
+                        nameKey,
+                        descriptionKey,
+                        behaviorModuleId,
+                        behaviorClassName,
+                        WorldObjects.parseTags tags,
+                        WorldObjects.parseAliases aliasesEn aliasesDe,
+                        decodedProperties))
+            | _ ->
+                Error "createObject effects require locationId, nameKey, behaviorModuleId, behaviorClassName, and tags."
         | Some "movePlayer" ->
             match readString "destinationId" effect with
             | Some destinationId -> Ok(MoveObject(None, destinationId))

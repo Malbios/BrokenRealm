@@ -45,6 +45,10 @@ module CommandMatching =
                             |> Option.defaultValue []
                             |> List.map (fun alias -> normalize alias, player.Id)))
                     |> Map.ofList
+                | "recipe" ->
+                    match culture with
+                    | De -> Map.ofList [ "hocker", "stool"; "holzhocker", "stool" ]
+                    | _ -> Map.ofList [ "stool", "stool"; "wooden stool", "stool" ]
                 | _ -> Map.empty
 
             aliases |> Map.tryFind (normalize value)

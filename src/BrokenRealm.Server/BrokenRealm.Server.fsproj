@@ -12,6 +12,7 @@
     <Compile Include="Localization.fs" />
     <Compile Include="Auth.fs" />
     <Compile Include="BehaviorSources.fs" />
+    <Compile Include="WorldObjects.fs" />
     <Compile Include="Scripting.fs" />
     <Compile Include="ObjectDatabase.fs" />
     <Compile Include="CommandMatching.fs" />

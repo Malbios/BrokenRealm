@@ -55,6 +55,44 @@ module Kernel =
             match resolvePlayerTarget state actingCharacterId objectId with
             | Error error -> Error error
             | Ok _ -> Ok()
+        | RemoveInventory(objectId, itemId, amount) when not (state.ItemIds.Contains itemId) ->
+            Error("Unknown item id: " + itemId)
+        | RemoveInventory(objectId, _, amount) when amount <= 0 || amount > 100 ->
+            Error "removeInventory effects require an amount from 1 to 100."
+        | RemoveInventory(objectId, itemId, amount) ->
+            match resolvePlayerTarget state actingCharacterId objectId with
+            | Error error -> Error error
+            | Ok playerId ->
+                match CarriedItems.inventoryMap state playerId |> Map.tryFind itemId with
+                | Some available when available >= amount -> Ok()
+                | Some available -> Error $"You are only carrying {available} {itemId}."
+                | None -> Error $"You are not carrying any {itemId}."
+        | CreateObject(locationId, nameKey, descriptionKey, behaviorModuleId, behaviorClassName, tags, _, properties) ->
+            if System.String.IsNullOrWhiteSpace nameKey then
+                Error "createObject effects require a nameKey."
+            elif List.isEmpty tags then
+                Error "createObject effects require at least one tag."
+            else
+                match WorldObjects.isValidPlacementLocation state locationId with
+                | Error error -> Error error
+                | Ok() ->
+                    match state.BehaviorModules |> Map.tryFind behaviorModuleId with
+                    | None -> Error $"Unknown behavior module id: {behaviorModuleId}"
+                    | Some behaviorModule when not (behaviorModule.Classes.ContainsKey behaviorClassName) ->
+                        Error $"Unknown behavior class name: {behaviorClassName}"
+                    | Some _ ->
+                        match descriptionKey with
+                        | Some key when System.String.IsNullOrWhiteSpace key ->
+                            Error "createObject descriptionKey must not be empty."
+                        | _ ->
+                            properties
+                            |> Map.toList
+                            |> List.tryPick (fun (name, value) ->
+                                match validateValueReferences state name value with
+                                | Error error -> Some error
+                                | Ok() -> None)
+                            |> Option.map Error
+                            |> Option.defaultValue (Ok())
         | MoveObject(objectId, destinationId) when not (state.Objects.ContainsKey destinationId) ->
             Error("Unknown destination object id: " + destinationId)
         | MoveObject(objectId, _) ->
@@ -255,6 +293,26 @@ module Kernel =
                 | Error error -> Error error
                 | Ok playerId ->
                     Ok(CarriedItems.addInventory state playerId itemId amount, messages, remainingInvocations)
+            | RemoveInventory(objectId, itemId, amount) ->
+                match resolvePlayerTarget state characterId objectId with
+                | Error error -> Error error
+                | Ok playerId ->
+                    CarriedItems.removeQuantity state playerId itemId amount
+                    |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
+            | CreateObject(locationId, nameKey, descriptionKey, behaviorModuleId, behaviorClassName, tags, aliases, properties) ->
+                let _, updatedState =
+                    WorldObjects.createPermanent
+                        state
+                        locationId
+                        nameKey
+                        descriptionKey
+                        behaviorModuleId
+                        behaviorClassName
+                        tags
+                        aliases
+                        properties
+
+                Ok(updatedState, messages, remainingInvocations)
             | MoveObject(objectId, destinationId) ->
                 match resolvePlayerTarget state characterId objectId with
                 | Error error -> Error error

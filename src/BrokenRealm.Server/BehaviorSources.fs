@@ -80,6 +80,15 @@ const coreBehaviorClasses = { GameBehavior };"""
         { culture: "de", pattern: "emote" },
         { culture: "de", pattern: "* {text}" }
       ]
+    },
+    {
+      methodName: "craft",
+      patterns: [
+        { culture: "en", pattern: "craft {recipe}" },
+        { culture: "en", pattern: "make {recipe}" },
+        { culture: "de", pattern: "fertige {recipe}" },
+        { culture: "de", pattern: "baue {recipe}" }
+      ]
     }
   ];
 
@@ -193,6 +202,35 @@ const coreBehaviorClasses = { GameBehavior };"""
       effects: [
         { type: "message", key: "emote.self", args: { text } },
         { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
+      ]
+    };
+  }
+
+  craft(context: VerbContext): VerbResult {
+    const recipe = context.args.recipe;
+    if (recipe !== "stool") {
+      return { effects: [{ type: "message", key: "craft.unknown", args: { recipe } }] };
+    }
+    const wood = context.actor.inventory.wood ?? 0;
+    if (wood < 2) {
+      return { effects: [{ type: "message", key: "craft.insufficient", args: { item: "wood", amount: "2" } }] };
+    }
+    return {
+      effects: [
+        { type: "removeInventory", itemId: "wood", amount: 2 },
+        {
+          type: "createObject",
+          locationId: context.actor.locationId,
+          nameKey: "object.wooden-stool.name",
+          descriptionKey: "object.wooden-stool.description",
+          behaviorModuleId: "thing-behaviors",
+          behaviorClassName: "PlaceableBehavior",
+          tags: "thing,stool,placeable",
+          aliasesEn: "stool,wooden stool",
+          aliasesDe: "hocker,holzhocker"
+        },
+        { type: "message", key: "craft.stool.success", args: {} },
+        { type: "message", key: "craft.stool.room", args: { actor: context.actor.id } }
       ]
     };
   }
@@ -338,7 +376,29 @@ const forestBehaviorClasses = { ForestBehavior };"""
   }
 }
 
-const thingBehaviorClasses = { ThingBehavior };"""
+class PlaceableBehavior extends ThingBehavior {
+  static override commands: CommandDefinition[] = [
+    ...super.commands,
+    {
+      methodName: "use",
+      patterns: [
+        { culture: "en", pattern: "use {object}" },
+        { culture: "en", pattern: "sit on {object}" },
+        { culture: "de", pattern: "benutze {object}" },
+        { culture: "de", pattern: "setz dich auf {object}" }
+      ]
+    }
+  ];
+
+  use(context: VerbContext): VerbResult {
+    if (context.this.tags.includes("stool")) {
+      return { effects: [{ type: "message", key: "use.stool", args: {} }] };
+    }
+    return { effects: [{ type: "message", key: "use.placeable", args: {} }] };
+  }
+}
+
+const thingBehaviorClasses = { ThingBehavior, PlaceableBehavior };"""
 
     let village =
         """class VillageBehavior extends LocationBehavior {}
@@ -405,6 +465,10 @@ const coreBehaviorClasses = { GameBehavior };"""
       { culture: "en", pattern: ": {text}" },
       { culture: "de", pattern: "emote {text}" }, { culture: "de", pattern: "emote" },
       { culture: "de", pattern: "* {text}" }
+    ] },
+    { methodName: "craft", patterns: [
+      { culture: "en", pattern: "craft {recipe}" }, { culture: "en", pattern: "make {recipe}" },
+      { culture: "de", pattern: "fertige {recipe}" }, { culture: "de", pattern: "baue {recipe}" }
     ] }
   ];
   inventory(context) {
@@ -477,6 +541,21 @@ const coreBehaviorClasses = { GameBehavior };"""
     return { effects: [
       { type: "message", key: "emote.self", args: { text } },
       { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
+    ] };
+  }
+  craft(context) {
+    const recipe = context.args.recipe;
+    if (recipe !== "stool") return { effects: [{ type: "message", key: "craft.unknown", args: { recipe } }] };
+    const wood = context.actor.inventory.wood ?? 0;
+    if (wood < 2) return { effects: [{ type: "message", key: "craft.insufficient", args: { item: "wood", amount: "2" } }] };
+    return { effects: [
+      { type: "removeInventory", itemId: "wood", amount: 2 },
+      { type: "createObject", locationId: context.actor.locationId, nameKey: "object.wooden-stool.name",
+        descriptionKey: "object.wooden-stool.description", behaviorModuleId: "thing-behaviors",
+        behaviorClassName: "PlaceableBehavior", tags: "thing,stool,placeable",
+        aliasesEn: "stool,wooden stool", aliasesDe: "hocker,holzhocker" },
+      { type: "message", key: "craft.stool.success", args: {} },
+      { type: "message", key: "craft.stool.room", args: { actor: context.actor.id } }
     ] };
   }
 }
@@ -568,7 +647,20 @@ const forestBehaviorClasses = { ForestBehavior };"""
     return { effects: [{ type: "message", key: context.this.descriptionKey, args: {} }] };
   }
 }
-const thingBehaviorClasses = { ThingBehavior };"""
+class PlaceableBehavior extends ThingBehavior {
+  static commands = [
+    ...super.commands,
+    { methodName: "use", patterns: [
+      { culture: "en", pattern: "use {object}" }, { culture: "en", pattern: "sit on {object}" },
+      { culture: "de", pattern: "benutze {object}" }, { culture: "de", pattern: "setz dich auf {object}" }
+    ] }
+  ];
+  use(context) {
+    if (context.this.tags.includes("stool")) return { effects: [{ type: "message", key: "use.stool", args: {} }] };
+    return { effects: [{ type: "message", key: "use.placeable", args: {} }] };
+  }
+}
+const thingBehaviorClasses = { ThingBehavior, PlaceableBehavior };"""
 
     let villageCompiled =
         """class VillageBehavior extends LocationBehavior {}
