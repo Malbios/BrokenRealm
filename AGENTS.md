@@ -39,14 +39,14 @@ The kernel owns:
 - sessions later
 - authentication and permissions later
 - localized command dispatch
-- TypeScript-to-JavaScript compilation for admin-authored verbs
+- TypeScript-to-JavaScript compilation for admin-authored behavior modules
 - JavaScript execution sandboxing
 - effect validation
 - effect application
 - localization of output
 - diagnostics and script execution resource limits
 
-Game logic should not become hardcoded F# command handlers. F# should dispatch to object verbs and apply validated neutral effects.
+Game logic should not become hardcoded F# command handlers. F# should dispatch to behavior methods and apply validated neutral effects.
 
 ## Planned Behavior Model Direction
 
@@ -78,7 +78,7 @@ Current server modules:
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
 - `BehaviorSources.fs`: active TypeScript behavior modules, localized command metadata, and checked-in compiled fragments.
-- `CommandMatching.fs`: localized command text to object verb match.
+- `CommandMatching.fs`: localized command text to behavior-method match.
 - `Scripting.fs`: Jint execution and script effect decoding.
 - `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
 - `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update.
@@ -100,7 +100,7 @@ Current object model:
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
 - Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`.
-- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors` plus `core-behaviors <- thing-behaviors`.
+- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`, plus `core-behaviors <- thing-behaviors` and `core-behaviors <- anonymous-behaviors`.
 - Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
 - Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
 
@@ -118,6 +118,8 @@ Current endpoints:
   - On failure, returns diagnostics and keeps the previous compiled module active.
 - `POST /admin/behaviors/{moduleId}/validate`
   - Runs the same dependency-graph compilation and validation as save without activating or returning candidate state.
+- `GET /admin/scripting/game-api.d.ts`
+  - Serves the authoritative TypeScript scripting declarations used by Monaco.
 
 ## Localization Rules
 
@@ -271,7 +273,7 @@ Do not add these yet unless explicitly requested:
 - combat
 - markets
 - crafting trees
-- admin tools beyond the current verb editor
+- admin tools beyond the current behavior editor
 
 Prefer:
 
@@ -309,4 +311,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Decide persistence boundaries before accounts: durable object/behavior state, migrations, and session storage should be designed together.
+1. Implement the persistence boundary from `docs/architecture/0004-persistence-boundaries.md` with versioned snapshot DTOs and an in-memory storage adapter; do not select a database yet.
+2. Split the singleton `PlayerState` into character-scoped durable state before adding accounts or authentication.
+3. Add expected source revisions to behavior validation and activation before supporting concurrent admin sessions.

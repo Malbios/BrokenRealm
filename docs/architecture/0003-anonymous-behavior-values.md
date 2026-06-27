@@ -32,8 +32,12 @@ The kernel validates nested permanent-object references and anonymous behavior-c
 - No separate allocation table, ID generator, persistence table, tracing garbage collector, or containment rules are required.
 - Recursive lists, maps, and anonymous values form one typed value tree and serialize with their containing permanent state.
 - Anonymous values cannot directly receive player commands. Permanent object behavior must deliberately retrieve and invoke them.
-- Future mutation effects must address a path rooted in permanent state and atomically replace the value at that path.
+- Mutation effects address a path rooted in permanent state and atomically replace the value at that path.
 - Cyclic anonymous structures are impossible in the F# value representation.
+
+## Implementation status
+
+Implemented. Permanent behavior methods can invoke a stored anonymous value through a kernel-controlled path. `replaceValue` rebuilds the containing value tree, and nested invocation remains inside the atomic effect batch with bounded depth and invocation count.
 
 ## Alternatives considered
 

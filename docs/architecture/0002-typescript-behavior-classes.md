@@ -38,16 +38,12 @@ This follows ToastStunt more directly but requires custom method resolution, con
 
 ### Standalone object-attached verbs without inheritance
 
-This is the current implementation. It is simple but duplicates behavior between objects and does not provide a natural reuse or override mechanism.
+This was the prototype implementation before this ADR was carried out. It was simple but duplicated behavior between objects and did not provide a natural reuse or override mechanism.
 
 ### TypeScript classes with emulated multiple inheritance
 
 Mixin factories can be useful locally, but making them the fundamental object model would obscure resolution and `super` behavior. Mixins remain an explicit authoring technique, not a kernel feature.
 
-## Migration
+## Migration status
 
-1. Prove a minimal three-level class chain and native `super` execution through Jint.
-2. Add behavior class records and object-to-class references without removing current verbs.
-3. Migrate command matching and execution to behavior methods behind tests.
-4. Migrate admin editing and compilation to class modules.
-5. Remove the standalone verb representation only after feature parity is demonstrated.
+Completed. The runtime now executes behavior classes through Jint, resolves native `super` across a dependency-ordered module graph, dispatches commands to behavior methods, and edits and atomically activates behavior modules. The standalone object-attached verb representation has been removed.

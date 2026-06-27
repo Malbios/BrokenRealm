@@ -1,2 +1,6 @@
-- combat with lots of combatants is abstracted into avatar vs. avatar
-- - types and power of attacks depend on the combatants army size and composition
+# Future product notes
+
+These are uncommitted product ideas, not current behavior or accepted architecture:
+
+- Combat with many combatants could be presented as avatar-versus-avatar.
+  Attack types and power could depend on each combatant's army size and composition.
