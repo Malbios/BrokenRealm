@@ -92,7 +92,7 @@ module Localizer =
         | En, "say.empty" -> "Say what?"
         | De, "say.empty" -> "Was möchtest du sagen?"
         | En, "emote.self" -> "{actor} {text}."
-        | De, "emote.self" -> "Du {text}."
+        | De, "emote.self" -> "{actor} {text}."
         | En, "emote.empty" -> "Emote what?"
         | De, "emote.empty" -> "Was möchtest du ausdrücken?"
         | En, "command.unknown" -> "I do not understand that command."
@@ -105,6 +105,20 @@ module Localizer =
         state.Objects
         |> Map.tryFind objectId
         |> Option.map (fun object -> template culture object.NameKey)
+        |> Option.defaultValue objectId
+
+    let emoteActorName (state: GameState) culture objectId =
+        state.Objects
+        |> Map.tryFind objectId
+        |> Option.map (fun gameObject ->
+            match culture, gameObject.NameKey with
+            | De, "object.prototype-player.name" -> "Ein Prototyp-Spieler"
+            | De, "object.prototype-scout.name" -> "Ein Prototyp-Späher"
+            | De, "object.traveler.name" -> "Ein Reisender"
+            | En, "object.prototype-player.name" -> "A prototype player"
+            | En, "object.prototype-scout.name" -> "A prototype scout"
+            | En, "object.traveler.name" -> "A traveler"
+            | _, nameKey -> template culture nameKey)
         |> Option.defaultValue objectId
 
     let text culture (message: Message) =
@@ -135,7 +149,7 @@ module ResponseFormatting =
                 | "direction" -> Localizer.directionName culture value
                 | "objects" -> formatObjects state culture value
                 | "player" -> Localizer.objectName state culture value
-                | "actor" -> Localizer.objectName state culture value
+                | "actor" -> Localizer.emoteActorName state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }
