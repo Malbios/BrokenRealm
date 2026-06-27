@@ -587,11 +587,12 @@ module KernelTests =
         let english = Kernel.submitCommand En "look" ObjectDatabase.initialState
         let englishLines = english.Messages |> List.map (ResponseFormatting.localizeMessage english.State En)
         Assert.Contains(englishLines, fun line -> line.Contains("fallen log"))
-        Assert.Contains(englishLines, fun line -> line.Contains("prototype-player"))
+        Assert.Contains(englishLines, fun line -> line.Contains("prototype player"))
 
         let german = Kernel.submitCommand De "schau" ObjectDatabase.initialState
         let germanLines = german.Messages |> List.map (ResponseFormatting.localizeMessage german.State De)
         Assert.Contains(germanLines, fun line -> line.Contains("umgestürzten Baumstamm"))
+        Assert.Contains(germanLines, fun line -> line.Contains("Prototyp-Spieler"))
 
     [<Fact>]
     let ``Objects outside the current location are not visible or matchable`` () =

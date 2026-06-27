@@ -128,6 +128,7 @@ const adminPanel = document.querySelector<HTMLDivElement>("#admin-panel");
 const editorHost = document.querySelector<HTMLDivElement>("#script-editor");
 const scriptSource = document.querySelector<HTMLTextAreaElement>("#script-source");
 const checkScript = document.querySelector<HTMLButtonElement>("#check-script");
+const reloadScript = document.querySelector<HTMLButtonElement>("#reload-script");
 const saveScript = document.querySelector<HTMLButtonElement>("#save-script");
 const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
 const behaviorModuleSelect = document.querySelector<HTMLSelectElement>("#behavior-module");
@@ -153,11 +154,45 @@ function appendLine(text: string, className = "line"): void {
   log.scrollTop = log.scrollHeight;
 }
 
+type BehaviorAction = "check" | "save";
+
 function setStatus(text: string, isError = false): void {
   if (!scriptStatus) return;
   scriptStatus.replaceChildren();
   scriptStatus.textContent = text;
   scriptStatus.classList.toggle("error-line", isError);
+}
+
+function setStatusMessage(text: string, isError = false): HTMLParagraphElement | null {
+  if (!scriptStatus) return null;
+  const message = document.createElement("p");
+  message.className = "status-message";
+  message.textContent = text;
+  if (isError) message.classList.add("error-line");
+  return message;
+}
+
+function setStatusWithActions(text: string, actions: HTMLElement[], isError = false): void {
+  if (!scriptStatus) return;
+  scriptStatus.replaceChildren();
+  scriptStatus.classList.toggle("error-line", isError);
+  const message = setStatusMessage(text, isError);
+  if (message) scriptStatus.appendChild(message);
+  if (actions.length > 0) {
+    const actionRow = document.createElement("div");
+    actionRow.className = "status-actions";
+    actions.forEach((action) => actionRow.appendChild(action));
+    scriptStatus.appendChild(actionRow);
+  }
+}
+
+function createStatusButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 function setEditorMarkers(diagnostics: CompilerDiagnostic[], selectedId = selectedModuleId()): void {
@@ -349,6 +384,77 @@ async function fetchBehaviorModule(moduleId: string, refresh = false): Promise<S
   const payload = (await response.json()) as ScriptResponse;
   modulePayloads.set(moduleId, payload);
   return payload;
+}
+
+async function applyLoadedModuleSource(moduleId: string, payload: ScriptResponse): Promise<void> {
+  const model = moduleModels.get(moduleId);
+  if (model) {
+    model.setValue(payload.source);
+  } else {
+    setScriptSource(payload.source);
+  }
+
+  savedSources.set(moduleId, payload.source);
+  renderModuleDetails(payload);
+  updateEditorTitle(moduleId);
+  setEditorMarkers([]);
+}
+
+async function reloadModuleFromServer(moduleId: string): Promise<void> {
+  const localSource = getScriptSource();
+  const isDirty = localSource !== savedSources.get(moduleId);
+  if (isDirty && !window.confirm(`Reload ${moduleId} from the server? Your unsaved edits will be lost.`)) {
+    return;
+  }
+
+  try {
+    const payload = await fetchBehaviorModule(moduleId, true);
+    await applyLoadedModuleSource(moduleId, payload);
+    setStatus(`Reloaded ${moduleId} (revision ${payload.sourceRevision}).`);
+  } catch {
+    setStatus(`Could not reload ${moduleId} from the server.`, true);
+  }
+}
+
+function showSourceConflict(conflict: ScriptConflictResponse, pendingAction: BehaviorAction): void {
+  const moduleId = conflict.moduleId;
+  const revisionText = `expected revision ${conflict.expectedSourceRevision}, server has ${conflict.currentSourceRevision}`;
+  const actions = [
+    createStatusButton("Reload from server", "secondary-button", () => {
+      void reloadModuleFromServer(moduleId);
+    }),
+    createStatusButton("Save my version", "", () => {
+      void retryBehaviorAction(moduleId, conflict.currentSourceRevision, pendingAction);
+    }),
+    createStatusButton("Keep editing", "secondary-button", () => {
+      setStatus(`${conflict.message} Your unsaved editor contents were preserved. (${revisionText})`, true);
+    }),
+  ];
+
+  setStatusWithActions(
+    `${conflict.message} Your unsaved editor contents were preserved. (${revisionText})`,
+    actions,
+    true,
+  );
+}
+
+async function retryBehaviorAction(
+  moduleId: string,
+  currentSourceRevision: number,
+  action: BehaviorAction,
+): Promise<void> {
+  const existingPayload = modulePayloads.get(moduleId);
+  if (!existingPayload) {
+    setStatus("The selected behavior module has not finished loading.", true);
+    return;
+  }
+
+  modulePayloads.set(moduleId, { ...existingPayload, sourceRevision: currentSourceRevision });
+  if (action === "save") {
+    await saveCurrentScript();
+  } else {
+    await checkCurrentScript();
+  }
 }
 
 function ensureModuleModel(payload: ScriptResponse): MonacoModel | null {
@@ -611,8 +717,8 @@ async function checkCurrentScript(): Promise<void> {
   if (!response.ok) {
     try {
       const payload = (await response.json()) as ScriptErrorResponse & Partial<ScriptConflictResponse>;
-      if (response.status === 409 && payload.message) {
-        setStatus(`${payload.message} Your unsaved editor contents were preserved.`, true);
+      if (response.status === 409 && payload.message && payload.moduleId) {
+        showSourceConflict(payload as ScriptConflictResponse, "check");
         return;
       }
       if (payload.diagnostics && payload.diagnostics.length > 0) {
@@ -664,8 +770,8 @@ async function saveCurrentScript(): Promise<void> {
 
     try {
       const payload = (await response.json()) as ScriptErrorResponse & Partial<ScriptConflictResponse>;
-      if (response.status === 409 && payload.message) {
-        setStatus(`${payload.message} Your unsaved editor contents were preserved.`, true);
+      if (response.status === 409 && payload.message && payload.moduleId) {
+        showSourceConflict(payload as ScriptConflictResponse, "save");
         return;
       }
       if (payload.diagnostics && payload.diagnostics.length > 0) {
@@ -730,6 +836,14 @@ playerTab?.addEventListener("click", () => {
   if (canLeaveModule(activeModuleId)) showPanel("player");
 });
 adminTab?.addEventListener("click", () => showPanel("admin"));
+reloadScript?.addEventListener("click", () => {
+  const moduleId = selectedModuleId();
+  if (!moduleId) {
+    setStatus("No editable behavior module is selected.", true);
+    return;
+  }
+  void reloadModuleFromServer(moduleId);
+});
 checkScript?.addEventListener("click", () => {
   void checkCurrentScript().finally(() => {
     checkScript.removeAttribute("disabled");

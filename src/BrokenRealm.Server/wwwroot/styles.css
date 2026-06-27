@@ -142,6 +142,17 @@ select {
   white-space: pre-wrap;
 }
 
+.status-message {
+  margin: 0;
+}
+
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .admin-panel {
   grid-template-rows: auto minmax(360px, 1fr) auto auto;
   gap: 14px;
