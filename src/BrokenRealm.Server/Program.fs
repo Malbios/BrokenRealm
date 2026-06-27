@@ -4,6 +4,8 @@ open System
 open System.IO
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Http
+open Microsoft.AspNetCore.SignalR
+open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.FileProviders
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
@@ -14,12 +16,19 @@ module Program =
         let stateLock = obj()
         let clock () = DateTimeOffset.UtcNow
         let builder = WebApplication.CreateBuilder(args)
+        builder.Services.AddSignalR() |> ignore
         let app = builder.Build()
         let contentRoot = app.Environment.ContentRootPath
         let snapshotPath = GameStoreBootstrap.resolveSnapshotPath contentRoot
         let gameStore = GameStoreBootstrap.createGameStore contentRoot snapshotPath
         let sessionStore = SessionStore()
-        let pendingMessages = PendingMessageStore()
+        let connectionRegistry = ConnectionRegistry()
+
+        GameHubServices.register
+            { SessionStore = sessionStore
+              Connections = connectionRegistry }
+
+        let hubContext = app.Services.GetRequiredService<IHubContext<GameHub>>()
         let startupSnapshot = gameStore.GetSnapshot()
 
         app.Logger.LogInformation(
@@ -166,7 +175,7 @@ module Program =
             Func<HttpContext, GameCommandRequest, IResult>(fun ctx request ->
                 let culture = Cultures.parse request.culture
 
-                let result, characterId =
+                let result, roomDeliveries =
                     lock stateLock (fun () ->
                         let session = resolveSession ctx
                         let stored = gameStore.Read()
@@ -175,25 +184,23 @@ module Program =
                         let committed = commit stored result.State
                         let finalResult = { result with State = committed.State }
 
-                        RoomBroadcast.enqueueRoomMessages
-                            pendingMessages
-                            finalResult.State
-                            culture
-                            session.SelectedCharacterId
-                            result.Messages
+                        let deliveries =
+                            RoomBroadcast.planRoomDelivery
+                                finalResult.State
+                                culture
+                                session.SelectedCharacterId
+                                result.Messages
 
-                        finalResult, session.SelectedCharacterId)
+                        finalResult, deliveries)
 
-                let lines =
-                    RoomBroadcast.buildResponseLines
-                        pendingMessages
-                        result.State
-                        culture
-                        characterId
-                        result.Messages
+                RoomPush.push hubContext roomDeliveries
+
+                let lines = RoomBroadcast.actorResponseLines result.State culture result.Messages
 
                 Results.Json({ lines = lines } : CommandResponse)))
         |> ignore
+
+        app.MapHub<GameHub>("/game/hub") |> ignore
 
         app.MapGet(
             "/admin/behaviors",

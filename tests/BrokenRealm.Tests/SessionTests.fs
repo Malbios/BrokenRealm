@@ -76,42 +76,30 @@ module SessionTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
-    let ``Say room messages enqueue for other players in the same room`` () =
+    let ``Say room delivery targets other players in the same room`` () =
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
 
         let state =
             { ObjectDatabase.initialState with
                 Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
-
-        let pending = PendingMessageStore()
 
         let said =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "say Hello scout" state
 
-        RoomBroadcast.enqueueRoomMessages
-            pending
-            said.State
-            En
-            GameSnapshots.PrototypeCharacterId
-            said.Messages
-
-        let actorLines =
-            RoomBroadcast.buildResponseLines
-                pending
-                said.State
-                En
-                GameSnapshots.PrototypeCharacterId
-                said.Messages
-
+        let actorLines = RoomBroadcast.actorResponseLines said.State En said.Messages
         Assert.Equal<string list>([ "You say, \"Hello scout\"." ], actorLines)
 
-        let scoutLines = pending.DequeueAll GameSnapshots.PrototypeScoutCharacterId
+        let deliveries = RoomBroadcast.planRoomDelivery said.State En GameSnapshots.PrototypeCharacterId said.Messages
 
-        Assert.Equal<string list>([ "A prototype player says, \"Hello scout\"." ], scoutLines)
+        Assert.Equal(1, deliveries.Length)
+
+        let recipient, line = deliveries[0]
+        Assert.Equal(GameSnapshots.PrototypeScoutCharacterId, recipient)
+        Assert.Equal("A prototype player says, \"Hello scout\".", line)
 
     [<Fact>]
-    let ``Pending room messages prepend the next command response for a recipient`` () =
+    let ``Drop room delivery notifies other players in the same room`` () =
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
 
@@ -119,32 +107,18 @@ module SessionTests =
             { ObjectDatabase.initialState with
                 Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
 
-        let pending = PendingMessageStore()
+        let gathered =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "gather wood" state
 
-        let said =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "emote waves" state
+        let dropped =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "drop wood" gathered.State
 
-        RoomBroadcast.enqueueRoomMessages
-            pending
-            said.State
-            En
-            GameSnapshots.PrototypeCharacterId
-            said.Messages
+        let deliveries =
+            RoomBroadcast.planRoomDelivery dropped.State En GameSnapshots.PrototypeCharacterId dropped.Messages
+            |> List.filter (fun (recipient, _) -> recipient = GameSnapshots.PrototypeScoutCharacterId)
 
-        let looked =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeScoutCharacterId En "look" said.State
-
-        let lines =
-            RoomBroadcast.buildResponseLines
-                pending
-                looked.State
-                En
-                GameSnapshots.PrototypeScoutCharacterId
-                looked.Messages
-
-        Assert.Equal("A prototype player waves.", lines[0])
-        Assert.True(lines.Length >= 2)
-        Assert.Contains("forest", lines[1].ToLowerInvariant())
+        Assert.Equal(1, deliveries.Length)
+        Assert.Equal("A prototype player drops 1 wood.", snd deliveries[0])
 
     [<Fact>]
     let ``Inventory matches on the player object before the room`` () =

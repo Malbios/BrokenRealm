@@ -169,6 +169,11 @@ select {
   color: #9cc7ff;
 }
 
+.room-line {
+  color: #c8b6ff;
+  font-style: italic;
+}
+
 .error-line {
   color: #ffb4a8;
 }

@@ -750,11 +750,20 @@ module KernelTests =
         let villageResult = Kernel.submitCommand En "go north" ObjectDatabase.initialState
 
         Assert.Equal("village", villageResult.State.Player.LocationId)
-        Assert.Equal("You travel north.", villageResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage villageResult.State En)
+        Assert.Equal(
+            "You travel north.",
+            RoomBroadcast.actorMessages villageResult.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage villageResult.State En)
 
         let forestResult = Kernel.submitCommand De "gehe nach süden" villageResult.State
         Assert.Equal("forest", forestResult.State.Player.LocationId)
-        Assert.Equal("Du gehst nach Süden.", forestResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage forestResult.State De)
+
+        Assert.Equal(
+            "Du gehst nach Süden.",
+            RoomBroadcast.actorMessages forestResult.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage forestResult.State De)
 
     [<Fact>]
     let ``Movement without an exit leaves the player in place`` () =

@@ -107,7 +107,8 @@ const coreBehaviorClasses = { GameBehavior };"""
     return {
       effects: [
         { type: "transferItem", itemId, amount: requested, destinationId: context.actor.locationId },
-        { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } }
+        { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } },
+        { type: "message", key: "drop.room", args: { actor: context.actor.id, item: itemId, amount: String(requested) } }
       ]
     };
   }
@@ -136,7 +137,8 @@ const coreBehaviorClasses = { GameBehavior };"""
     return {
       effects: [
         { type: "transferItem", itemId, amount: requested, destinationId: playerId },
-        { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } }
+        { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } },
+        { type: "message", key: "give.room", args: { actor: context.actor.id, item: itemId, player: playerId, amount: String(requested) } }
       ]
     };
   }
@@ -163,7 +165,8 @@ const coreBehaviorClasses = { GameBehavior };"""
           sourceId: context.actor.locationId,
           destinationId: context.actor.id
         },
-        { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } }
+        { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } },
+        { type: "message", key: "take.room", args: { actor: context.actor.id, item: itemId, amount: String(requested) } }
       ]
     };
   }
@@ -245,7 +248,8 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     return {
       effects: [
         { type: "moveObject", destinationId },
-        { type: "message", key: "move.success", args: { direction } }
+        { type: "message", key: "move.success", args: { direction } },
+        { type: "message", key: "move.room", args: { actor: context.actor.id, direction } }
       ]
     };
   }
@@ -420,7 +424,8 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (available < requested) return { effects: [{ type: "message", key: "drop.insufficient", args: { item: itemId, amount: String(available) } }] };
     return { effects: [
       { type: "transferItem", itemId, amount: requested, destinationId: context.actor.locationId },
-      { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } }
+      { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } },
+      { type: "message", key: "drop.room", args: { actor: context.actor.id, item: itemId, amount: String(requested) } }
     ] };
   }
   give(context) {
@@ -438,7 +443,8 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (!recipient || !recipient.tags.includes("player")) return { effects: [{ type: "message", key: "give.not_here", args: {} }] };
     return { effects: [
       { type: "transferItem", itemId, amount: requested, destinationId: playerId },
-      { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } }
+      { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } },
+      { type: "message", key: "give.room", args: { actor: context.actor.id, item: itemId, player: playerId, amount: String(requested) } }
     ] };
   }
   take(context) {
@@ -452,7 +458,8 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (available < requested) return { effects: [{ type: "message", key: "take.insufficient", args: { item: itemId, amount: String(available) } }] };
     return { effects: [
       { type: "transferItem", itemId, amount: requested, sourceId: context.actor.locationId, destinationId: context.actor.id },
-      { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } }
+      { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } },
+      { type: "message", key: "take.room", args: { actor: context.actor.id, item: itemId, amount: String(requested) } }
     ] };
   }
   say(context) {
@@ -503,7 +510,8 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     if (!destinationId) return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
     return { effects: [
       { type: "moveObject", destinationId },
-      { type: "message", key: "move.success", args: { direction } }
+      { type: "message", key: "move.success", args: { direction } },
+      { type: "message", key: "move.room", args: { actor: context.actor.id, direction } }
     ] };
   }
 }

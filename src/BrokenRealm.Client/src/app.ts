@@ -45,9 +45,27 @@ type MonacoLoader = {
   (dependencies: string[], callback: () => void): void;
 };
 
+type HubConnection = {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  on(methodName: string, handler: (line: string) => void): void;
+  invoke(methodName: string, ...args: unknown[]): Promise<void>;
+};
+
+type HubConnectionBuilder = {
+  withUrl(url: string, options?: { withCredentials?: boolean }): HubConnectionBuilder;
+  withAutomaticReconnect(): HubConnectionBuilder;
+  build(): HubConnection;
+};
+
+type SignalRModule = {
+  HubConnectionBuilder: new () => HubConnectionBuilder;
+};
+
 interface Window {
   monaco?: MonacoApi;
   require?: MonacoLoader;
+  signalR?: SignalRModule;
 }
 
 type CommandResponse = {
@@ -149,6 +167,8 @@ let behaviorModules: AdminBehaviorModule[] = [];
 let activeModuleId: string | null = null;
 let activePanel: Panel = "player";
 let currentSession: GameSessionResponse | null = null;
+let roomConnection: HubConnection | null = null;
+let roomConnectionPromise: Promise<void> | null = null;
 const moduleModels = new Map<string, MonacoModel>();
 const modulePayloads = new Map<string, ScriptResponse>();
 const savedSources = new Map<string, string>();
@@ -622,6 +642,42 @@ function renderCharacterSelector(session: GameSessionResponse): void {
   updateCharacterSelectorVisibility(activePanel);
 }
 
+async function connectRoomHub(): Promise<void> {
+  const signalR = window.signalR;
+  if (!signalR) return;
+
+  if (roomConnectionPromise) {
+    await roomConnectionPromise;
+    return;
+  }
+
+  roomConnectionPromise = (async () => {
+    if (roomConnection) {
+      await roomConnection.stop();
+      roomConnection = null;
+    }
+
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl("/game/hub", { withCredentials: true })
+      .withAutomaticReconnect()
+      .build();
+
+    connection.on("roomLine", (line: string) => {
+      appendLine(line, "line room-line");
+    });
+
+    await connection.start();
+    await connection.invoke("SyncCharacter");
+    roomConnection = connection;
+  })();
+
+  try {
+    await roomConnectionPromise;
+  } finally {
+    roomConnectionPromise = null;
+  }
+}
+
 async function loadSession(): Promise<void> {
   const response = await fetch(sessionUrl(), gameFetchInit);
   if (!response.ok) {
@@ -631,6 +687,7 @@ async function loadSession(): Promise<void> {
 
   const payload = (await response.json()) as GameSessionResponse;
   renderCharacterSelector(payload);
+  await connectRoomHub();
 }
 
 async function login(accountId: string, password: string): Promise<void> {
@@ -704,6 +761,11 @@ async function selectCharacter(characterId: string): Promise<void> {
   renderCharacterSelector(payload);
   const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
   appendLine(`Now playing as ${selected?.displayName ?? payload.selectedCharacterId}.`);
+  if (roomConnection) {
+    await roomConnection.invoke("SyncCharacter");
+  } else {
+    await connectRoomHub();
+  }
 }
 
 async function sendCommand(command: string, selectedCulture: Culture): Promise<void> {

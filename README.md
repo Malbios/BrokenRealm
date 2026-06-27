@@ -90,6 +90,11 @@ The forest also stores an anonymous `TrailTokenBehavior` value. Naming the trail
 }
 ```
 
+Live room feed:
+
+- `GET /game/hub` (SignalR WebSocket)
+- server pushes `roomLine` events to connected characters in the same room for `.room` message keys (say, emote, drop, give, take, move)
+
 Admin editor transport:
 
 - `GET /admin/behaviors`

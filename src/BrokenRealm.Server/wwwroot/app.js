@@ -32,6 +32,8 @@ let behaviorModules = [];
 let activeModuleId = null;
 let activePanel = "player";
 let currentSession = null;
+let roomConnection = null;
+let roomConnectionPromise = null;
 const moduleModels = new Map();
 const modulePayloads = new Map();
 const savedSources = new Map();
@@ -460,6 +462,37 @@ function renderCharacterSelector(session) {
     updateAuthUi(session);
     updateCharacterSelectorVisibility(activePanel);
 }
+async function connectRoomHub() {
+    const signalR = window.signalR;
+    if (!signalR)
+        return;
+    if (roomConnectionPromise) {
+        await roomConnectionPromise;
+        return;
+    }
+    roomConnectionPromise = (async () => {
+        if (roomConnection) {
+            await roomConnection.stop();
+            roomConnection = null;
+        }
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/game/hub", { withCredentials: true })
+            .withAutomaticReconnect()
+            .build();
+        connection.on("roomLine", (line) => {
+            appendLine(line, "line room-line");
+        });
+        await connection.start();
+        await connection.invoke("SyncCharacter");
+        roomConnection = connection;
+    })();
+    try {
+        await roomConnectionPromise;
+    }
+    finally {
+        roomConnectionPromise = null;
+    }
+}
 async function loadSession() {
     const response = await fetch(sessionUrl(), gameFetchInit);
     if (!response.ok) {
@@ -468,6 +501,7 @@ async function loadSession() {
     }
     const payload = (await response.json());
     renderCharacterSelector(payload);
+    await connectRoomHub();
 }
 async function login(accountId, password) {
     const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
@@ -530,6 +564,12 @@ async function selectCharacter(characterId) {
     renderCharacterSelector(payload);
     const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
     appendLine(`Now playing as ${selected?.displayName ?? payload.selectedCharacterId}.`);
+    if (roomConnection) {
+        await roomConnection.invoke("SyncCharacter");
+    }
+    else {
+        await connectRoomHub();
+    }
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");

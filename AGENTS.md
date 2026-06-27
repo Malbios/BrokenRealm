@@ -246,7 +246,7 @@ Known effects:
 - `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
 
-Message keys ending in `.room` are delivered to other player characters in the same location through a per-character pending queue; `.self` and other keys stay on the acting character's command response.
+Message keys ending in `.room` are pushed live to other player characters in the same location through SignalR (`/game/hub`, `roomLine` events, groups `character:{id}`). `.self` and other keys stay on the acting character's HTTP command response.
 
 The kernel validates effects before applying them. `replaceValue` and `invokeAnonymous` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic. Nested anonymous dispatch is limited to 8 levels and 16 invocations per root effect batch.
 
@@ -266,7 +266,7 @@ Limit failures use stable sanitized diagnostics. Effects are decoded and validat
 
 The browser UI has:
 
-- player tab with output log, command input, and language selector
+- player tab with output log, command input, language selector, and live SignalR room feed (`/game/hub`, `roomLine` events)
 - admin tab with behavior-module selection plus Monaco, with a textarea fallback when the CDN is unavailable
 - structured compile diagnostics displayed as Monaco markers and individual editor messages
 - Monaco declarations loaded from the server's real `game-api.d.ts` contract rather than a duplicated browser string
@@ -286,7 +286,7 @@ Do not add these yet unless explicitly requested:
 
 - PostgreSQL
 - Docker
-- SignalR
+
 - procedural world generation
 - combat
 - markets
@@ -329,6 +329,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Broadcast room events over a live channel (SignalR or similar) so pending messages arrive without waiting for the next command.
-2. Add first-person German/English emote self-view and richer social verbs (`whisper`, `pose`).
+1. Add first-person German/English emote self-view and richer social verbs (`whisper`, `pose`).
+2. Broadcast enter/leave room presence separately from travel direction (`move.room` currently covers departure).
 3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.

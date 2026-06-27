@@ -19,6 +19,7 @@
     <Compile Include="Kernel.fs" />
     <Compile Include="Sessions.fs" />
     <Compile Include="RoomBroadcast.fs" />
+    <Compile Include="GameHub.fs" />
     <Compile Include="SnapshotCodec.fs" />
     <Compile Include="SnapshotBackup.fs" />
     <Compile Include="SnapshotHydration.fs" />
