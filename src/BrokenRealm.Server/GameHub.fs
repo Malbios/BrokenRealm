@@ -21,12 +21,21 @@ type ConnectionRegistry() =
                 None)
 
     member _.Remove(connectionId: string) =
-        lock gate (fun () -> connections.Remove connectionId |> ignore)
+        lock gate (fun () ->
+            match connections.TryGetValue connectionId with
+            | true, characterId ->
+                connections.Remove connectionId |> ignore
+                Some characterId
+            | false, _ -> None)
+
+    member _.IsCharacterConnected(characterId: string) =
+        lock gate (fun () -> connections.Values |> Seq.exists ((=) characterId))
 
 module GameHubServices =
     type Host =
         { SessionStore: SessionStore
-          Connections: ConnectionRegistry }
+          Connections: ConnectionRegistry
+          EnterLimboIfDisconnected: CharacterId -> unit }
 
     let mutable private host = None
 
@@ -66,7 +75,14 @@ type GameHub() =
             Task.CompletedTask
 
     override this.OnDisconnectedAsync(_exn) =
-        GameHubServices.current().Connections.Remove(this.Context.ConnectionId)
+        let services = GameHubServices.current()
+        let connectionId = this.Context.ConnectionId
+
+        match services.Connections.Remove connectionId with
+        | Some characterId when not (services.Connections.IsCharacterConnected characterId) ->
+            services.EnterLimboIfDisconnected characterId
+        | _ -> ()
+
         Task.CompletedTask
 
     member this.SyncCharacter() =

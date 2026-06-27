@@ -11,8 +11,10 @@ module Sessions =
         PlayerObjects.playersByAccount state accountId
         |> List.map (fun player ->
             { id = player.Id
-              locationId = PlayerObjects.locationId player
-              displayName = Localizer.objectName state culture player.Id })
+              displayName = Localizer.objectName state culture player.Id
+              inPlay = not (PlayerObjects.isInLimbo player)
+              locationId = PlayerObjects.tryLocationId player
+              lastSafeLocationId = PlayerObjects.lastSafeLocationId player })
 
     let toResponse culture (session: GameSession) (state: GameState) =
         let account = state.Accounts[session.AccountId]

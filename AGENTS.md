@@ -329,7 +329,7 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Implement offline character limbo per ADR 0008 (clear `LocationId` on disconnect, explicit re-entry, exclude limbo characters from look and room delivery).
+1. Add richer world verbs and mechanics on the singleplayer path (crafting hooks, more object interactions, timed systems once limbo is in force).
 2. Add richer social verbs (`pose`, targeted speech) only when a vertical slice needs them; optional co-presence does not require whisper-first multiplayer chat.
 3. Select and implement a durable database adapter only after the file-backed JSON snapshot contract has proven insufficient in development.
 
@@ -337,4 +337,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ### Offline character limbo
 
-Accepted design: `docs/architecture/0008-offline-character-limbo.md`. Disconnect removes live-world presence (`LocationId = None`), skips offline simulation and room-message queues, and requires explicit re-entry on reconnect. Singleplayer-first pacing stays authoritative to connected play.
+Implemented per `docs/architecture/0008-offline-character-limbo.md`. Disconnect/logout clears live-world presence (`LocationId = None`, `lastSafeLocationId` persisted), commands return `limbo.not_in_play`, and `POST /game/session/enter` restores play with `move.arrive.room`. The browser auto-calls enter after session load when the selected character is in limbo.

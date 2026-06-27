@@ -146,8 +146,10 @@ type CommandResponse =
 [<CLIMutable>]
 type SessionCharacterResponse =
     { id: string
-      locationId: string
-      displayName: string }
+      displayName: string
+      inPlay: bool
+      locationId: string option
+      lastSafeLocationId: string option }
 
 [<CLIMutable>]
 type GameSessionResponse =

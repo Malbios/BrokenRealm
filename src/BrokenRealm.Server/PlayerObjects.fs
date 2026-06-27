@@ -11,6 +11,9 @@ module PlayerObjects =
     let InventoryProperty = "inventory"
 
     [<Literal>]
+    let LastSafeLocationProperty = "lastSafeLocationId"
+
+    [<Literal>]
     let PlayerBehaviorModuleId = "player-behaviors"
 
     [<Literal>]
@@ -92,12 +95,23 @@ module PlayerObjects =
         accountIdFromProperties gameObject.Properties
         |> Option.defaultWith (fun () -> failwith $"Player object {gameObject.Id} is missing accountId.")
 
+    let tryLocationId (gameObject: GameObject) = gameObject.LocationId
+
+    let lastSafeLocationId (gameObject: GameObject) =
+        match gameObject.Properties |> Map.tryFind LastSafeLocationProperty with
+        | Some(StringValue locationId) -> Some locationId
+        | _ -> None
+
+    let isInLimbo (gameObject: GameObject) = gameObject.LocationId.IsNone
+
     let locationId (gameObject: GameObject) =
         gameObject.LocationId
         |> Option.defaultWith (fun () -> failwith $"Player object {gameObject.Id} is missing a location.")
 
     let withLocation (gameObject: GameObject) (locationId: ObjectId) =
         { gameObject with LocationId = Some locationId }
+
+    let withoutLocation (gameObject: GameObject) = { gameObject with LocationId = None }
 
     let withoutLegacyInventoryProperty (gameObject: GameObject) =
         { gameObject with
@@ -131,10 +145,14 @@ module PlayerObjects =
               else
                   None
               match gameObject.LocationId with
-              | None -> Some $"Player object {gameObject.Id} must have a location."
+              | None -> None
               | Some locationId when not (state.Objects.ContainsKey locationId) ->
                   Some $"Player object {gameObject.Id} references unknown location id: {locationId}"
               | Some _ -> None
+              match lastSafeLocationId gameObject with
+              | Some locationId when not (state.Objects.ContainsKey locationId) ->
+                  Some $"Player object {gameObject.Id} references unknown last safe location id: {locationId}"
+              | _ -> None
               match accountIdFromProperties gameObject.Properties with
               | None -> Some $"Player object {gameObject.Id} is missing accountId."
               | Some ownerAccountId when not (state.Accounts.ContainsKey ownerAccountId) ->

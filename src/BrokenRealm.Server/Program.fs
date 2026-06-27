@@ -24,10 +24,6 @@ module Program =
         let sessionStore = SessionStore()
         let connectionRegistry = ConnectionRegistry()
 
-        GameHubServices.register
-            { SessionStore = sessionStore
-              Connections = connectionRegistry }
-
         let hubContext = app.Services.GetRequiredService<IHubContext<GameHub>>()
         let startupSnapshot = gameStore.GetSnapshot()
 
@@ -67,6 +63,26 @@ module Program =
             match gameStore.TryCommit(stored.WorldRevision, stored.CharacterRevisions, state) with
             | Ok committed -> committed
             | Error _ -> failwith "The process-local game state changed while its exclusive lock was held."
+
+        let tryCommitLimbo (characterId: CharacterId) =
+            let stored = gameStore.Read()
+
+            match Limbo.enterLimbo stored.State characterId with
+            | Ok updated ->
+                commit stored updated |> ignore
+            | Error _ -> ()
+
+        let enterLimboIfDisconnected (characterId: CharacterId) =
+            if not (connectionRegistry.IsCharacterConnected characterId) then
+                tryCommitLimbo characterId
+
+        RoomBroadcast.setConnectionFilter connectionRegistry.IsCharacterConnected
+
+        GameHubServices.register
+            { SessionStore = sessionStore
+              Connections = connectionRegistry
+              EnterLimboIfDisconnected = fun characterId ->
+                  lock stateLock (fun () -> enterLimboIfDisconnected characterId) }
 
         let trySourceRevision moduleId =
             gameStore.GetSnapshot().World.BehaviorModules
@@ -148,7 +164,12 @@ module Program =
             Func<HttpContext, IResult>(fun ctx ->
                 lock stateLock (fun () ->
                     match ctx.Request.Cookies.TryGetValue Sessions.CookieName with
-                    | true, sessionId -> sessionStore.Logout sessionId
+                    | true, sessionId ->
+                        match sessionStore.TryGet sessionId with
+                        | Some session -> tryCommitLimbo session.SelectedCharacterId
+                        | None -> ()
+
+                        sessionStore.Logout sessionId
                     | false, _ -> ()
 
                     ctx.Response.Cookies.Delete(Sessions.CookieName, sessionCookieOptions)
@@ -162,12 +183,50 @@ module Program =
                     let culture = sessionCulture ctx
                     let session = resolveSession ctx
                     let state = gameStore.Read().State
+                    let previousCharacterId = session.SelectedCharacterId
 
                     match sessionStore.SelectCharacter(session.Id, request.characterId, state) with
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
+                        if previousCharacterId <> updated.SelectedCharacterId then
+                            enterLimboIfDisconnected previousCharacterId
+
                         ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-                        Results.Json(authResponse culture updated state))))
+                        Results.Json(authResponse culture updated (gameStore.Read().State)))))
+        |> ignore
+
+        app.MapPost(
+            "/game/session/enter",
+            Func<HttpContext, IResult>(fun ctx ->
+                let culture = sessionCulture ctx
+
+                let result, roomDeliveries =
+                    lock stateLock (fun () ->
+                        let session = resolveSession ctx
+                        let stored = gameStore.Read()
+
+                        match Kernel.tryEnterPlayForCharacter session.SelectedCharacterId stored.State with
+                        | Error error ->
+                            let response = { lines = [ error ] } : CommandResponse
+                            response, []
+                        | Ok enterResult ->
+                            let committed = commit stored enterResult.State
+                            let finalResult = { enterResult with State = committed.State }
+
+                            let deliveries =
+                                RoomBroadcast.planRoomDelivery
+                                    finalResult.State
+                                    culture
+                                    session.SelectedCharacterId
+                                    enterResult.Messages
+
+                            let lines =
+                                RoomBroadcast.actorResponseLines finalResult.State culture enterResult.Messages
+
+                            { lines = lines } : CommandResponse, deliveries)
+
+                RoomPush.push hubContext roomDeliveries
+                Results.Json(result)))
         |> ignore
 
         app.MapPost(

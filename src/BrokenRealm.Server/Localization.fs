@@ -117,6 +117,12 @@ module Localizer =
         | De, "emote.room" -> "{actor} {text}."
         | En, "emote.empty" -> "Emote what?"
         | De, "emote.empty" -> "Was möchtest du ausdrücken?"
+        | En, "limbo.not_in_play" -> "You are not in the world. Enter play to continue."
+        | De, "limbo.not_in_play" -> "Du bist nicht in der Welt. Betrete das Spiel, um fortzufahren."
+        | En, "enter.success" -> "You enter {location}."
+        | De, "enter.success" -> "Du betrittst {location}."
+        | En, "enter.already" -> "You are already in the world."
+        | De, "enter.already" -> "Du bist bereits in der Welt."
         | En, "command.unknown" -> "I do not understand that command."
         | De, "command.unknown" -> "Ich verstehe diesen Befehl nicht."
         | En, "script.error" -> "The script failed: {error}"
@@ -181,6 +187,7 @@ module ResponseFormatting =
                 | "objects" -> formatObjects state culture value
                 | "player" -> Localizer.objectName state culture value
                 | "actor" -> Localizer.emoteActorName state culture value
+                | "location" -> Localizer.objectName state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }

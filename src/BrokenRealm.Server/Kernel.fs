@@ -353,11 +353,21 @@ module Kernel =
                     { State = state
                       Messages = messages }
 
+    let tryEnterPlayForCharacter characterId (state: GameState) =
+        match Limbo.tryEnterPlay characterId state with
+        | Error error ->
+            Error error
+        | Ok(state, messages, _) ->
+            Ok { State = state; Messages = messages }
+
     let submitCommandForCharacter characterId culture text (state: GameState) =
         match PlayerObjects.tryGet state characterId with
         | None ->
             { State = state
               Messages = [ message "script.error" (Map.ofList [ "error", $"Unknown character id: {characterId}" ]) ] }
+        | Some player when Limbo.isInLimbo player ->
+            { State = state
+              Messages = [ message "limbo.not_in_play" Map.empty ] }
         | Some _ ->
             match validateContainment state with
             | Error error ->

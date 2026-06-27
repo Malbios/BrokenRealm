@@ -3,6 +3,10 @@ namespace BrokenRealm.Server
 module RoomBroadcast =
     let private roomSuffix = ".room"
 
+    let mutable private isCharacterConnected = fun (_: CharacterId) -> true
+
+    let setConnectionFilter (filter: CharacterId -> bool) = isCharacterConnected <- filter
+
     let characterGroup (characterId: CharacterId) = $"character:{characterId}"
 
     let isRoomMessage (message: Message) = message.Key.EndsWith roomSuffix
@@ -17,6 +21,7 @@ module RoomBroadcast =
                 PlayerObjects.isPlayer gameObject
                 && gameObject.Id <> actingCharacterId
                 && gameObject.LocationId = Some locationId
+                && isCharacterConnected gameObject.Id
             then
                 Some gameObject.Id
             else

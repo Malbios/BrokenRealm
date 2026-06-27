@@ -16,6 +16,7 @@
     <Compile Include="ObjectDatabase.fs" />
     <Compile Include="CommandMatching.fs" />
     <Compile Include="ScriptCompiler.fs" />
+    <Compile Include="Limbo.fs" />
     <Compile Include="Kernel.fs" />
     <Compile Include="Sessions.fs" />
     <Compile Include="RoomBroadcast.fs" />

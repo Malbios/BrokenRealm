@@ -50,9 +50,15 @@ Limbo is represented in snapshots by a missing `LocationId` on the player object
 
 ## Implementation status
 
-Not yet implemented. Session and SignalR infrastructure exists; characters still retain their last `LocationId` across disconnect. Follow-up work:
+Implemented:
 
-- clear `LocationId` on session expiry or hub disconnect when no other session holds the character
-- reject player commands (except re-entry/login flows) while the selected character is in limbo
-- add re-entry that restores `LocationId` and emits `move.arrive.room` to the destination
-- tests for look contents, room delivery, and command rejection
+- `LocationId = None` limbo state with persisted `lastSafeLocationId` on the player object
+- limbo entry on logout, last SignalR disconnect, and character switch when the previous character has no live connection
+- `POST /game/session/enter` re-entry that restores the last safe location (default `forest`) and emits `move.arrive.room`
+- command rejection with `limbo.not_in_play` while a selected character is out of play
+- exclusion from `look` contents and room-broadcast recipient planning; live delivery requires an active hub connection
+
+Not yet implemented:
+
+- session-expiry sweeps beyond explicit logout
+- startup mass-limbo after server restart (snapshots may still load characters as in-world until the next disconnect)

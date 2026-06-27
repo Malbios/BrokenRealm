@@ -453,8 +453,9 @@ function renderCharacterSelector(session) {
     characterSelect.replaceChildren();
     session.characters.forEach((character) => {
         const option = document.createElement("option");
+        const where = character.inPlay ? character.locationId ?? "?" : "limbo";
         option.value = character.id;
-        option.textContent = `${character.displayName} @ ${character.locationId}`;
+        option.textContent = `${character.displayName} @ ${where}`;
         characterSelect.append(option);
     });
     characterSelect.value = session.selectedCharacterId;
@@ -493,6 +494,29 @@ async function connectRoomHub() {
         roomConnectionPromise = null;
     }
 }
+async function enterPlay() {
+    const response = await fetch(`/game/session/enter?culture=${encodeURIComponent(selectedCulture())}`, {
+        ...gameFetchInit,
+        method: "POST",
+    });
+    if (!response.ok) {
+        const payload = (await response.json());
+        appendLine(payload.lines[0] ?? "Could not enter play.", "line error-line");
+        return;
+    }
+    const payload = (await response.json());
+    payload.lines.forEach((line) => appendLine(line));
+}
+async function ensureInPlay(session) {
+    const selected = session.characters.find((character) => character.id === session.selectedCharacterId);
+    if (!selected || selected.inPlay)
+        return;
+    await enterPlay();
+    const response = await fetch(sessionUrl(), gameFetchInit);
+    if (response.ok) {
+        renderCharacterSelector((await response.json()));
+    }
+}
 async function loadSession() {
     const response = await fetch(sessionUrl(), gameFetchInit);
     if (!response.ok) {
@@ -502,6 +526,7 @@ async function loadSession() {
     const payload = (await response.json());
     renderCharacterSelector(payload);
     await connectRoomHub();
+    await ensureInPlay(payload);
 }
 async function login(accountId, password) {
     const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
@@ -570,6 +595,7 @@ async function selectCharacter(characterId) {
     else {
         await connectRoomHub();
     }
+    await ensureInPlay(payload);
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");
