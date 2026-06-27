@@ -1,0 +1,2 @@
+- combat with lots of combatants is abstracted into avatar vs. avatar
+- - types and power of attacks depend on the combatants army size and composition
