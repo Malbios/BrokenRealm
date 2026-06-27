@@ -261,6 +261,23 @@ module Program =
 
         app.MapHub<GameHub>("/game/hub") |> ignore
 
+        let worldTickSeconds = 30
+
+        System.Threading.Tasks.Task.Run(
+            System.Func<System.Threading.Tasks.Task>(fun () ->
+                task {
+                    while true do
+                        do! System.Threading.Tasks.Task.Delay(System.TimeSpan.FromSeconds(float worldTickSeconds))
+
+                        lock stateLock (fun () ->
+                            let stored = gameStore.Read()
+
+                            match Kernel.tickWorld stored.State connectionRegistry.IsCharacterConnected with
+                            | Ok updated -> commit stored updated |> ignore
+                            | Error _ -> ())
+                }))
+        |> ignore
+
         app.MapGet(
             "/admin/behaviors",
             Func<IResult>(fun () ->

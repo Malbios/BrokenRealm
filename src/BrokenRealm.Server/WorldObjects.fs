@@ -42,6 +42,11 @@ module WorldObjects =
 
         objectId, { state with Objects = Map.add objectId gameObject state.Objects }
 
+    let isPermanentThing (gameObject: GameObject) =
+        not (PlayerObjects.isPlayer gameObject)
+        && not (CarriedItems.isCarriedStack gameObject)
+        && gameObject.LocationId.IsSome
+
     let isValidPlacementLocation (state: GameState) (locationId: ObjectId) =
         match state.Objects |> Map.tryFind locationId with
         | None -> Error $"Unknown placement location id: {locationId}"
@@ -50,3 +55,32 @@ module WorldObjects =
         | Some container when CarriedItems.isCarriedStack container ->
             Error "Permanent objects cannot be placed inside a carried stack."
         | Some _ -> Ok()
+
+    let private hasContents (state: GameState) (objectId: ObjectId) =
+        state.Objects
+        |> Map.exists (fun _ gameObject -> gameObject.LocationId = Some objectId)
+
+    let destroy (state: GameState) (objectId: ObjectId) =
+        match state.Objects |> Map.tryFind objectId with
+        | None -> Error $"Unknown object id: {objectId}"
+        | Some gameObject when PlayerObjects.isPlayer gameObject ->
+            Error "Player objects cannot be destroyed."
+        | Some gameObject when CarriedItems.isCarriedStack gameObject ->
+            Error "Carried stack objects cannot be destroyed."
+        | Some gameObject when gameObject.LocationId.IsNone ->
+            Error "Room objects cannot be destroyed."
+        | Some _ when hasContents state objectId ->
+            Error "Objects with contents cannot be destroyed."
+        | Some _ -> Ok { state with Objects = Map.remove objectId state.Objects }
+
+    let movePermanent (state: GameState) (objectId: ObjectId) (destinationId: ObjectId) =
+        match state.Objects |> Map.tryFind objectId with
+        | None -> Error $"Unknown object id: {objectId}"
+        | Some gameObject when not (isPermanentThing gameObject) ->
+            Error "Only permanent contained objects can be relocated this way."
+        | Some gameObject ->
+            match isValidPlacementLocation state destinationId with
+            | Error error -> Error error
+            | Ok() ->
+                let updated = { gameObject with LocationId = Some destinationId }
+                Ok { state with Objects = Map.add objectId updated state.Objects }

@@ -82,8 +82,9 @@ Current server modules:
 - `CommandMatching.fs`: localized command text to behavior-method match.
 - `Scripting.fs`: Jint execution and script effect decoding.
 - `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
-- `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update.
-- `Program.fs`: minimal HTTP/static host.
+- `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update, limbo-safe `tickWorld`.
+- `WorldObjects.fs`: permanent object create/destroy/move helpers used by kernel effects.
+- `Program.fs`: minimal HTTP/static host; background world tick every 30 seconds for occupied rooms.
 
 Current object model:
 
@@ -92,7 +93,8 @@ Current object model:
 - `forest` has tags including `forest` and `wood`.
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
-- `village` references `forest` to the south and uses `village-behaviors:VillageBehavior`.
+- `village` references `forest` to the south, uses `village-behaviors:VillageBehavior`, and seeds `comfort: 0` (synced from stool contents on `tick`).
+- `forest` seeds `tickCount: 0` (incremented on `tick` when a connected in-play player occupies the room).
 - `fallen-log` is a permanent object located in `forest` and uses `thing-behaviors:ThingBehavior`.
 - `forest.properties.trailToken` is an identity-free anonymous behavior value using `anonymous-behaviors:TrailTokenBehavior`.
 - Anonymous behavior values embed recursive typed properties, live by reachability from permanent state, and have no ID, location, contents, aliases, tags, or direct command matching. The decision is recorded in `docs/architecture/0003-anonymous-behavior-values.md`.
@@ -100,7 +102,9 @@ Current object model:
 - Missing locations, self-containment, and containment cycles are rejected before command dispatch.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
-- Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`.
+- Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`. `LocationBehavior.tick()` is a no-op base; `ForestBehavior.tick()` advances `tickCount`, and `VillageBehavior.tick()` syncs `comfort` from stool contents. `VillageBehavior.look()` adds seating/comfort messages when stools or `comfort > 0` are present.
+- `player-behaviors` defines `CRAFT_RECIPES` and `craftFromRecipe()`; `PlayerBehavior.craft()` delegates to that table.
+- `Kernel.tickWorld` ticks only rooms with connected, in-play players; limbo characters skip world ticks.
 - The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`, plus `core-behaviors <- thing-behaviors` and `core-behaviors <- anonymous-behaviors`.
 - Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
 - Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
@@ -158,8 +162,9 @@ English:
 - `give wood to scout` / `give 2 wood to scout`
 - `say hello` / `say`
 - `emote wave` / `: wave` (type text for first-person self-view: `You {text}.`)
-- `craft stool` / `make stool` (costs 2 wood; places a wooden stool in the room)
+- `craft stool` / `make stool` (costs 2 wood via `CRAFT_RECIPES`; places a wooden stool in the room)
 - `use stool` / `sit on stool`
+- `dismantle stool` / `take apart stool` (destroys placeables; stools return 1 wood)
 - `go north`
 - `walk north`
 - `examine log`
@@ -182,6 +187,7 @@ German:
 - `emote winkst` / `* winkst` (German self-view: `Du {text}.`; room lines reuse the same fragment)
 - `fertige hocker` / `baue hocker`
 - `benutze hocker` / `setz dich auf hocker`
+- `zerlege hocker` (destroys placeables; stools return 1 wood)
 - `gehe nach norden`
 - `geh nach süden`
 - `untersuche baumstamm`
@@ -247,7 +253,8 @@ Known effects:
 - `{ type: "removeInventory", itemId: string, amount: number, objectId?: string }`
 - `{ type: "transferItem", itemId: string, amount: number, destinationId: string, sourceId?: string }`
 - `{ type: "createObject", locationId: string, nameKey: string, descriptionKey?: string, behaviorModuleId: string, behaviorClassName: string, tags: string, aliasesEn?: string, aliasesDe?: string, properties?: GameValue map }` (kernel assigns a new `obj_` id)
-- `{ type: "moveObject", destinationId: string, objectId?: string }` (legacy decode alias: `movePlayer`)
+- `{ type: "destroyObject", objectId?: string }` (defaults to the executing permanent object; rejects players, room roots, and objects with contents)
+- `{ type: "moveObject", destinationId: string, objectId?: string }` (omitted `objectId` moves the acting player; legacy decode alias: `movePlayer`; permanent things must be in the actor's room)
 - `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
 - `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`

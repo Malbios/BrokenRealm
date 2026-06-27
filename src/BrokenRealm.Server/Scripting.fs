@@ -161,6 +161,9 @@ module Scripting =
             match readString "itemId" effect, readInt "amount" effect with
             | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(RemoveInventory(objectId, itemId, amount))
             | _ -> Error "removeInventory effects require itemId and an amount from 1 to 100."
+        | Some "destroyObject" ->
+            let objectId = readString "objectId" effect
+            Ok(DestroyObject objectId)
         | Some "createObject" ->
             match
                 readString "locationId" effect,

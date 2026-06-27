@@ -74,6 +74,7 @@ module ObjectDatabase =
               Properties =
                 Map.ofList
                     [ "biome", StringValue "forest"
+                      "tickCount", IntegerValue 0L
                       "resourceItem", StringValue "wood"
                       "elevation", IntegerValue 120L
                       "dangerous", BooleanValue false
@@ -100,6 +101,7 @@ module ObjectDatabase =
               Properties =
                 Map.ofList
                     [ "biome", StringValue "settlement"
+                      "comfort", IntegerValue 0L
                       "population", IntegerValue 24L
                       "nearestForest", ObjectReferenceValue "forest" ]
               References = Map.ofList [ "south", "forest" ]

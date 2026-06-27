@@ -140,6 +140,7 @@ type ScriptEffect =
         tags: string list *
         aliases: Map<Culture, string list> *
         properties: Map<string, GameValue>
+    | DestroyObject of objectId: ObjectId option
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
     | EmitMessage of Message

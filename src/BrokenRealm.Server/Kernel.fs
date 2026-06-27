@@ -45,6 +45,30 @@ module Kernel =
             | Some _ -> Ok id
         | None -> Ok actingCharacterId
 
+    let private resolveMobileObject
+        (state: GameState)
+        (actingCharacterId: CharacterId)
+        (objectId: ObjectId option)
+        =
+        let resolvedId =
+            match objectId with
+            | Some id -> id
+            | None -> actingCharacterId
+
+        match state.Objects |> Map.tryFind resolvedId with
+        | None -> Error $"Unknown mobile object id: {resolvedId}"
+        | Some gameObject when PlayerObjects.isPlayer gameObject -> Ok(PlayerObjects.get state resolvedId)
+        | Some gameObject when WorldObjects.isPermanentThing gameObject ->
+            let actingPlayer = PlayerObjects.get state actingCharacterId
+            let actingLocationId = PlayerObjects.locationId actingPlayer
+
+            match gameObject.LocationId with
+            | None -> Error $"Permanent object {resolvedId} is not in a container."
+            | Some locationId when locationId <> actingLocationId ->
+                Error "That object is not here."
+            | Some _ -> Ok gameObject
+        | Some _ -> Error $"Object {resolvedId} cannot be moved."
+
     let rec private validateEffect (state: GameState) actingCharacterId targetId effect =
         match effect with
         | AddInventory(objectId, itemId, amount) when not (state.ItemIds.Contains itemId) ->
@@ -93,10 +117,22 @@ module Kernel =
                                 | Ok() -> None)
                             |> Option.map Error
                             |> Option.defaultValue (Ok())
+        | DestroyObject objectId ->
+            let resolvedId = objectId |> Option.defaultValue targetId
+
+            match WorldObjects.destroy state resolvedId with
+            | Error error -> Error error
+            | Ok _ -> Ok()
         | MoveObject(objectId, destinationId) when not (state.Objects.ContainsKey destinationId) ->
             Error("Unknown destination object id: " + destinationId)
-        | MoveObject(objectId, _) ->
-            resolvePlayerTarget state actingCharacterId objectId |> Result.map ignore
+        | MoveObject(objectId, destinationId) ->
+            match resolveMobileObject state actingCharacterId objectId with
+            | Error error -> Error error
+            | Ok gameObject ->
+                if PlayerObjects.isPlayer gameObject then
+                    Ok()
+                else
+                    WorldObjects.isValidPlacementLocation state destinationId
         | TransferItem(sourceId, itemId, _, destinationId) when not (state.ItemIds.Contains itemId) ->
             Error("Unknown item id: " + itemId)
         | TransferItem(sourceId, _, amount, _) when amount <= 0 || amount > 100 ->
@@ -313,13 +349,21 @@ module Kernel =
                         properties
 
                 Ok(updatedState, messages, remainingInvocations)
+            | DestroyObject objectId ->
+                let resolvedId = objectId |> Option.defaultValue targetId
+
+                WorldObjects.destroy state resolvedId
+                |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
             | MoveObject(objectId, destinationId) ->
-                match resolvePlayerTarget state characterId objectId with
+                match resolveMobileObject state characterId objectId with
                 | Error error -> Error error
-                | Ok playerId ->
-                    let player = PlayerObjects.get state playerId
-                    let updated = PlayerObjects.withLocation player destinationId
-                    Ok({ state with Objects = Map.add playerId updated state.Objects }, messages, remainingInvocations)
+                | Ok gameObject ->
+                    if PlayerObjects.isPlayer gameObject then
+                        let updated = PlayerObjects.withLocation gameObject destinationId
+                        Ok({ state with Objects = Map.add gameObject.Id updated state.Objects }, messages, remainingInvocations)
+                    else
+                        WorldObjects.movePermanent state gameObject.Id destinationId
+                        |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
             | TransferItem(sourceId, itemId, amount, destinationId) ->
                 let sourceContainerId =
                     match sourceId with
@@ -372,6 +416,55 @@ module Kernel =
                 | Error error -> Error error
                 | Ok(state, messages, remaining) -> applyEffect characterId targetId depth state messages remaining effect)
             (Ok(state, messages, remainingInvocations))
+
+    let private applyTickEffects characterId targetId effects state =
+        applyEffects characterId targetId 0 effects state [] maxAnonymousInvocations
+        |> Result.map (fun (state, _, _) -> state)
+
+    let tickWorld (state: GameState) (isCharacterConnected: CharacterId -> bool) =
+        let locations =
+            state.Objects
+            |> Map.toList
+            |> List.choose (fun (_, gameObject) ->
+                if
+                    PlayerObjects.isPlayer gameObject
+                    && not (PlayerObjects.isInLimbo gameObject)
+                    && isCharacterConnected gameObject.Id
+                then
+                    PlayerObjects.tryLocationId gameObject
+                    |> Option.map (fun locationId -> locationId, gameObject)
+                else
+                    None)
+            |> List.distinctBy fst
+
+        if List.isEmpty locations then
+            Ok state
+        else
+            let actor = locations |> List.head |> snd
+
+            locations
+            |> List.fold
+                (fun result (locationId, _) ->
+                    result
+                    |> Result.bind (fun current ->
+                        let location = current.Objects[locationId]
+                        let contents = contentsOf current locationId |> List.filter (fun object -> object.Id <> actor.Id)
+                        let behaviorModule = current.BehaviorModules[location.BehaviorModuleId]
+
+                        match
+                            Scripting.executeBehaviorMethodWithContents
+                                location.BehaviorClassName
+                                "tick"
+                                current
+                                location
+                                contents
+                                Map.empty
+                                actor
+                                behaviorModule.CompiledSource
+                        with
+                        | Error _ -> Ok current
+                        | Ok effects -> applyTickEffects actor.Id location.Id effects current))
+                (Ok state)
 
     let private submitValidCommand characterId culture text (state: GameState) =
         match CommandMatching.tryMatchForCharacter characterId culture text state with

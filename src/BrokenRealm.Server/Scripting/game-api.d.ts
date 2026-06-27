@@ -3,6 +3,7 @@ declare type ScriptEffect =
   | { type: "removeInventory"; itemId: string; amount: number; objectId?: string }
   | { type: "transferItem"; itemId: string; amount: number; destinationId: string; sourceId?: string }
   | { type: "createObject"; locationId: string; nameKey: string; descriptionKey?: string; behaviorModuleId: string; behaviorClassName: string; tags: string; aliasesEn?: string; aliasesDe?: string; properties?: Record<string, GameValue> }
+  | { type: "destroyObject"; objectId?: string }
   | { type: "moveObject"; destinationId: string; objectId?: string }
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
