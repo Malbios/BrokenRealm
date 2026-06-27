@@ -175,6 +175,31 @@ type AuthResponse =
       selectedCharacterId: string
       characters: SessionCharacterResponse list }
 
+type SnapshotBackupInfo =
+    { fileName: string
+      createdAt: DateTimeOffset }
+
+[<CLIMutable>]
+type SnapshotBackupResponse =
+    { fileName: string
+      formatVersion: int
+      worldRevision: int64 }
+
+[<CLIMutable>]
+type SnapshotBackupListResponse =
+    { backups: SnapshotBackupInfo list }
+
+[<CLIMutable>]
+type SnapshotRestoreRequest =
+    { fileName: string }
+
+[<CLIMutable>]
+type SnapshotRestoreResponse =
+    { fileName: string
+      formatVersion: int
+      worldRevision: int64
+      objectCount: int }
+
 [<CLIMutable>]
 type SelectCharacterRequest =
     { characterId: string }

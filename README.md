@@ -1,6 +1,6 @@
 # BrokenRealm
 
-BrokenRealm is a browser-playable, ToastStunt-inspired text empire sandbox prototype. Its trusted F# kernel owns an in-memory object database, localized command dispatch, sandboxed execution, effect validation, and atomic state changes. Admin-authored game behavior lives in TypeScript classes compiled to JavaScript and executed through Jint.
+BrokenRealm is a browser-playable, ToastStunt-inspired text empire sandbox prototype. Its trusted F# kernel owns a revision-checked object database with file-backed JSON snapshots, localized command dispatch, sandboxed execution, effect validation, and atomic state changes. Admin-authored game behavior lives in TypeScript classes compiled to JavaScript and executed through Jint.
 
 ## Run
 
@@ -99,6 +99,9 @@ Admin editor transport:
 - `PUT /admin/behaviors/{moduleId}`
 - `POST /admin/behaviors/{moduleId}/validate`
 - `GET /admin/scripting/game-api.d.ts`
+- `POST /admin/snapshot/backup`
+- `GET /admin/snapshots`
+- `POST /admin/snapshot/restore`
 
 Loading a behavior module returns its `sourceRevision`. Check and save requests must include that revision:
 
@@ -113,7 +116,9 @@ Successful responses return the current `sourceRevision`. A stale revision retur
 
 The class library is split into `core-behaviors`, `location-behaviors`, `forest-behaviors`, `village-behaviors`, `thing-behaviors`, and `anonymous-behaviors`. Modules declare dependencies; the kernel rejects missing dependencies and cycles and compiles dependency source in deterministic topological order. Native `extends`, `override`, and `super` work across module boundaries.
 
-The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit modules in memory. It loads the server's authoritative scripting declarations and dependency sources for IntelliSense, preserves one model and undo history per module, and maps structured diagnostics to the correct module and source location. Check validates the complete affected graph without activation. Save recompiles the edited module and all transitive dependents, validates every registered class and affected object, and activates the graph atomically. Both operations send the source revision loaded with the module; stale requests receive HTTP 409 and preserve unsaved editor contents instead of overwriting newer source. Unsaved-change guards cover module and tab navigation. Any failure leaves the previous graph active. There is no authentication yet.
+The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit modules in memory. It loads the server's authoritative scripting declarations and dependency sources for IntelliSense, preserves one model and undo history per module, and maps structured diagnostics to the correct module and source location. Check validates the complete affected graph without activation. Save recompiles the edited module and all transitive dependents, validates every registered class and affected object, and activates the graph atomically. Both operations send the source revision loaded with the module; stale requests receive HTTP 409 and offer reload/overwrite actions while preserving unsaved editor contents. Unsaved-change guards cover module and tab navigation. Any failure leaves the previous graph active.
+
+Player sessions support guest play, password login, registration, and character selection. The seeded prototype account is `prototype-account` with password `prototype`.
 
 Capability contracts use normal TypeScript interfaces. `ForestBehavior`, for example, implements `Gatherable`, so removing its `gather` method produces a compiler diagnostic before activation.
 
@@ -123,7 +128,7 @@ Admin-authored behavior methods run with centralized limits: 4 MB tracked memory
 
 ## Scope
 
-There is no durable database, Docker setup, authentication, or SignalR. The process uses a revision-checked in-memory storage adapter whose versioned snapshots retain authoritative world state, character progress, and TypeScript source while excluding compiled behavior artifacts. Everything still resets when the server restarts. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
+There is no PostgreSQL/Docker setup or SignalR yet. The process uses a revision-checked file-backed storage adapter that writes authoritative JSON snapshots to `data/game-snapshot.json` (override with `BROKENREALM_SNAPSHOT_PATH`). Snapshots retain world objects, player progress, accounts, and TypeScript source while excluding compiled behavior artifacts. Startup hydrates and migrates snapshots forward before accepting commands. Admin snapshot backup and restore endpoints write timestamped copies under `data/backups/`. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
 
 ## Object IDs
 

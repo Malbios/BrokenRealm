@@ -201,9 +201,13 @@ Implemented:
 
 Not yet implemented:
 
-- generalized `moveObject` / explicit object-targeted inventory effects (legacy `movePlayer` / `addInventory` names remain)
 - carried items as contained permanent objects
-- localized display names for player objects in room contents
+
+Implemented since this ADR was written:
+
+- generalized `moveObject` and optional `objectId` on `addInventory`; legacy `movePlayer` remains a decode alias
+- localized display names for player objects in room contents and session character summaries
+- acting character omitted from `look` contents
 
 Depends on:
 

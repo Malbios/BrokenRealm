@@ -100,10 +100,15 @@ Implemented in the in-memory runtime:
 
 Not yet implemented:
 
-- snapshot hydration and startup validation
-- ordered migration execution
-- a durable database adapter and backups
-- accounts, account-to-character ownership, authentication, or sessions
+- a durable database adapter beyond the development file store
+- automated scheduled backups and external backup retention policy
+
+Implemented since this ADR was written:
+
+- snapshot hydration, ordered forward migration, and startup validation
+- file-backed JSON snapshots with compare-and-swap world and player revisions
+- timestamped snapshot backups and admin restore with pre-restore safety backup
+- accounts, player objects, sessions, and password authentication at the HTTP boundary
 
 ## Alternatives considered
 

@@ -268,6 +268,69 @@ module SnapshotPersistenceTests =
             if File.Exists path then
                 File.Delete path
 
+    [<Fact>]
+    let ``Snapshot backup and restore round-trip through the file store`` () =
+        let contentRoot =
+            Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "BrokenRealm.Server"))
+
+        let directory = Path.Combine(Path.GetTempPath(), "brokenrealm-backup-" + Guid.NewGuid().ToString("N"))
+        let path = Path.Combine(directory, "game-snapshot.json")
+
+        try
+            Directory.CreateDirectory(directory) |> ignore
+            let store = FileGameStore(path, ObjectDatabase.initialState, fun () -> timestamp)
+            let stored = store.Read()
+            let gathered = Kernel.submitCommand En "gather wood" stored.State
+
+            match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, gathered.State) with
+            | Ok _ -> ()
+            | Error _ -> Assert.True(false, "Expected the persisted commit to succeed.")
+
+            match store.CreateBackup(fun () -> timestamp) with
+            | Ok backupFileName ->
+                let backupPath = Path.Combine(SnapshotBackup.backupDirectoryFor path, backupFileName)
+                Assert.True(File.Exists backupPath)
+
+                let resetStore = FileGameStore(path, ObjectDatabase.initialState, fun () -> timestamp)
+                let resetPlayer =
+                    resetStore.Read().State.Objects[GameSnapshots.PrototypeCharacterId]
+                    |> PlayerObjects.inventory
+
+                Assert.Empty(resetPlayer)
+
+                match resetStore.TryRestore(contentRoot, backupFileName) with
+                | Ok snapshot ->
+                    let restoredPlayer =
+                        resetStore.Read().State.Objects[GameSnapshots.PrototypeCharacterId]
+                        |> PlayerObjects.inventory
+
+                    Assert.Equal(2, restoredPlayer["wood"])
+                    Assert.True(snapshot.World.Revision >= 0L)
+                | Error error -> Assert.True(false, error)
+            | Error error -> Assert.True(false, error)
+        finally
+            if Directory.Exists directory then
+                Directory.Delete(directory, recursive = true)
+
+    [<Fact>]
+    let ``Snapshot restore rejects path traversal backup names`` () =
+        let contentRoot =
+            Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "BrokenRealm.Server"))
+
+        let directory = Path.Combine(Path.GetTempPath(), "brokenrealm-backup-" + Guid.NewGuid().ToString("N"))
+        let path = Path.Combine(directory, "game-snapshot.json")
+
+        try
+            Directory.CreateDirectory(directory) |> ignore
+            let store = FileGameStore(path, ObjectDatabase.initialState, fun () -> timestamp)
+
+            match store.TryRestore(contentRoot, "../outside.json") with
+            | Error error -> Assert.Contains("parent-directory", error)
+            | Ok _ -> Assert.True(false, "Expected path traversal restore to be rejected.")
+        finally
+            if Directory.Exists directory then
+                Directory.Delete(directory, recursive = true)
+
 module KernelTests =
     let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }
 

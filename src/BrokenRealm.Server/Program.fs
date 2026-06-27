@@ -6,17 +6,27 @@ open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.FileProviders
 open Microsoft.Extensions.Hosting
+open Microsoft.Extensions.Logging
 
 module Program =
     [<EntryPoint>]
     let main args =
         let stateLock = obj()
+        let clock () = DateTimeOffset.UtcNow
         let builder = WebApplication.CreateBuilder(args)
         let app = builder.Build()
         let contentRoot = app.Environment.ContentRootPath
         let snapshotPath = GameStoreBootstrap.resolveSnapshotPath contentRoot
         let gameStore = GameStoreBootstrap.createGameStore contentRoot snapshotPath
         let sessionStore = SessionStore()
+        let startupSnapshot = gameStore.GetSnapshot()
+
+        app.Logger.LogInformation(
+            "BrokenRealm ready. Snapshot={SnapshotPath} Format=v{FormatVersion} WorldRevision={WorldRevision} Objects={ObjectCount}",
+            snapshotPath,
+            startupSnapshot.FormatVersion,
+            startupSnapshot.World.Revision,
+            startupSnapshot.World.Objects.Count)
 
         let sessionCookieOptions =
             let options = CookieOptions()
@@ -261,6 +271,57 @@ module Program =
                         | Ok None -> Results.NotFound()
                         | Error diagnostics ->
                             Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
+        |> ignore
+
+        app.MapPost(
+            "/admin/snapshot/backup",
+            Func<IResult>(fun () ->
+                lock stateLock (fun () ->
+                    match gameStore.CreateBackup clock with
+                    | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                    | Ok fileName ->
+                        let snapshot = gameStore.GetSnapshot()
+
+                        Results.Json(
+                            { fileName = fileName
+                              formatVersion = snapshot.FormatVersion
+                              worldRevision = snapshot.World.Revision }
+                            : SnapshotBackupResponse))))
+        |> ignore
+
+        app.MapGet(
+            "/admin/snapshots",
+            Func<IResult>(fun () ->
+                lock stateLock (fun () ->
+                    let backups =
+                        SnapshotBackup.list snapshotPath
+                        |> List.map (fun backup ->
+                            { fileName = backup.fileName
+                              createdAt = backup.createdAt })
+
+                    Results.Json({ backups = backups } : SnapshotBackupListResponse))))
+        |> ignore
+
+        app.MapPost(
+            "/admin/snapshot/restore",
+            Func<SnapshotRestoreRequest, IResult>(fun request ->
+                lock stateLock (fun () ->
+                    let _ =
+                        match gameStore.CreateBackup clock with
+                        | Ok _ -> ()
+                        | Error _ -> ()
+
+                    let backupFileName = request.fileName
+
+                    match gameStore.TryRestore(contentRoot, backupFileName) with
+                    | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                    | Ok snapshot ->
+                        Results.Json(
+                            { fileName = backupFileName
+                              formatVersion = snapshot.FormatVersion
+                              worldRevision = snapshot.World.Revision
+                              objectCount = snapshot.World.Objects.Count }
+                            : SnapshotRestoreResponse))))
         |> ignore
 
         app.Run()

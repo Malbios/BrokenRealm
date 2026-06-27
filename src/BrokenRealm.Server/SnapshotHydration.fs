@@ -283,6 +283,23 @@ type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -
             Ok committed
         | Error conflict -> Error conflict
 
+    member _.CreateBackup(clock: unit -> DateTimeOffset) =
+        SnapshotBackup.create snapshotPath (inner.GetSnapshot()) clock
+
+    member _.TryRestore(contentRoot: string, fileName: string) =
+        match SnapshotBackup.resolveBackupPath snapshotPath fileName with
+        | Error error -> Error error
+        | Ok sourcePath when not (File.Exists sourcePath) ->
+            Error $"Backup file does not exist: {fileName}"
+        | Ok sourcePath ->
+            SnapshotCodec.tryReadFile sourcePath
+            |> Result.bind SnapshotMigrations.migrate
+            |> Result.bind (SnapshotHydration.hydrate (ScriptCompiler.compile contentRoot) Scripting.inspectBehaviorModule)
+            |> Result.map (fun (state, replacementSnapshot) ->
+                inner.Replace(state, replacementSnapshot)
+                persist()
+                replacementSnapshot)
+
 module GameStoreBootstrap =
     let defaultSnapshotPath contentRoot =
         Path.Combine(contentRoot, "data", "game-snapshot.json")

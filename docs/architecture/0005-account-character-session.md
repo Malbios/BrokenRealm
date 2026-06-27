@@ -81,6 +81,10 @@ Implemented:
 
 Not yet implemented:
 
-- authentication, password verification, or account registration
 - durable session storage for multi-server deployment
-- account administration beyond seeded prototype data
+- account administration beyond seeded prototype data and self-service registration
+
+Implemented since this ADR was written:
+
+- password hashing, login, logout, and registration endpoints
+- guest sessions that continue to bind to `prototype-account` until login

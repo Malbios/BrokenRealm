@@ -202,3 +202,8 @@ type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset, 
                     { State = runtimeState
                       WorldRevision = snapshot.World.Revision
                       CharacterRevisions = snapshot.PlayerRevisions })
+
+    member _.Replace(state: GameState, replacementSnapshot: GameSnapshot) =
+        lock gate (fun () ->
+            runtimeState <- state
+            snapshot <- replacementSnapshot)

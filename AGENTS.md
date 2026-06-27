@@ -273,7 +273,6 @@ Do not add these yet unless explicitly requested:
 
 - PostgreSQL
 - Docker
-- authentication
 - SignalR
 - procedural world generation
 - combat
@@ -286,7 +285,7 @@ Prefer:
 - small vertical slices
 - F# for server/kernel/domain/parsing/localization/tests
 - TypeScript for browser UI and admin-authored game logic
-- in-memory state for now
+- file-backed JSON snapshots for development durability
 - generic object/behavior mechanisms over command-specific endpoints
 
 Avoid:
@@ -317,6 +316,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
-2. Define account-to-character ownership and session selection before adding authentication.
-3. Add an explicit editor reload/merge workflow for stale source conflicts before collaborative admin use.
+1. Add carried-items ADR and promote inventory from player property maps to contained objects where appropriate.
+2. Add player presence verbs (`say`, `emote`) and richer multi-character room visibility.
+3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.
