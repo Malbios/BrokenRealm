@@ -57,6 +57,8 @@ module Localizer =
         | De, "gather.wood.success" -> "Du sammelst {amount} {item}."
         | En, "gather.no_wood_here" -> "There is no useful wood here."
         | De, "gather.no_wood_here" -> "Hier gibt es kein brauchbares Holz."
+        | En, "trail.renamed" -> "You name the trail {label}."
+        | De, "trail.renamed" -> "Du nennst den Pfad {label}."
         | En, "inventory.empty" -> "Inventory: empty."
         | De, "inventory.empty" -> "Inventar: leer."
         | En, "inventory.list" -> "Inventory: {items}."

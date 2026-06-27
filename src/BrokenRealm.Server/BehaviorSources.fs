@@ -99,6 +99,13 @@ const locationBehaviorClasses = { LocationBehavior };"""
         { culture: "de", pattern: "sammle {item}" },
         { culture: "de", pattern: "{item} sammeln" }
       ]
+    },
+    {
+      methodName: "renameTrail",
+      patterns: [
+        { culture: "en", pattern: "name trail {label}" },
+        { culture: "de", pattern: "nenne pfad {label}" }
+      ]
     }
   ];
 
@@ -123,6 +130,17 @@ const locationBehaviorClasses = { LocationBehavior };"""
         { type: "addInventory", itemId: "wood", amount },
         { type: "message", key: "gather.wood.success", args: { amount, item: "wood" } }
       ]
+    };
+  }
+
+  renameTrail(context: VerbContext): VerbResult {
+    return {
+      effects: [{
+        type: "invokeAnonymous",
+        path: ["trailToken"],
+        methodName: "rename",
+        args: { label: context.args.label }
+      }]
     };
   }
 }
@@ -168,7 +186,10 @@ const villageBehaviorClasses = { VillageBehavior };"""
 
   rename(context: AnonymousBehaviorContext): VerbResult {
     return {
-      effects: [{ type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label }]
+      effects: [
+        { type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label },
+        { type: "message", key: "trail.renamed", args: { label: context.args.label } }
+      ]
     };
   }
 }
@@ -236,6 +257,10 @@ const locationBehaviorClasses = { LocationBehavior };"""
     { methodName: "gather", patterns: [
       { culture: "en", pattern: "gather {item}" }, { culture: "en", pattern: "collect {item}" },
       { culture: "de", pattern: "sammle {item}" }, { culture: "de", pattern: "{item} sammeln" }
+    ] },
+    { methodName: "renameTrail", patterns: [
+      { culture: "en", pattern: "name trail {label}" },
+      { culture: "de", pattern: "nenne pfad {label}" }
     ] }
   ];
   look(context) {
@@ -252,6 +277,11 @@ const locationBehaviorClasses = { LocationBehavior };"""
       { type: "addInventory", itemId: "wood", amount },
       { type: "message", key: "gather.wood.success", args: { amount, item: "wood" } }
     ] };
+  }
+  renameTrail(context) {
+    return { effects: [{
+      type: "invokeAnonymous", path: ["trailToken"], methodName: "rename", args: { label: context.args.label }
+    }] };
   }
 }
 const forestBehaviorClasses = { ForestBehavior };"""
@@ -282,7 +312,10 @@ const villageBehaviorClasses = { VillageBehavior };"""
     return { effects: [{ type: "message", key: "token.describe", args: { label: context.this.properties.label } }] };
   }
   rename(context) {
-    return { effects: [{ type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label }] };
+    return { effects: [
+      { type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label },
+      { type: "message", key: "trail.renamed", args: { label: context.args.label } }
+    ] };
   }
 }
 const anonymousBehaviorClasses = { TrailTokenBehavior };"""

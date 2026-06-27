@@ -2,6 +2,7 @@ declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
+  | { type: "invokeAnonymous"; path: (string | number)[]; methodName: string; args?: Record<string, string> }
   | { type: "message"; key: string; args?: Record<string, unknown> };
 
 declare type ObjectId = string;

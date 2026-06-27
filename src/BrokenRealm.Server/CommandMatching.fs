@@ -17,6 +17,7 @@ module CommandMatching =
                 |> Option.defaultValue []
                 |> List.map (fun alias -> normalize alias, target.Id)
                 |> Map.ofList
+            | "label" -> Map.ofList [ normalize value, value.Trim() ]
             | _ -> Map.empty
 
         aliases |> Map.tryFind (normalize value)

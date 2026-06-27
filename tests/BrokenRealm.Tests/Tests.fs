@@ -183,7 +183,7 @@ module KernelTests =
             | Error diagnostic -> failwith diagnostic.message
 
         let forestCommands = classes["ForestBehavior"].Commands |> List.map _.MethodName
-        Assert.Equal<string list>([ "inventory"; "look"; "move"; "gather" ], forestCommands)
+        Assert.Equal<string list>([ "inventory"; "look"; "move"; "gather"; "renameTrail" ], forestCommands)
 
     [<Fact>]
     let ``Updating class command metadata changes localized dispatch`` () =
@@ -895,7 +895,7 @@ module AnonymousBehaviorValueTests =
 
         match Kernel.invokeStoredAnonymousValueMethod "forest" path "rename" (Map.ofList [ "label", "new trail" ]) state with
         | Ok result ->
-            Assert.Empty(result.Messages)
+            Assert.Equal("trail.renamed", (result.Messages |> List.exactlyOne).Key)
 
             match result.State.Objects["forest"].Properties["trailToken"] with
             | AnonymousValue updated -> Assert.Equal<GameValue>(StringValue "new trail", updated.Properties["label"])
@@ -905,6 +905,42 @@ module AnonymousBehaviorValueTests =
             | AnonymousValue original -> Assert.Equal<GameValue>(StringValue "old forest trail", original.Properties["label"])
             | _ -> Assert.True(false, "Expected the original trail token.")
         | Error error -> Assert.True(false, error)
+
+    [<Theory>]
+    [<InlineData("name trail green way", "en", "You name the trail green way.")>]
+    [<InlineData("nenne pfad grüner weg", "de", "Du nennst den Pfad grüner weg.")>]
+    let ``Permanent behavior invokes stored anonymous behavior from localized commands`` command cultureName expected =
+        let culture = if cultureName = "de" then De else En
+        let result = Kernel.submitCommand culture command ObjectDatabase.initialState
+
+        match result.State.Objects["forest"].Properties["trailToken"] with
+        | AnonymousValue updated -> Assert.Equal<GameValue>(StringValue(command.Split(' ', 3)[2]), updated.Properties["label"])
+        | _ -> Assert.True(false, "Expected the trail token to remain anonymous.")
+
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State culture
+        Assert.Equal(expected, line)
+
+    [<Fact>]
+    let ``Recursive anonymous invocation is bounded and atomic`` () =
+        let state = ObjectDatabase.initialState
+        let behaviorModule = state.BehaviorModules["anonymous-behaviors"]
+        let recursiveRename =
+            """TrailTokenBehavior.prototype.rename = function(context) {
+  return { effects: [{
+    type: "invokeAnonymous",
+    path: context.this.storagePath,
+    methodName: "rename",
+    args: context.args
+  }] };
+};"""
+        let changedModule = { behaviorModule with CompiledSource = behaviorModule.CompiledSource + "\n" + recursiveRename }
+        let changedState = { state with BehaviorModules = Map.add behaviorModule.Id changedModule state.BehaviorModules }
+        let result = Kernel.submitCommand En "name trail loop" changedState
+
+        let error = result.Messages |> List.exactlyOne
+        Assert.Equal("script.error", error.Key)
+        Assert.Equal("Anonymous behavior invocation depth may not exceed 8.", error.Args["error"])
+        Assert.Equal(changedState.Objects["forest"].Properties["trailToken"], result.State.Objects["forest"].Properties["trailToken"])
 
     [<Fact>]
     let ``Invalid replacement rolls back earlier effects in the batch`` () =

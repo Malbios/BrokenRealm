@@ -114,6 +114,7 @@ type ScriptEffect =
     | AddInventory of itemId: ItemId * amount: int
     | MovePlayer of destinationId: ObjectId
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
+    | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
     | EmitMessage of Message
 
 [<CLIMutable>]

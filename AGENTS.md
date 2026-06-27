@@ -150,6 +150,7 @@ English:
 - `walk north`
 - `examine log`
 - `x fallen log`
+- `name trail green way`
 
 German:
 
@@ -163,6 +164,7 @@ German:
 - `gehe nach norden`
 - `geh nach süden`
 - `untersuche baumstamm`
+- `nenne pfad grüner weg`
 
 Neutral item IDs:
 
@@ -221,9 +223,10 @@ Known effects:
 - `{ type: "addInventory", itemId: "wood", amount: number }`
 - `{ type: "movePlayer", destinationId: string }`
 - `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
+- `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
 
-The kernel validates effects before applying them. `replaceValue` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic.
+The kernel validates effects before applying them. `replaceValue` and `invokeAnonymous` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic. Nested anonymous dispatch is limited to 8 levels and 16 invocations per root effect batch.
 
 Script execution limits are centralized in `Scripting.defaultLimits`:
 
@@ -297,4 +300,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add an explicit kernel-mediated way for permanent object behavior to invoke a stored anonymous behavior value, so this mechanism can participate in player command flows without exposing arbitrary dispatch to scripts.
+1. Improve the Monaco behavior editor around the class/module model: load the real scripting declarations, expose module dependencies, preserve diagnostics by file and location, and make affected-module/object impact visible before save.

@@ -98,6 +98,20 @@ module Scripting =
                     | _, Error error -> Error error)
                 (Ok [])
 
+    let private decodeStringArguments (element: JsonElement) =
+        match element.TryGetProperty("args") with
+        | false, _ -> Ok Map.empty
+        | true, args when args.ValueKind <> JsonValueKind.Object -> Error "invokeAnonymous args must be an object."
+        | true, args ->
+            args.EnumerateObject()
+            |> Seq.fold
+                (fun result property ->
+                    match result, property.Value.ValueKind with
+                    | Ok values, JsonValueKind.String -> Ok(Map.add property.Name (property.Value.GetString()) values)
+                    | Error error, _ -> Error error
+                    | _ -> Error "invokeAnonymous argument values must be strings.")
+                (Ok Map.empty)
+
     let rec private jsonToStringMap (element: JsonElement) =
         match element.ValueKind with
         | JsonValueKind.Object ->
@@ -148,6 +162,12 @@ module Scripting =
             | Ok path, (true, value) -> decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(path, decoded))
             | Error error, _ -> Error error
             | _, (false, _) -> Error "replaceValue effects require a value."
+        | Some "invokeAnonymous" ->
+            match decodeValuePath effect, readString "methodName" effect, decodeStringArguments effect with
+            | Ok path, Some methodName, Ok args -> Ok(InvokeAnonymous(path, methodName, args))
+            | Error error, _, _ -> Error error
+            | _, None, _ -> Error "invokeAnonymous effects require a methodName."
+            | _, _, Error error -> Error error
         | Some "message" ->
             match readString "key" effect, readArgs limits effect with
             | Some key, Ok args -> Ok(EmitMessage(message key args))
