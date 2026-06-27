@@ -76,6 +76,77 @@ module SessionTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Say room messages enqueue for other players in the same room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let pending = PendingMessageStore()
+
+        let said =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "say Hello scout" state
+
+        RoomBroadcast.enqueueRoomMessages
+            pending
+            said.State
+            En
+            GameSnapshots.PrototypeCharacterId
+            said.Messages
+
+        let actorLines =
+            RoomBroadcast.buildResponseLines
+                pending
+                said.State
+                En
+                GameSnapshots.PrototypeCharacterId
+                said.Messages
+
+        Assert.Equal<string list>([ "You say, \"Hello scout\"." ], actorLines)
+
+        let scoutLines = pending.DequeueAll GameSnapshots.PrototypeScoutCharacterId
+
+        Assert.Equal<string list>([ "A prototype player says, \"Hello scout\"." ], scoutLines)
+
+    [<Fact>]
+    let ``Pending room messages prepend the next command response for a recipient`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let pending = PendingMessageStore()
+
+        let said =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "emote waves" state
+
+        RoomBroadcast.enqueueRoomMessages
+            pending
+            said.State
+            En
+            GameSnapshots.PrototypeCharacterId
+            said.Messages
+
+        let looked =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeScoutCharacterId En "look" said.State
+
+        let lines =
+            RoomBroadcast.buildResponseLines
+                pending
+                looked.State
+                En
+                GameSnapshots.PrototypeScoutCharacterId
+                looked.Messages
+
+        Assert.Equal("A prototype player waves.", lines[0])
+        Assert.True(lines.Length >= 2)
+        Assert.Contains("forest", lines[1].ToLowerInvariant())
+
+    [<Fact>]
     let ``Inventory matches on the player object before the room`` () =
         let state = ObjectDatabase.initialState
 

@@ -24,6 +24,10 @@ module CommandMatching =
         else
             let aliases =
                 match name with
+                | "amount" ->
+                    match System.Int32.TryParse(value) with
+                    | true, amount when amount >= 1 && amount <= 100 -> Map.ofList [ string amount, string amount ]
+                    | _ -> Map.empty
                 | "item" -> Localizer.itemAliases culture
                 | "direction" -> Localizer.directionAliases culture
                 | "object" ->

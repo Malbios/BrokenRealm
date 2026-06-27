@@ -966,14 +966,22 @@ module KernelTests =
     [<Fact>]
     let ``Say command returns localized speech with preserved text`` () =
         let result = Kernel.submitCommand En "say Hello there" ObjectDatabase.initialState
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage result.State En
 
         Assert.Equal("You say, \"Hello there\".", line)
 
     [<Fact>]
     let ``German say command matches sag pattern`` () =
         let result = Kernel.submitCommand De "sag Guten Tag" ObjectDatabase.initialState
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State De
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage result.State De
 
         Assert.Equal("Du sagst: \"Guten Tag\".", line)
 
@@ -987,7 +995,11 @@ module KernelTests =
     [<Fact>]
     let ``Emote command returns localized action text`` () =
         let result = Kernel.submitCommand En "emote waves happily" ObjectDatabase.initialState
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage result.State En
 
         Assert.Equal("A prototype player waves happily.", line)
 
@@ -1002,16 +1014,64 @@ module KernelTests =
         | None -> Assert.True(false, "Expected colon emote to match.")
 
         let result = Kernel.submitCommand En ": smiles" ObjectDatabase.initialState
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage result.State En
 
         Assert.Equal("A prototype player smiles.", line)
 
     [<Fact>]
     let ``German star emote alias matches actor emote`` () =
         let result = Kernel.submitCommand De "* winkt" ObjectDatabase.initialState
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State De
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.exactlyOne
+            |> ResponseFormatting.localizeMessage result.State De
 
         Assert.Equal("Ein Prototyp-Spieler winkt.", line)
+
+    [<Fact>]
+    let ``Drop amount moves multiple units to a floor stack`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand En "drop 2 wood" gathered.State
+
+        Assert.Equal(0, PlayerObjects.inventory dropped.State GameSnapshots.PrototypeCharacterId |> Map.tryFind "wood" |> Option.defaultValue 0)
+
+        let roomStacks = CarriedItems.stacksIn dropped.State "forest"
+        Assert.Equal(1, roomStacks.Length)
+
+        match CarriedItems.stackQuantity roomStacks[0] with
+        | Some quantity -> Assert.Equal(2, quantity)
+        | None -> Assert.True(false, "Expected floor stack quantity.")
+
+        let line =
+            dropped.Messages
+            |> List.find (fun message -> message.Key = "drop.success")
+            |> ResponseFormatting.localizeMessage dropped.State En
+
+        Assert.Equal("You drop 2 wood.", line)
+
+    [<Fact>]
+    let ``Take amount picks up multiple units from a floor stack`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand En "drop 2 wood" gathered.State
+        let taken = Kernel.submitCommand En "take 2 wood" dropped.State
+
+        Assert.Equal(2, taken.State.Player.Inventory["wood"])
+        Assert.Empty(CarriedItems.stacksIn taken.State "forest")
+
+    [<Fact>]
+    let ``Look shows floor stack quantities in room contents`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand En "drop 2 wood" gathered.State
+        let result = Kernel.submitCommand En "look" dropped.State
+        let contents = result.Messages |> List.find (fun message -> message.Key = "location.contents")
+        let line = ResponseFormatting.localizeMessage result.State En contents
+
+        Assert.Contains("pile of wood (2)", line)
 
     [<Fact>]
     let ``Look lists other players in the same room`` () =

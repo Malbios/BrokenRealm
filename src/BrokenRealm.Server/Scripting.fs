@@ -292,7 +292,8 @@ module Scripting =
            references = actor.References
            inventory = PlayerObjects.inventory state actor.Id
            locationId = locationId
-           locationContents = locationContents |> List.toArray |}
+           locationContents = locationContents |> List.toArray
+           floorItems = CarriedItems.itemQuantitiesInContainer state locationId |}
 
     let private executeWithinLimits limits invocation (state: GameState) (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actor: GameObject) source =
         let context =

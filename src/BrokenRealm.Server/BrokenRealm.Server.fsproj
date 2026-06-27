@@ -18,6 +18,7 @@
     <Compile Include="ScriptCompiler.fs" />
     <Compile Include="Kernel.fs" />
     <Compile Include="Sessions.fs" />
+    <Compile Include="RoomBroadcast.fs" />
     <Compile Include="SnapshotCodec.fs" />
     <Compile Include="SnapshotBackup.fs" />
     <Compile Include="SnapshotHydration.fs" />

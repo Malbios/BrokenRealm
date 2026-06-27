@@ -19,6 +19,7 @@ module Program =
         let snapshotPath = GameStoreBootstrap.resolveSnapshotPath contentRoot
         let gameStore = GameStoreBootstrap.createGameStore contentRoot snapshotPath
         let sessionStore = SessionStore()
+        let pendingMessages = PendingMessageStore()
         let startupSnapshot = gameStore.GetSnapshot()
 
         app.Logger.LogInformation(
@@ -165,16 +166,32 @@ module Program =
             Func<HttpContext, GameCommandRequest, IResult>(fun ctx request ->
                 let culture = Cultures.parse request.culture
 
-                let result =
+                let result, characterId =
                     lock stateLock (fun () ->
                         let session = resolveSession ctx
                         let stored = gameStore.Read()
                         let result =
                             Kernel.submitCommandForCharacter session.SelectedCharacterId culture request.text stored.State
                         let committed = commit stored result.State
-                        { result with State = committed.State })
+                        let finalResult = { result with State = committed.State }
 
-                let lines = result.Messages |> List.map (ResponseFormatting.localizeMessage result.State culture)
+                        RoomBroadcast.enqueueRoomMessages
+                            pendingMessages
+                            finalResult.State
+                            culture
+                            session.SelectedCharacterId
+                            result.Messages
+
+                        finalResult, session.SelectedCharacterId)
+
+                let lines =
+                    RoomBroadcast.buildResponseLines
+                        pendingMessages
+                        result.State
+                        culture
+                        characterId
+                        result.Messages
+
                 Results.Json({ lines = lines } : CommandResponse)))
         |> ignore
 

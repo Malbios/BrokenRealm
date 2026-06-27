@@ -23,7 +23,7 @@ module CarriedItems =
         | Some(StringValue itemId) -> Some itemId
         | _ -> None
 
-    let private stackQuantity (gameObject: GameObject) =
+    let stackQuantity (gameObject: GameObject) =
         match gameObject.Properties |> Map.tryFind QuantityProperty with
         | Some(IntegerValue quantity) when quantity > 0L -> Some(int quantity)
         | _ -> None
@@ -71,6 +71,16 @@ module CarriedItems =
         |> List.map snd
         |> List.filter (fun gameObject -> gameObject.LocationId = Some containerId && isCarriedStack gameObject)
         |> List.sortBy _.Id
+
+    let itemQuantitiesInContainer (state: GameState) (containerId: ObjectId) =
+        stacksIn state containerId
+        |> List.choose (fun stack ->
+            match stackItemId stack, stackQuantity stack with
+            | Some itemId, Some quantity -> Some(itemId, quantity)
+            | _ -> None)
+        |> List.groupBy fst
+        |> List.map (fun (itemId, entries) -> itemId, entries |> List.sumBy snd)
+        |> Map.ofList
 
     let private addToContainer (state: GameState) (containerId: ObjectId) (itemId: ItemId) (amount: int) =
         if amount <= 0 then

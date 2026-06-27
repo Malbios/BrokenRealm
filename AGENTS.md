@@ -153,6 +153,11 @@ English:
 - `collect wood`
 - `inventory`
 - `inv`
+- `drop wood` / `drop 5 wood`
+- `take wood` / `take 3 wood` / `pick up wood`
+- `give wood to scout` / `give 2 wood to scout`
+- `say hello` / `say`
+- `emote waves` / `: waves`
 - `go north`
 - `walk north`
 - `examine log`
@@ -168,6 +173,11 @@ German:
 - `holz sammeln`
 - `inventar`
 - `inv`
+- `lege holz ab` / `lege 5 holz ab`
+- `nimm holz` / `nimm 3 holz` / `hebe holz auf`
+- `gib holz an scout` / `gib 2 holz an scout`
+- `sag hallo` / `sag` / `sage`
+- `emote winkt` / `* winkt`
 - `gehe nach norden`
 - `geh nach süden`
 - `untersuche baumstamm`
@@ -229,11 +239,14 @@ Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `For
 
 Known effects:
 
-- `{ type: "addInventory", itemId: "wood", amount: number }`
-- `{ type: "movePlayer", destinationId: string }`
+- `{ type: "addInventory", itemId: "wood", amount: number, objectId?: string }`
+- `{ type: "transferItem", itemId: string, amount: number, destinationId: string, sourceId?: string }`
+- `{ type: "moveObject", destinationId: string, objectId?: string }` (legacy decode alias: `movePlayer`)
 - `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
 - `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
+
+Message keys ending in `.room` are delivered to other player characters in the same location through a per-character pending queue; `.self` and other keys stay on the acting character's command response.
 
 The kernel validates effects before applying them. `replaceValue` and `invokeAnonymous` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic. Nested anonymous dispatch is limited to 8 levels and 16 invocations per root effect batch.
 
@@ -316,6 +329,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add player presence verbs (`say`, `emote`) and richer multi-character room visibility.
-2. Add drop/give mechanics for carried item stack objects.
+1. Broadcast room events over a live channel (SignalR or similar) so pending messages arrive without waiting for the next command.
+2. Add first-person German/English emote self-view and richer social verbs (`whisper`, `pose`).
 3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.

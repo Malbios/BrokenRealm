@@ -30,6 +30,7 @@ declare interface VerbContext {
     inventory: Record<string, number>;
     locationId: string;
     locationContents: VerbObjectSummary[];
+    floorItems: Record<string, number>;
   };
 }
 
@@ -49,6 +50,7 @@ declare interface AnonymousBehaviorContext {
     inventory: Record<string, number>;
     locationId: string;
     locationContents: VerbObjectSummary[];
+    floorItems: Record<string, number>;
   };
 }
 

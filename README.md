@@ -41,29 +41,27 @@ Run the TypeScript check from `src/BrokenRealm.Client`.
 
 English:
 
-- `look`
-- `l`
-- `gather wood`
-- `collect wood`
-- `inventory`
-- `inv`
-- `go north`
-- `walk north`
-- `examine log`
-- `x fallen log`
+- `look`, `l`
+- `gather wood`, `collect wood`
+- `inventory`, `inv`
+- `drop wood`, `drop 5 wood`
+- `take wood`, `pick up 3 wood`
+- `give wood to scout`, `give 2 wood to scout`
+- `say hello`, `emote waves`, `: smiles`
+- `go north`, `walk north`
+- `examine log`, `x fallen log`
 - `name trail green way`
 
 Deutsch:
 
-- `schau`
-- `umsehen`
-- `sieh dich um`
-- `sammle holz`
-- `holz sammeln`
-- `inventar`
-- `inv`
-- `gehe nach norden`
-- `geh nach süden`
+- `schau`, `umsehen`, `sieh dich um`
+- `sammle holz`, `holz sammeln`
+- `inventar`, `inv`
+- `lege holz ab`, `lege 5 holz ab`
+- `nimm holz`, `hebe 3 holz auf`
+- `gib holz an scout`, `gib 2 holz an scout`
+- `sag hallo`, `sage`, `emote winkt`, `* winkt`
+- `gehe nach norden`, `geh nach süden`
 - `untersuche baumstamm`
 - `nenne pfad grüner weg`
 

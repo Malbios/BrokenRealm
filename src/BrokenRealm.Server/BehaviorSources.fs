@@ -31,22 +31,30 @@ const coreBehaviorClasses = { GameBehavior };"""
     {
       methodName: "drop",
       patterns: [
+        { culture: "en", pattern: "drop {amount} {item}" },
         { culture: "en", pattern: "drop {item}" },
+        { culture: "de", pattern: "lege {amount} {item} ab" },
         { culture: "de", pattern: "lege {item} ab" }
       ]
     },
     {
       methodName: "give",
       patterns: [
+        { culture: "en", pattern: "give {amount} {item} to {player}" },
         { culture: "en", pattern: "give {item} to {player}" },
+        { culture: "de", pattern: "gib {amount} {item} an {player}" },
         { culture: "de", pattern: "gib {item} an {player}" }
       ]
     },
     {
       methodName: "take",
       patterns: [
+        { culture: "en", pattern: "take {amount} {item}" },
+        { culture: "en", pattern: "pick up {amount} {item}" },
         { culture: "en", pattern: "take {item}" },
         { culture: "en", pattern: "pick up {item}" },
+        { culture: "de", pattern: "nimm {amount} {item}" },
+        { culture: "de", pattern: "hebe {amount} {item} auf" },
         { culture: "de", pattern: "nimm {item}" },
         { culture: "de", pattern: "hebe {item} auf" }
       ]
@@ -85,14 +93,21 @@ const coreBehaviorClasses = { GameBehavior };"""
 
   drop(context: VerbContext): VerbResult {
     const itemId = context.args.item;
-    const amount = context.actor.inventory[itemId] ?? 0;
-    if (amount < 1) {
+    const available = context.actor.inventory[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
+    }
+    if (available < 1) {
       return { effects: [{ type: "message", key: "drop.none", args: { item: itemId } }] };
+    }
+    if (available < requested) {
+      return { effects: [{ type: "message", key: "drop.insufficient", args: { item: itemId, amount: String(available) } }] };
     }
     return {
       effects: [
-        { type: "transferItem", itemId, amount: 1, destinationId: context.actor.locationId },
-        { type: "message", key: "drop.success", args: { item: itemId } }
+        { type: "transferItem", itemId, amount: requested, destinationId: context.actor.locationId },
+        { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } }
       ]
     };
   }
@@ -103,9 +118,16 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (playerId === context.actor.id) {
       return { effects: [{ type: "message", key: "give.self", args: {} }] };
     }
-    const amount = context.actor.inventory[itemId] ?? 0;
-    if (amount < 1) {
+    const available = context.actor.inventory[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
+    }
+    if (available < 1) {
       return { effects: [{ type: "message", key: "give.none", args: { item: itemId } }] };
+    }
+    if (available < requested) {
+      return { effects: [{ type: "message", key: "give.insufficient", args: { item: itemId, amount: String(available) } }] };
     }
     const recipient = context.actor.locationContents.find(object => object.id === playerId);
     if (!recipient || !recipient.tags.includes("player")) {
@@ -113,30 +135,35 @@ const coreBehaviorClasses = { GameBehavior };"""
     }
     return {
       effects: [
-        { type: "transferItem", itemId, amount: 1, destinationId: playerId },
-        { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+        { type: "transferItem", itemId, amount: requested, destinationId: playerId },
+        { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } }
       ]
     };
   }
 
   take(context: VerbContext): VerbResult {
     const itemId = context.args.item;
-    const floorStack = context.actor.locationContents.find(
-      object => object.tags.includes("carried") && object.tags.includes(itemId)
-    );
-    if (!floorStack) {
+    const available = context.actor.floorItems[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
+    }
+    if (available < 1) {
       return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
+    }
+    if (available < requested) {
+      return { effects: [{ type: "message", key: "take.insufficient", args: { item: itemId, amount: String(available) } }] };
     }
     return {
       effects: [
         {
           type: "transferItem",
           itemId,
-          amount: 1,
+          amount: requested,
           sourceId: context.actor.locationId,
           destinationId: context.actor.id
         },
-        { type: "message", key: "take.success", args: { item: itemId } }
+        { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } }
       ]
     };
   }
@@ -146,7 +173,12 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (!text) {
       return { effects: [{ type: "message", key: "say.empty", args: {} }] };
     }
-    return { effects: [{ type: "message", key: "say.self", args: { text } }] };
+    return {
+      effects: [
+        { type: "message", key: "say.self", args: { text } },
+        { type: "message", key: "say.room", args: { actor: context.actor.id, text } }
+      ]
+    };
   }
 
   emote(context: VerbContext): VerbResult {
@@ -154,7 +186,12 @@ const coreBehaviorClasses = { GameBehavior };"""
     if (!text) {
       return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
     }
-    return { effects: [{ type: "message", key: "emote.self", args: { actor: context.actor.id, text } }] };
+    return {
+      effects: [
+        { type: "message", key: "emote.self", args: { actor: context.actor.id, text } },
+        { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
+      ]
+    };
   }
 }
 
@@ -340,13 +377,17 @@ const coreBehaviorClasses = { GameBehavior };"""
       { culture: "de", pattern: "inventar" }, { culture: "de", pattern: "inv" }
     ] },
     { methodName: "drop", patterns: [
-      { culture: "en", pattern: "drop {item}" }, { culture: "de", pattern: "lege {item} ab" }
+      { culture: "en", pattern: "drop {amount} {item}" }, { culture: "en", pattern: "drop {item}" },
+      { culture: "de", pattern: "lege {amount} {item} ab" }, { culture: "de", pattern: "lege {item} ab" }
     ] },
     { methodName: "give", patterns: [
-      { culture: "en", pattern: "give {item} to {player}" }, { culture: "de", pattern: "gib {item} an {player}" }
+      { culture: "en", pattern: "give {amount} {item} to {player}" }, { culture: "en", pattern: "give {item} to {player}" },
+      { culture: "de", pattern: "gib {amount} {item} an {player}" }, { culture: "de", pattern: "gib {item} an {player}" }
     ] },
     { methodName: "take", patterns: [
+      { culture: "en", pattern: "take {amount} {item}" }, { culture: "en", pattern: "pick up {amount} {item}" },
       { culture: "en", pattern: "take {item}" }, { culture: "en", pattern: "pick up {item}" },
+      { culture: "de", pattern: "nimm {amount} {item}" }, { culture: "de", pattern: "hebe {amount} {item} auf" },
       { culture: "de", pattern: "nimm {item}" }, { culture: "de", pattern: "hebe {item} auf" }
     ] },
     { methodName: "say", patterns: [
@@ -370,56 +411,65 @@ const coreBehaviorClasses = { GameBehavior };"""
   }
   drop(context) {
     const itemId = context.args.item;
-    const amount = context.actor.inventory[itemId] ?? 0;
-    if (amount < 1) {
-      return { effects: [{ type: "message", key: "drop.none", args: { item: itemId } }] };
+    const available = context.actor.inventory[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
+    if (available < 1) return { effects: [{ type: "message", key: "drop.none", args: { item: itemId } }] };
+    if (available < requested) return { effects: [{ type: "message", key: "drop.insufficient", args: { item: itemId, amount: String(available) } }] };
     return { effects: [
-      { type: "transferItem", itemId, amount: 1, destinationId: context.actor.locationId },
-      { type: "message", key: "drop.success", args: { item: itemId } }
+      { type: "transferItem", itemId, amount: requested, destinationId: context.actor.locationId },
+      { type: "message", key: "drop.success", args: { item: itemId, amount: String(requested) } }
     ] };
   }
   give(context) {
     const itemId = context.args.item;
     const playerId = context.args.player;
-    if (playerId === context.actor.id) {
-      return { effects: [{ type: "message", key: "give.self", args: {} }] };
+    if (playerId === context.actor.id) return { effects: [{ type: "message", key: "give.self", args: {} }] };
+    const available = context.actor.inventory[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
-    const amount = context.actor.inventory[itemId] ?? 0;
-    if (amount < 1) {
-      return { effects: [{ type: "message", key: "give.none", args: { item: itemId } }] };
-    }
+    if (available < 1) return { effects: [{ type: "message", key: "give.none", args: { item: itemId } }] };
+    if (available < requested) return { effects: [{ type: "message", key: "give.insufficient", args: { item: itemId, amount: String(available) } }] };
     const recipient = context.actor.locationContents.find(object => object.id === playerId);
-    if (!recipient || !recipient.tags.includes("player")) {
-      return { effects: [{ type: "message", key: "give.not_here", args: {} }] };
-    }
+    if (!recipient || !recipient.tags.includes("player")) return { effects: [{ type: "message", key: "give.not_here", args: {} }] };
     return { effects: [
-      { type: "transferItem", itemId, amount: 1, destinationId: playerId },
-      { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+      { type: "transferItem", itemId, amount: requested, destinationId: playerId },
+      { type: "message", key: "give.success", args: { item: itemId, player: playerId, amount: String(requested) } }
     ] };
   }
   take(context) {
     const itemId = context.args.item;
-    const floorStack = context.actor.locationContents.find(
-      object => object.tags.includes("carried") && object.tags.includes(itemId)
-    );
-    if (!floorStack) {
-      return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
+    const available = context.actor.floorItems[itemId] ?? 0;
+    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
+    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
+    if (available < 1) return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
+    if (available < requested) return { effects: [{ type: "message", key: "take.insufficient", args: { item: itemId, amount: String(available) } }] };
     return { effects: [
-      { type: "transferItem", itemId, amount: 1, sourceId: context.actor.locationId, destinationId: context.actor.id },
-      { type: "message", key: "take.success", args: { item: itemId } }
+      { type: "transferItem", itemId, amount: requested, sourceId: context.actor.locationId, destinationId: context.actor.id },
+      { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } }
     ] };
   }
   say(context) {
     const text = (context.args.text ?? "").trim();
     if (!text) return { effects: [{ type: "message", key: "say.empty", args: {} }] };
-    return { effects: [{ type: "message", key: "say.self", args: { text } }] };
+    return { effects: [
+      { type: "message", key: "say.self", args: { text } },
+      { type: "message", key: "say.room", args: { actor: context.actor.id, text } }
+    ] };
   }
   emote(context) {
     const text = (context.args.text ?? "").trim();
     if (!text) return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
-    return { effects: [{ type: "message", key: "emote.self", args: { actor: context.actor.id, text } }] };
+    return { effects: [
+      { type: "message", key: "emote.self", args: { actor: context.actor.id, text } },
+      { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
+    ] };
   }
 }
 const playerBehaviorClasses = { PlayerBehavior };"""

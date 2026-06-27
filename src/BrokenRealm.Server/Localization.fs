@@ -71,28 +71,40 @@ module Localizer =
         | De, "inventory.list" -> "Inventar: {items}."
         | En, "item.wood.stack" -> "a pile of wood"
         | De, "item.wood.stack" -> "ein Holzhaufen"
-        | En, "drop.success" -> "You drop {item}."
-        | De, "drop.success" -> "Du legst {item} ab."
+        | En, "drop.success" -> "You drop {amount} {item}."
+        | De, "drop.success" -> "Du legst {amount} {item} ab."
         | En, "drop.none" -> "You are not carrying any {item}."
         | De, "drop.none" -> "Du trägst kein {item}."
-        | En, "give.success" -> "You give {item} to {player}."
-        | De, "give.success" -> "Du gibst {player} {item}."
+        | En, "drop.insufficient" -> "You are only carrying {amount} {item}."
+        | De, "drop.insufficient" -> "Du trägst nur {amount} {item}."
+        | En, "give.success" -> "You give {amount} {item} to {player}."
+        | De, "give.success" -> "Du gibst {player} {amount} {item}."
+        | En, "give.insufficient" -> "You are only carrying {amount} {item}."
+        | De, "give.insufficient" -> "Du trägst nur {amount} {item}."
         | En, "give.none" -> "You are not carrying any {item}."
         | De, "give.none" -> "Du trägst kein {item}."
         | En, "give.not_here" -> "That player is not here."
         | De, "give.not_here" -> "Dieser Spieler ist nicht hier."
         | En, "give.self" -> "You cannot give an item to yourself."
         | De, "give.self" -> "Du kannst dir nichts selbst geben."
-        | En, "take.success" -> "You pick up {item}."
-        | De, "take.success" -> "Du nimmst {item}."
+        | En, "take.success" -> "You pick up {amount} {item}."
+        | De, "take.success" -> "Du nimmst {amount} {item}."
         | En, "take.none" -> "There is no {item} here."
         | De, "take.none" -> "Hier liegt kein {item}."
+        | En, "take.insufficient" -> "There are only {amount} {item} here."
+        | De, "take.insufficient" -> "Hier liegen nur {amount} {item}."
+        | En, "transfer.invalid_amount" -> "That amount must be from 1 to 100."
+        | De, "transfer.invalid_amount" -> "Diese Menge muss zwischen 1 und 100 liegen."
         | En, "say.self" -> "You say, \"{text}\"."
         | De, "say.self" -> "Du sagst: \"{text}\"."
+        | En, "say.room" -> "{actor} says, \"{text}\"."
+        | De, "say.room" -> "{actor} sagt: \"{text}\"."
         | En, "say.empty" -> "Say what?"
         | De, "say.empty" -> "Was möchtest du sagen?"
         | En, "emote.self" -> "{actor} {text}."
         | De, "emote.self" -> "{actor} {text}."
+        | En, "emote.room" -> "{actor} {text}."
+        | De, "emote.room" -> "{actor} {text}."
         | En, "emote.empty" -> "Emote what?"
         | De, "emote.empty" -> "Was möchtest du ausdrücken?"
         | En, "command.unknown" -> "I do not understand that command."
@@ -106,6 +118,15 @@ module Localizer =
         |> Map.tryFind objectId
         |> Option.map (fun object -> template culture object.NameKey)
         |> Option.defaultValue objectId
+
+    let displayObjectName (state: GameState) culture objectId =
+        match state.Objects |> Map.tryFind objectId with
+        | Some gameObject when CarriedItems.isCarriedStack gameObject ->
+            match CarriedItems.stackQuantity gameObject with
+            | Some quantity -> $"{template culture gameObject.NameKey} ({quantity})"
+            | None -> template culture gameObject.NameKey
+        | Some gameObject -> template culture gameObject.NameKey
+        | None -> objectId
 
     let emoteActorName (state: GameState) culture objectId =
         state.Objects
@@ -136,7 +157,7 @@ module ResponseFormatting =
 
     let private formatObjects state culture (value: string) =
         value.Split(',', System.StringSplitOptions.RemoveEmptyEntries)
-        |> Array.map (Localizer.objectName state culture)
+        |> Array.map (Localizer.displayObjectName state culture)
         |> String.concat ", "
 
     let localizeMessage state culture (message: Message) =
