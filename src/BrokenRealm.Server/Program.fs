@@ -42,6 +42,14 @@ module Program =
         |> ignore
 
         app.MapGet(
+            "/admin/scripting/game-api.d.ts",
+            Func<IResult>(fun () ->
+                match ScriptCompiler.tryReadApiDeclarations app.Environment.ContentRootPath with
+                | Some declarations -> Results.Text(declarations, "text/plain; charset=utf-8")
+                | None -> Results.NotFound()))
+        |> ignore
+
+        app.MapGet(
             "/admin/behaviors/{moduleId}",
             Func<string, IResult>(fun moduleId ->
                 lock stateLock (fun () ->

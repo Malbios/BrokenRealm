@@ -137,3 +137,7 @@ module ScriptCompiler =
                     column = 0 } ]
         else
             compileWithinLimits contentRoot source
+
+    let tryReadApiDeclarations contentRoot =
+        tryFindServerRoot contentRoot
+        |> Option.map (fun serverRoot -> File.ReadAllText(Path.Combine(serverRoot, "Scripting", "game-api.d.ts")))

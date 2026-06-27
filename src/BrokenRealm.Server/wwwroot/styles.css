@@ -143,9 +143,39 @@ select {
 }
 
 .admin-panel {
-  grid-template-rows: auto minmax(360px, 1fr) auto;
+  grid-template-rows: auto minmax(360px, 1fr) auto auto;
   gap: 14px;
   padding: 18px;
+}
+
+.module-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-group {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(177, 206, 183, 0.16);
+  border-radius: 6px;
+  background: rgba(18, 26, 22, 0.72);
+}
+
+.detail-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #89d18f;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.detail-value {
+  color: #cbd9ce;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .editor-head {
@@ -271,6 +301,10 @@ button:disabled {
     align-items: stretch;
     flex-direction: column;
     width: 100%;
+  }
+
+  .module-details {
+    grid-template-columns: 1fr;
   }
 
   .command-row {

@@ -758,6 +758,17 @@ module BehaviorClassRuntimeTests =
         | Error diagnostics -> Error(diagnostics |> List.map _.message |> String.concat "\n")
 
     [<Fact>]
+    let ``Editor scripting declarations come from the compiler contract`` () =
+        let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
+
+        match ScriptCompiler.tryReadApiDeclarations repoRoot with
+        | Some declarations ->
+            Assert.Contains("declare interface VerbContext", declarations)
+            Assert.Contains("invokeAnonymous", declarations)
+            Assert.Contains("AnonymousBehaviorContext", declarations)
+        | None -> Assert.True(false, "Expected the scripting declarations to be available.")
+
+    [<Fact>]
     let ``Compiled behavior classes use native super dispatch`` () =
         let compiled = compileBehavior forestSource |> Result.defaultWith failwith
 

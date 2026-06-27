@@ -247,6 +247,10 @@ The browser UI has:
 - player tab with output log, command input, and language selector
 - admin tab with behavior-module selection plus Monaco, with a textarea fallback when the CDN is unavailable
 - structured compile diagnostics displayed as Monaco markers and individual editor messages
+- Monaco declarations loaded from the server's real `game-api.d.ts` contract rather than a duplicated browser string
+- dependency-aware TypeScript IntelliSense using the selected module's transitive behavior sources
+- one Monaco model per behavior module, preserving undo history and unsaved edits while switching modules
+- structured class, dependency, affected-module, and affected-object metadata visible before save
 
 Admin can change behavior methods or command metadata, save the module, and later player commands use the atomically activated class hierarchy.
 
@@ -300,4 +304,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Improve the Monaco behavior editor around the class/module model: load the real scripting declarations, expose module dependencies, preserve diagnostics by file and location, and make affected-module/object impact visible before save.
+1. Map server compiler diagnostics back to their originating behavior module and module-local line, including diagnostics in dependency compilation units.

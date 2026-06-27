@@ -13,48 +13,14 @@ const saveScript = document.querySelector("#save-script");
 const scriptStatus = document.querySelector("#script-status");
 const behaviorModuleSelect = document.querySelector("#behavior-module");
 const verbTitle = document.querySelector("#verb-title");
+const moduleDetails = document.querySelector("#module-details");
 let editor = null;
 let editorReady = null;
 let behaviorModules = [];
-const gameApiTypes = `declare type ScriptEffect =
-  | { type: "addInventory"; itemId: "wood"; amount: number }
-  | { type: "movePlayer"; destinationId: string }
-  | { type: "message"; key: string; args?: Record<string, unknown> };
-
-declare type ObjectId = string;
-declare type GameValue = null | string | number | boolean | GameValue[] | { [key: string]: GameValue };
-
-declare interface VerbContext {
-  args: Record<string, string>;
-  this: {
-    id: string;
-    name: string;
-    descriptionKey: string;
-    tags: string[];
-    properties: Record<string, GameValue>;
-    references: Record<string, string>;
-    contents: {
-      id: ObjectId;
-      name: string;
-      descriptionKey: string;
-      tags: string[];
-    }[];
-  };
-  actor: {
-    inventory: Record<string, number>;
-  };
-}
-
-declare interface VerbResult {
-  effects: ScriptEffect[];
-}
-
-declare interface Gatherable {
-  gather(context: VerbContext): VerbResult;
-}
-
-declare function execute(context: VerbContext): VerbResult;
-`;
+const moduleModels = new Map();
+const modulePayloads = new Map();
+const savedSources = new Map();
+let dependencyLibraries = [];
 function appendLine(text, className = "line") {
     if (!log)
         return;
@@ -103,6 +69,36 @@ function setDiagnostics(diagnostics) {
     });
     scriptStatus.appendChild(list);
 }
+function renderModuleDetails(payload) {
+    if (!moduleDetails)
+        return;
+    moduleDetails.replaceChildren();
+    const details = [
+        ["Classes", payload.classes.join(", ") || "none"],
+        ["Dependencies", payload.dependencies.join(", ") || "none"],
+        ["Affected modules", payload.affectedModules.join(", ") || payload.moduleId],
+        ["Affected objects", payload.affectedObjects.join(", ") || "none"],
+    ];
+    details.forEach(([label, value]) => {
+        const group = document.createElement("div");
+        group.className = "detail-group";
+        const labelElement = document.createElement("span");
+        labelElement.className = "detail-label";
+        labelElement.textContent = label;
+        const valueElement = document.createElement("div");
+        valueElement.className = "detail-value";
+        valueElement.textContent = value;
+        group.append(labelElement, valueElement);
+        moduleDetails.appendChild(group);
+    });
+}
+function updateEditorTitle(moduleId) {
+    if (!verbTitle)
+        return;
+    const model = moduleModels.get(moduleId);
+    const dirty = model && model.getValue() !== savedSources.get(moduleId);
+    verbTitle.textContent = `${moduleId}${dirty ? " *" : ""}`;
+}
 function showPanel(panel) {
     const isAdmin = panel === "admin";
     playerTab?.classList.toggle("active", !isAdmin);
@@ -129,6 +125,38 @@ function setScriptSource(value) {
         scriptSource.value = value;
     }
 }
+async function fetchBehaviorModule(moduleId, refresh = false) {
+    if (!refresh) {
+        const cached = modulePayloads.get(moduleId);
+        if (cached)
+            return cached;
+    }
+    const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`);
+    if (!response.ok)
+        throw new Error(`Could not load behavior module ${moduleId}.`);
+    const payload = (await response.json());
+    modulePayloads.set(moduleId, payload);
+    return payload;
+}
+async function configureDependencyLibraries(payload) {
+    const monaco = window.monaco;
+    if (!monaco)
+        return;
+    dependencyLibraries.forEach((library) => library.dispose());
+    dependencyLibraries = [];
+    const visited = new Set();
+    const addDependencies = async (moduleId) => {
+        if (visited.has(moduleId))
+            return;
+        visited.add(moduleId);
+        const dependency = await fetchBehaviorModule(moduleId);
+        for (const nestedId of dependency.dependencies)
+            await addDependencies(nestedId);
+        dependencyLibraries.push(monaco.languages.typescript.typescriptDefaults.addExtraLib(dependency.source, `inmemory://dependencies/${dependency.moduleId}.ts`));
+    };
+    for (const dependencyId of payload.dependencies)
+        await addDependencies(dependencyId);
+}
 function selectedModuleId() {
     return behaviorModuleSelect?.value || null;
 }
@@ -153,57 +181,61 @@ async function loadBehaviorModules() {
 function initializeEditor() {
     if (editorReady)
         return editorReady;
-    editorReady = new Promise((resolve) => {
+    editorReady = (async () => {
         if (!editorHost || !scriptSource || !window.require) {
             editorHost?.setAttribute("hidden", "true");
             scriptSource?.removeAttribute("hidden");
-            resolve();
             return;
         }
+        const declarationsResponse = await fetch("/admin/scripting/game-api.d.ts");
+        if (!declarationsResponse.ok)
+            throw new Error("Could not load scripting declarations.");
+        const declarations = await declarationsResponse.text();
         window.require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs" } });
-        window.require(["vs/editor/editor.main"], () => {
-            const monaco = window.monaco;
-            if (!monaco) {
-                editorHost.setAttribute("hidden", "true");
-                scriptSource.removeAttribute("hidden");
-                resolve();
-                return;
-            }
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(gameApiTypes, "game-api.d.ts");
-            monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-                target: 9,
-                strict: true,
-                noEmit: true,
-                skipLibCheck: true,
-            });
-            monaco.editor.defineTheme("brokenrealm", {
-                base: "vs-dark",
-                inherit: true,
-                rules: [],
-                colors: {
-                    "editor.background": "#0b110e",
-                    "editor.foreground": "#e5efe8",
-                    "editorLineNumber.foreground": "#6f8576",
-                    "editorCursor.foreground": "#89d18f",
-                    "editor.selectionBackground": "#244b37",
-                    "editorGutter.background": "#0b110e",
-                },
-            });
-            monaco.editor.setTheme("brokenrealm");
-            editor = monaco.editor.create(editorHost, {
-                value: scriptSource.value,
-                language: "typescript",
-                automaticLayout: true,
-                minimap: { enabled: false },
-                fontFamily: 'Consolas, "Cascadia Mono", "Segoe UI Mono", monospace',
-                fontSize: 14,
-                tabSize: 2,
-                insertSpaces: true,
-                scrollBeyondLastLine: false,
-                wordWrap: "on",
-            });
-            resolve();
+        await new Promise((resolve) => window.require?.(["vs/editor/editor.main"], resolve));
+        const monaco = window.monaco;
+        if (!monaco) {
+            editorHost.setAttribute("hidden", "true");
+            scriptSource.removeAttribute("hidden");
+            return;
+        }
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(declarations, "inmemory://model/game-api.d.ts");
+        monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+            target: 9,
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
         });
+        monaco.editor.defineTheme("brokenrealm", {
+            base: "vs-dark",
+            inherit: true,
+            rules: [],
+            colors: {
+                "editor.background": "#0b110e",
+                "editor.foreground": "#e5efe8",
+                "editorLineNumber.foreground": "#6f8576",
+                "editorCursor.foreground": "#89d18f",
+                "editor.selectionBackground": "#244b37",
+                "editorGutter.background": "#0b110e",
+            },
+        });
+        monaco.editor.setTheme("brokenrealm");
+        editor = monaco.editor.create(editorHost, {
+            value: "",
+            language: "typescript",
+            automaticLayout: true,
+            minimap: { enabled: false },
+            fontFamily: 'Consolas, "Cascadia Mono", "Segoe UI Mono", monospace',
+            fontSize: 14,
+            tabSize: 2,
+            insertSpaces: true,
+            scrollBeyondLastLine: false,
+            wordWrap: "on",
+        });
+    })().catch(() => {
+        editorHost?.setAttribute("hidden", "true");
+        scriptSource?.removeAttribute("hidden");
     });
     return editorReady;
 }
@@ -237,16 +269,31 @@ async function loadScript() {
         setStatus("No editable behavior module is available.", true);
         return;
     }
-    const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`);
-    if (!response.ok) {
-        setStatus("Could not load script.", true);
+    let payload;
+    try {
+        payload = await fetchBehaviorModule(moduleId);
+        await configureDependencyLibraries(payload);
+    }
+    catch {
+        setStatus("Could not load behavior module or its dependencies.", true);
         return;
     }
-    const payload = (await response.json());
-    setScriptSource(payload.source);
+    if (editor && window.monaco) {
+        let model = moduleModels.get(moduleId);
+        if (!model) {
+            model = window.monaco.editor.createModel(payload.source, "typescript", window.monaco.Uri.parse(`inmemory://behaviors/${moduleId}.ts`));
+            moduleModels.set(moduleId, model);
+            savedSources.set(moduleId, payload.source);
+            model.onDidChangeContent(() => updateEditorTitle(moduleId));
+        }
+        editor.setModel(model);
+    }
+    else {
+        setScriptSource(payload.source);
+    }
     setEditorMarkers([]);
-    if (verbTitle)
-        verbTitle.textContent = moduleId;
+    updateEditorTitle(moduleId);
+    renderModuleDetails(payload);
     const modules = payload.affectedModules.join(", ") || moduleId;
     const objects = payload.affectedObjects.join(", ") || "none";
     setStatus(`Loaded. Saving affects modules: ${modules}; objects: ${objects}.`);
@@ -284,6 +331,20 @@ async function saveCurrentScript() {
         return;
     }
     const payload = (await response.json());
+    const source = getScriptSource();
+    savedSources.set(moduleId, source);
+    const existingPayload = modulePayloads.get(moduleId);
+    if (existingPayload) {
+        const updatedPayload = {
+            ...existingPayload,
+            source,
+            affectedModules: payload.affectedModules,
+            affectedObjects: payload.affectedObjects,
+        };
+        modulePayloads.set(moduleId, updatedPayload);
+        renderModuleDetails(updatedPayload);
+    }
+    updateEditorTitle(moduleId);
     setStatus(`Saved and compiled atomically. Updated modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`);
     saveScript?.removeAttribute("disabled");
 }
