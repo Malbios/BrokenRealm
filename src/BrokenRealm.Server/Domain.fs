@@ -11,6 +11,10 @@ type ObjectId = string
 type ItemId = string
 type Quantity = int
 
+type ValuePathSegment =
+    | PropertySegment of string
+    | IndexSegment of int
+
 type GameValue =
     | NullValue
     | StringValue of string
@@ -109,6 +113,7 @@ type MatchedBehaviorMethod =
 type ScriptEffect =
     | AddInventory of itemId: ItemId * amount: int
     | MovePlayer of destinationId: ObjectId
+    | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | EmitMessage of Message
 
 [<CLIMutable>]

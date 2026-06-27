@@ -1,6 +1,7 @@
 declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
   | { type: "movePlayer"; destinationId: string }
+  | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
   | { type: "message"; key: string; args?: Record<string, unknown> };
 
 declare type ObjectId = string;
@@ -34,6 +35,7 @@ declare interface VerbResult {
 declare interface AnonymousBehaviorContext {
   args: Record<string, string>;
   this: {
+    storagePath: (string | number)[];
     properties: Record<string, GameValue>;
   };
   actor: {

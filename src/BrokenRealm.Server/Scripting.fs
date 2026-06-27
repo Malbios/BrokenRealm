@@ -43,6 +43,61 @@ module Scripting =
             | _ -> None
         | _ -> None
 
+    let rec private decodeGameValue (element: JsonElement) =
+        match element.ValueKind with
+        | JsonValueKind.Null -> Ok NullValue
+        | JsonValueKind.String -> Ok(StringValue(element.GetString()))
+        | JsonValueKind.True -> Ok(BooleanValue true)
+        | JsonValueKind.False -> Ok(BooleanValue false)
+        | JsonValueKind.Number ->
+            match element.TryGetInt64() with
+            | true, value -> Ok(IntegerValue value)
+            | _ -> Ok(FloatValue(element.GetDouble()))
+        | JsonValueKind.Array ->
+            element.EnumerateArray()
+            |> Seq.fold
+                (fun result item ->
+                    result
+                    |> Result.bind (fun values -> decodeGameValue item |> Result.map (fun value -> values @ [ value ])))
+                (Ok [])
+            |> Result.map ListValue
+        | JsonValueKind.Object ->
+            element.EnumerateObject()
+            |> Seq.fold
+                (fun result property ->
+                    result
+                    |> Result.bind (fun values ->
+                        decodeGameValue property.Value
+                        |> Result.map (fun value -> Map.add property.Name value values)))
+                (Ok Map.empty)
+            |> Result.map MapValue
+        | _ -> Error "replaceValue values must contain only supported game values."
+
+    let private decodeValuePath (element: JsonElement) =
+        match element.TryGetProperty("path") with
+        | false, _ -> Error "replaceValue effects require a path."
+        | true, path when path.ValueKind <> JsonValueKind.Array -> Error "replaceValue paths must be arrays."
+        | true, path when path.GetArrayLength() = 0 || path.GetArrayLength() > 16 ->
+            Error "replaceValue paths must contain 1 to 16 segments."
+        | true, path ->
+            path.EnumerateArray()
+            |> Seq.map (fun segment ->
+                match segment.ValueKind with
+                | JsonValueKind.String when not (String.IsNullOrWhiteSpace(segment.GetString())) ->
+                    Ok(PropertySegment(segment.GetString()))
+                | JsonValueKind.Number ->
+                    match segment.TryGetInt32() with
+                    | true, index when index >= 0 -> Ok(IndexSegment index)
+                    | _ -> Error "replaceValue index segments must be non-negative integers."
+                | _ -> Error "replaceValue path segments must be non-empty strings or non-negative integers.")
+            |> Seq.fold
+                (fun result segment ->
+                    match result, segment with
+                    | Ok segments, Ok value -> Ok(segments @ [ value ])
+                    | Error error, _ -> Error error
+                    | _, Error error -> Error error)
+                (Ok [])
+
     let rec private jsonToStringMap (element: JsonElement) =
         match element.ValueKind with
         | JsonValueKind.Object ->
@@ -88,6 +143,11 @@ module Scripting =
             match readString "destinationId" effect with
             | Some destinationId -> Ok(MovePlayer destinationId)
             | None -> Error "movePlayer effects require a destinationId."
+        | Some "replaceValue" ->
+            match decodeValuePath effect, effect.TryGetProperty("value") with
+            | Ok path, (true, value) -> decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(path, decoded))
+            | Error error, _ -> Error error
+            | _, (false, _) -> Error "replaceValue effects require a value."
         | Some "message" ->
             match readString "key" effect, readArgs limits effect with
             | Some key, Ok args -> Ok(EmitMessage(message key args))
@@ -224,7 +284,7 @@ module Scripting =
             let invocation context = $"(new {className}()).{methodName}({context})"
             executeWithinLimits defaultLimits invocation target contents args actorInventory source
 
-    let executeAnonymousBehaviorMethod (className: string) (methodName: string) (value: AnonymousBehaviorValue) args actorInventory (source: string) =
+    let executeAnonymousBehaviorMethodAtPath (className: string) (methodName: string) storagePath (value: AnonymousBehaviorValue) args actorInventory (source: string) =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
             Error "Behavior class and method names must be valid JavaScript identifiers."
         elif source.Length > defaultLimits.MaxSourceCharacters then
@@ -232,9 +292,12 @@ module Scripting =
         else
             let properties = Dictionary<string, obj>()
             value.Properties |> Map.iter (fun key property -> properties[key] <- gameValueToObject property)
-            let context = {| args = args; this = {| properties = properties |}; actor = {| inventory = actorInventory |} |}
+            let context = {| args = args; this = {| storagePath = storagePath; properties = properties |}; actor = {| inventory = actorInventory |} |}
             let invocation contextJson = $"(new {className}()).{methodName}({contextJson})"
             executeContextWithinLimits defaultLimits invocation context source
+
+    let executeAnonymousBehaviorMethod className methodName value args actorInventory source =
+        executeAnonymousBehaviorMethodAtPath className methodName [||] value args actorInventory source
 
     let inspectBehaviorModule (registryName: string) (source: string) =
         let diagnostic message = { message = message; line = 0; column = 0 }

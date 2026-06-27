@@ -887,3 +887,99 @@ module AnonymousBehaviorValueTests =
             Assert.Equal("Anonymous value trailToken references unknown behavior class: TrailTokenBehavior", diagnostic.message)
         | Error _ -> Assert.True(false, "Expected one missing-class diagnostic.")
         | Ok _ -> Assert.True(false, "Expected the referenced anonymous behavior class removal to be rejected.")
+
+    [<Fact>]
+    let ``Stored anonymous behavior atomically replaces its nested property`` () =
+        let state = ObjectDatabase.initialState
+        let path = [ PropertySegment "trailToken" ]
+
+        match Kernel.invokeStoredAnonymousValueMethod "forest" path "rename" (Map.ofList [ "label", "new trail" ]) state with
+        | Ok result ->
+            Assert.Empty(result.Messages)
+
+            match result.State.Objects["forest"].Properties["trailToken"] with
+            | AnonymousValue updated -> Assert.Equal<GameValue>(StringValue "new trail", updated.Properties["label"])
+            | _ -> Assert.True(false, "Expected the trail token to remain anonymous.")
+
+            match state.Objects["forest"].Properties["trailToken"] with
+            | AnonymousValue original -> Assert.Equal<GameValue>(StringValue "old forest trail", original.Properties["label"])
+            | _ -> Assert.True(false, "Expected the original trail token.")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Invalid replacement rolls back earlier effects in the batch`` () =
+        let state = ObjectDatabase.initialState
+        let behaviorModule = state.BehaviorModules["anonymous-behaviors"]
+        let invalidRename =
+            """TrailTokenBehavior.prototype.rename = function() {
+  return { effects: [
+    { type: "addInventory", itemId: "wood", amount: 1 },
+    { type: "replaceValue", path: ["missing"], value: "changed" }
+  ] };
+};"""
+        let changedModule = { behaviorModule with CompiledSource = behaviorModule.CompiledSource + "\n" + invalidRename }
+        let changedState = { state with BehaviorModules = Map.add behaviorModule.Id changedModule state.BehaviorModules }
+
+        let result =
+            Kernel.invokeStoredAnonymousValueMethod
+                "forest"
+                [ PropertySegment "trailToken" ]
+                "rename"
+                Map.empty
+                changedState
+
+        match result with
+        | Error error ->
+            Assert.Equal("replaceValue path does not contain object property: missing", error)
+            Assert.Empty(changedState.Player.Inventory)
+        | Ok _ -> Assert.True(false, "Expected the invalid replacement batch to fail.")
+
+    [<Fact>]
+    let ``Replacement paths traverse anonymous maps and lists`` () =
+        let state = ObjectDatabase.initialState
+        let forest = state.Objects["forest"]
+        let token =
+            match forest.Properties["trailToken"] with
+            | AnonymousValue value ->
+                { value with
+                    Properties =
+                        value.Properties
+                        |> Map.add
+                            "settings"
+                            (MapValue(Map.ofList [ "labels", ListValue [ StringValue "first"; StringValue "second" ] ])) }
+            | _ -> failwith "Expected the trail token."
+        let changedForest = { forest with Properties = Map.add "trailToken" (AnonymousValue token) forest.Properties }
+        let behaviorModule = state.BehaviorModules["anonymous-behaviors"]
+        let nestedRename =
+            """TrailTokenBehavior.prototype.rename = function(context) {
+  return { effects: [{
+    type: "replaceValue",
+    path: [...context.this.storagePath, "settings", "labels", 1],
+    value: context.args.label
+  }] };
+};"""
+        let changedModule = { behaviorModule with CompiledSource = behaviorModule.CompiledSource + "\n" + nestedRename }
+        let changedState =
+            { state with
+                Objects = Map.add forest.Id changedForest state.Objects
+                BehaviorModules = Map.add behaviorModule.Id changedModule state.BehaviorModules }
+
+        match
+            Kernel.invokeStoredAnonymousValueMethod
+                "forest"
+                [ PropertySegment "trailToken" ]
+                "rename"
+                (Map.ofList [ "label", "updated" ])
+                changedState
+        with
+        | Ok result ->
+            match result.State.Objects["forest"].Properties["trailToken"] with
+            | AnonymousValue updated ->
+                match updated.Properties["settings"] with
+                | MapValue settings ->
+                    Assert.Equal<GameValue>(
+                        ListValue [ StringValue "first"; StringValue "updated" ],
+                        settings["labels"])
+                | _ -> Assert.True(false, "Expected settings to remain a map.")
+            | _ -> Assert.True(false, "Expected the token to remain anonymous.")
+        | Error error -> Assert.True(false, error)

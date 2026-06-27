@@ -165,6 +165,12 @@ const villageBehaviorClasses = { VillageBehavior };"""
       effects: [{ type: "message", key: "token.describe", args: { label: context.this.properties.label } }]
     };
   }
+
+  rename(context: AnonymousBehaviorContext): VerbResult {
+    return {
+      effects: [{ type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label }]
+    };
+  }
 }
 
 const anonymousBehaviorClasses = { TrailTokenBehavior };"""
@@ -274,6 +280,9 @@ const villageBehaviorClasses = { VillageBehavior };"""
   static commands = [];
   describe(context) {
     return { effects: [{ type: "message", key: "token.describe", args: { label: context.this.properties.label } }] };
+  }
+  rename(context) {
+    return { effects: [{ type: "replaceValue", path: [...context.this.storagePath, "label"], value: context.args.label }] };
   }
 }
 const anonymousBehaviorClasses = { TrailTokenBehavior };"""

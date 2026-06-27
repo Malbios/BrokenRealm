@@ -220,9 +220,10 @@ Known effects:
 
 - `{ type: "addInventory", itemId: "wood", amount: number }`
 - `{ type: "movePlayer", destinationId: string }`
+- `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
 
-The kernel validates effects before applying them.
+The kernel validates effects before applying them. `replaceValue` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic.
 
 Script execution limits are centralized in `Scripting.defaultLimits`:
 
@@ -296,4 +297,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Design an atomic, path-addressed effect for replacing an anonymous value nested under permanent state; do not introduce identity or in-place mutation.
+1. Add an explicit kernel-mediated way for permanent object behavior to invoke a stored anonymous behavior value, so this mechanism can participate in player command flows without exposing arbitrary dispatch to scripts.

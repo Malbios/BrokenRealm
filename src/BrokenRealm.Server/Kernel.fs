@@ -7,7 +7,41 @@ module Kernel =
         let current = inventory |> Map.tryFind itemId |> Option.defaultValue 0
         inventory |> Map.add itemId (current + amount)
 
-    let private validateEffect (state: GameState) effect =
+    let rec private tryReplaceNestedValue path replacement current =
+        match path, current with
+        | [], _ -> Ok replacement
+        | PropertySegment key :: rest, MapValue values ->
+            match values |> Map.tryFind key with
+            | None -> Error $"replaceValue path does not contain property: {key}"
+            | Some nested ->
+                tryReplaceNestedValue rest replacement nested
+                |> Result.map (fun updated -> MapValue(Map.add key updated values))
+        | PropertySegment key :: rest, AnonymousValue anonymous ->
+            match anonymous.Properties |> Map.tryFind key with
+            | None -> Error $"replaceValue path does not contain anonymous property: {key}"
+            | Some nested ->
+                tryReplaceNestedValue rest replacement nested
+                |> Result.map (fun updated ->
+                    AnonymousValue { anonymous with Properties = Map.add key updated anonymous.Properties })
+        | IndexSegment index :: rest, ListValue values when index < List.length values ->
+            tryReplaceNestedValue rest replacement values[index]
+            |> Result.map (fun updated -> ListValue(values |> List.updateAt index updated))
+        | IndexSegment index :: _, ListValue _ -> Error $"replaceValue path index is out of range: {index}"
+        | PropertySegment key :: _, _ -> Error $"replaceValue cannot traverse property segment: {key}"
+        | IndexSegment index :: _, _ -> Error $"replaceValue cannot traverse index segment: {index}"
+
+    let private tryReplaceObjectValue path replacement (target: GameObject) =
+        match path with
+        | PropertySegment propertyName :: rest ->
+            match target.Properties |> Map.tryFind propertyName with
+            | None -> Error $"replaceValue path does not contain object property: {propertyName}"
+            | Some current ->
+                tryReplaceNestedValue rest replacement current
+                |> Result.map (fun updated -> { target with Properties = Map.add propertyName updated target.Properties })
+        | IndexSegment _ :: _ -> Error "replaceValue paths must start with an object property name."
+        | [] -> Error "replaceValue paths must not be empty."
+
+    let rec private validateEffect (state: GameState) targetId effect =
         match effect with
         | AddInventory(itemId, amount) when not (state.ItemIds.Contains itemId) ->
             Error("Unknown item id: " + itemId)
@@ -15,9 +49,16 @@ module Kernel =
             Error "addInventory effects require an amount from 1 to 100."
         | MovePlayer destinationId when not (state.Objects.ContainsKey destinationId) ->
             Error("Unknown destination object id: " + destinationId)
+        | ReplaceValue(path, replacement) ->
+            match validateValueReferences state "replacement" replacement with
+            | Error error -> Error error
+            | Ok() ->
+                match state.Objects |> Map.tryFind targetId with
+                | None -> Error $"Unknown replaceValue target object id: {targetId}"
+                | Some target -> tryReplaceObjectValue path replacement target |> Result.map ignore
         | _ -> Ok()
 
-    let rec private validateValueReferences (state: GameState) path value =
+    and private validateValueReferences (state: GameState) path value =
         match value with
         | ObjectReferenceValue objectId when not (state.Objects.ContainsKey objectId) ->
             Error $"Property {path} references unknown object id: {objectId}"
@@ -109,8 +150,8 @@ module Kernel =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
-    let private applyEffect (state: GameState) (messages: Message list) effect =
-        match validateEffect state effect with
+    let private applyEffect targetId (state: GameState) (messages: Message list) effect =
+        match validateEffect state targetId effect with
         | Error error -> Error error
         | Ok() ->
             match effect with
@@ -121,7 +162,20 @@ module Kernel =
             | MovePlayer destinationId ->
                 let player = { state.Player with LocationId = destinationId }
                 Ok({ state with Player = player }, messages)
+            | ReplaceValue(path, replacement) ->
+                tryReplaceObjectValue path replacement state.Objects[targetId]
+                |> Result.map (fun target ->
+                    { state with Objects = Map.add targetId target state.Objects }, messages)
             | EmitMessage message -> Ok(state, messages @ [ message ])
+
+    let private applyEffects targetId effects state =
+        effects
+        |> List.fold
+            (fun result effect ->
+                match result with
+                | Error error -> Error error
+                | Ok(state, messages) -> applyEffect targetId state messages effect)
+            (Ok(state, []))
 
     let private submitValidCommand culture text (state: GameState) =
         match CommandMatching.tryMatch culture text state with
@@ -150,15 +204,7 @@ module Kernel =
                 { State = state
                   Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
             | Ok effects ->
-                match
-                    effects
-                    |> List.fold
-                        (fun result effect ->
-                            match result with
-                            | Error error -> Error error
-                            | Ok(state, messages) -> applyEffect state messages effect)
-                        (Ok(state, []))
-                with
+                match applyEffects target.Id effects state with
                 | Error error ->
                     { State = state
                       Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
@@ -185,6 +231,52 @@ module Kernel =
                 args
                 state.Player.Inventory
                 behaviorModule.CompiledSource
+
+    let rec private tryGetNestedValue path current =
+        match path, current with
+        | [], value -> Ok value
+        | PropertySegment key :: rest, MapValue values ->
+            match values |> Map.tryFind key with
+            | Some value -> tryGetNestedValue rest value
+            | None -> Error $"Value path does not contain property: {key}"
+        | PropertySegment key :: rest, AnonymousValue anonymous ->
+            match anonymous.Properties |> Map.tryFind key with
+            | Some value -> tryGetNestedValue rest value
+            | None -> Error $"Value path does not contain anonymous property: {key}"
+        | IndexSegment index :: rest, ListValue values when index < List.length values ->
+            tryGetNestedValue rest values[index]
+        | IndexSegment index :: _, ListValue _ -> Error $"Value path index is out of range: {index}"
+        | _ -> Error "Value path cannot traverse the selected value."
+
+    let private tryGetObjectValue path (target: GameObject) =
+        match path with
+        | PropertySegment propertyName :: rest ->
+            match target.Properties |> Map.tryFind propertyName with
+            | Some value -> tryGetNestedValue rest value
+            | None -> Error $"Value path does not contain object property: {propertyName}"
+        | _ -> Error "Value paths must start with an object property name."
+
+    let invokeStoredAnonymousValueMethod ownerId path methodName args (state: GameState) =
+        match state.Objects |> Map.tryFind ownerId with
+        | None -> Error $"Unknown anonymous value owner object id: {ownerId}"
+        | Some owner ->
+            match tryGetObjectValue path owner with
+            | Error error -> Error error
+            | Ok(AnonymousValue value) ->
+                match validateValueReferences state "anonymous" (AnonymousValue value) with
+                | Error error -> Error error
+                | Ok() ->
+                    let behaviorModule = state.BehaviorModules[value.BehaviorModuleId]
+                    let storagePath =
+                        path
+                        |> List.map (function PropertySegment name -> name :> obj | IndexSegment index -> index :> obj)
+                        |> List.toArray
+
+                    Scripting.executeAnonymousBehaviorMethodAtPath
+                        value.BehaviorClassName methodName storagePath value args state.Player.Inventory behaviorModule.CompiledSource
+                    |> Result.bind (fun effects -> applyEffects ownerId effects state)
+                    |> Result.map (fun (state, messages) -> { State = state; Messages = messages })
+            | Ok _ -> Error "Value path does not select an anonymous behavior value."
 
     let tryGetBehaviorModule moduleId (state: GameState) =
         state.BehaviorModules |> Map.tryFind moduleId
