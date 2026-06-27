@@ -332,3 +332,14 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 1. Add first-person German/English emote self-view and richer social verbs (`whisper`, `pose`).
 2. Broadcast enter/leave room presence separately from travel direction (`move.room` currently covers departure).
 3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.
+
+## Planned Later
+
+### Offline character limbo
+
+When a player disconnects, their character should leave the live world graph and enter a non-in-game **limbo** state rather than staying in the room as a present body.
+
+- Limbo characters are not in a room, do not receive room broadcasts, and are not visible in `look` contents.
+- Limbo isolates characters from time-based progression (hunger, decay, timed effects) until they reconnect and re-enter play explicitly.
+- Reconnect should restore the character to a defined entry point or last safe location through session/character selection, not by silently occupying a room they left online.
+- This replaces any future design that queues offline room messages or keeps disconnected players as world objects.
