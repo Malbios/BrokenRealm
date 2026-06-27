@@ -22,17 +22,22 @@ module RoomBroadcast =
             else
                 None)
 
+    let private roomIdForMessage (state: GameState) (actingCharacterId: CharacterId) (message: Message) =
+        match message.Args |> Map.tryFind "roomId" with
+        | Some roomId -> roomId
+        | None -> PlayerObjects.locationId (PlayerObjects.get state actingCharacterId)
+
     let planRoomDelivery (state: GameState) culture (actingCharacterId: CharacterId) (messages: Message list) =
         let roomMessages = messages |> List.filter isRoomMessage
 
         if roomMessages.IsEmpty then
             []
         else
-            let locationId = PlayerObjects.locationId (PlayerObjects.get state actingCharacterId)
-            let recipients = otherPlayersInRoom state locationId actingCharacterId
+            [ for message in roomMessages do
+                  let roomId = roomIdForMessage state actingCharacterId message
+                  let recipients = otherPlayersInRoom state roomId actingCharacterId
 
-            [ for recipientId in recipients do
-                  for message in roomMessages do
+                  for recipientId in recipients do
                       recipientId, ResponseFormatting.localizeMessage state culture message ]
 
     let actorResponseLines (state: GameState) (culture: Culture) (messages: Message list) : string list =

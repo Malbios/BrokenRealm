@@ -121,6 +121,67 @@ module SessionTests =
         Assert.Equal("A prototype player drops 1 wood.", snd deliveries[0])
 
     [<Fact>]
+    let ``Move leave room delivery notifies players in the departed room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let moved =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
+
+        let leaveDeliveries =
+            RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
+            |> List.filter (fun (recipient, line) ->
+                recipient = GameSnapshots.PrototypeScoutCharacterId
+                && line.Contains("goes north"))
+
+        Assert.Equal(1, leaveDeliveries.Length)
+        Assert.Equal("A prototype player goes north.", snd leaveDeliveries[0])
+
+    [<Fact>]
+    let ``Move arrive room delivery notifies players in the destination room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInVillage = PlayerObjects.withLocation scout "village"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInVillage }
+
+        let moved =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
+
+        let arriveDeliveries =
+            RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
+            |> List.filter (fun (recipient, line) ->
+                recipient = GameSnapshots.PrototypeScoutCharacterId
+                && line.Contains("arrives"))
+
+        Assert.Equal(1, arriveDeliveries.Length)
+        Assert.Equal("A prototype player arrives.", snd arriveDeliveries[0])
+
+    [<Fact>]
+    let ``Move leave room delivery does not target players in the destination room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInVillage = PlayerObjects.withLocation scout "village"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInVillage }
+
+        let moved =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
+
+        let leaveDeliveries =
+            RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
+            |> List.filter (fun (recipient, _) -> recipient = GameSnapshots.PrototypeScoutCharacterId)
+
+        Assert.Equal(1, leaveDeliveries.Length)
+        Assert.Equal("A prototype player arrives.", snd leaveDeliveries[0])
+
+    [<Fact>]
     let ``Inventory matches on the player object before the room`` () =
         let state = ObjectDatabase.initialState
 

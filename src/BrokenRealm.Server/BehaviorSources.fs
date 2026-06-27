@@ -191,7 +191,7 @@ const coreBehaviorClasses = { GameBehavior };"""
     }
     return {
       effects: [
-        { type: "message", key: "emote.self", args: { actor: context.actor.id, text } },
+        { type: "message", key: "emote.self", args: { text } },
         { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
       ]
     };
@@ -247,9 +247,10 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     }
     return {
       effects: [
+        { type: "message", key: "move.leave.room", args: { actor: context.actor.id, direction, roomId: context.actor.locationId } },
         { type: "moveObject", destinationId },
         { type: "message", key: "move.success", args: { direction } },
-        { type: "message", key: "move.room", args: { actor: context.actor.id, direction } }
+        { type: "message", key: "move.arrive.room", args: { actor: context.actor.id, roomId: destinationId } }
       ]
     };
   }
@@ -474,7 +475,7 @@ const coreBehaviorClasses = { GameBehavior };"""
     const text = (context.args.text ?? "").trim();
     if (!text) return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
     return { effects: [
-      { type: "message", key: "emote.self", args: { actor: context.actor.id, text } },
+      { type: "message", key: "emote.self", args: { text } },
       { type: "message", key: "emote.room", args: { actor: context.actor.id, text } }
     ] };
   }
@@ -509,9 +510,10 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     const destinationId = context.this.references[direction];
     if (!destinationId) return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
     return { effects: [
+      { type: "message", key: "move.leave.room", args: { actor: context.actor.id, direction, roomId: context.actor.locationId } },
       { type: "moveObject", destinationId },
       { type: "message", key: "move.success", args: { direction } },
-      { type: "message", key: "move.room", args: { actor: context.actor.id, direction } }
+      { type: "message", key: "move.arrive.room", args: { actor: context.actor.id, roomId: destinationId } }
     ] };
   }
 }

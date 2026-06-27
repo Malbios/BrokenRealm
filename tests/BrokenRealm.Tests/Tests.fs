@@ -1003,44 +1003,44 @@ module KernelTests =
 
     [<Fact>]
     let ``Emote command returns localized action text`` () =
-        let result = Kernel.submitCommand En "emote waves happily" ObjectDatabase.initialState
+        let result = Kernel.submitCommand En "emote wave happily" ObjectDatabase.initialState
 
         let line =
             RoomBroadcast.actorMessages result.Messages
             |> List.exactlyOne
             |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("A prototype player waves happily.", line)
+        Assert.Equal("You wave happily.", line)
 
     [<Fact>]
     let ``Colon emote alias matches actor emote`` () =
-        let matched = CommandMatching.tryMatch En ": smiles" ObjectDatabase.initialState
+        let matched = CommandMatching.tryMatch En ": smile" ObjectDatabase.initialState
 
         match matched with
         | Some value ->
             Assert.Equal("emote", value.MethodName)
-            Assert.Equal("smiles", value.Args["text"])
+            Assert.Equal("smile", value.Args["text"])
         | None -> Assert.True(false, "Expected colon emote to match.")
 
-        let result = Kernel.submitCommand En ": smiles" ObjectDatabase.initialState
+        let result = Kernel.submitCommand En ": smile" ObjectDatabase.initialState
 
         let line =
             RoomBroadcast.actorMessages result.Messages
             |> List.exactlyOne
             |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("A prototype player smiles.", line)
+        Assert.Equal("You smile.", line)
 
     [<Fact>]
     let ``German star emote alias matches actor emote`` () =
-        let result = Kernel.submitCommand De "* winkt" ObjectDatabase.initialState
+        let result = Kernel.submitCommand De "* winkst" ObjectDatabase.initialState
 
         let line =
             RoomBroadcast.actorMessages result.Messages
             |> List.exactlyOne
             |> ResponseFormatting.localizeMessage result.State De
 
-        Assert.Equal("Ein Prototyp-Spieler winkt.", line)
+        Assert.Equal("Du winkst.", line)
 
     [<Fact>]
     let ``Drop amount moves multiple units to a floor stack`` () =

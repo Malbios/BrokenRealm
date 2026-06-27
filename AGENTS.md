@@ -157,7 +157,7 @@ English:
 - `take wood` / `take 3 wood` / `pick up wood`
 - `give wood to scout` / `give 2 wood to scout`
 - `say hello` / `say`
-- `emote waves` / `: waves`
+- `emote wave` / `: wave` (type text for first-person self-view: `You {text}.`)
 - `go north`
 - `walk north`
 - `examine log`
@@ -177,7 +177,7 @@ German:
 - `nimm holz` / `nimm 3 holz` / `hebe holz auf`
 - `gib holz an scout` / `gib 2 holz an scout`
 - `sag hallo` / `sag` / `sage`
-- `emote winkt` / `* winkt`
+- `emote winkst` / `* winkst` (German self-view: `Du {text}.`; room lines reuse the same fragment)
 - `gehe nach norden`
 - `geh nach süden`
 - `untersuche baumstamm`
@@ -246,7 +246,7 @@ Known effects:
 - `{ type: "invokeAnonymous", path: (string | number)[], methodName: string, args?: Record<string, string> }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
 
-Message keys ending in `.room` are pushed live to other player characters in the same location through SignalR (`/game/hub`, `roomLine` events, groups `character:{id}`). `.self` and other keys stay on the acting character's HTTP command response.
+Message keys ending in `.room` are pushed live to other connected player characters through SignalR (`/game/hub`, `roomLine` events, groups `character:{id}`). Recipients are chosen per message: when args include `roomId`, that room is used; otherwise the acting character's current location after the command commits. Movement emits `move.leave.room` (departed room, includes `roomId` and `direction`) before `moveObject`, then `move.arrive.room` (destination `roomId`) after the move. `.self` and other non-`.room` keys stay on the acting character's HTTP command response only.
 
 The kernel validates effects before applying them. `replaceValue` and `invokeAnonymous` paths are rooted at the permanent object whose behavior is executing; scripts cannot select an owner object ID. Paths traverse object properties, maps, lists, and anonymous-value properties. Stored anonymous behavior receives its kernel-controlled `storagePath`. Replacements rebuild the value tree and the complete effect batch remains atomic. Nested anonymous dispatch is limited to 8 levels and 16 invocations per root effect batch.
 
@@ -329,17 +329,12 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add first-person German/English emote self-view and richer social verbs (`whisper`, `pose`).
-2. Broadcast enter/leave room presence separately from travel direction (`move.room` currently covers departure).
-3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.
+1. Implement offline character limbo per ADR 0008 (clear `LocationId` on disconnect, explicit re-entry, exclude limbo characters from look and room delivery).
+2. Add richer social verbs (`pose`, targeted speech) only when a vertical slice needs them; optional co-presence does not require whisper-first multiplayer chat.
+3. Select and implement a durable database adapter only after the file-backed JSON snapshot contract has proven insufficient in development.
 
 ## Planned Later
 
 ### Offline character limbo
 
-When a player disconnects, their character should leave the live world graph and enter a non-in-game **limbo** state rather than staying in the room as a present body.
-
-- Limbo characters are not in a room, do not receive room broadcasts, and are not visible in `look` contents.
-- Limbo isolates characters from time-based progression (hunger, decay, timed effects) until they reconnect and re-enter play explicitly.
-- Reconnect should restore the character to a defined entry point or last safe location through session/character selection, not by silently occupying a room they left online.
-- This replaces any future design that queues offline room messages or keeps disconnected players as world objects.
+Accepted design: `docs/architecture/0008-offline-character-limbo.md`. Disconnect removes live-world presence (`LocationId = None`), skips offline simulation and room-message queues, and requires explicit re-entry on reconnect. Singleplayer-first pacing stays authoritative to connected play.
