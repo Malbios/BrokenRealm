@@ -71,6 +71,12 @@ type VerbResponse =
       source: string }
 
 [<CLIMutable>]
+type AdminObjectResponse =
+    { objectId: string
+      name: string
+      verbs: string list }
+
+[<CLIMutable>]
 type VerbUpdateRequest =
     { source: string }
 

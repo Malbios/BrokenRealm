@@ -67,6 +67,8 @@ Current endpoints:
 - `POST /game/command`
   - Body: `{ "text": "...", "culture": "en" | "de" }`
   - Player command endpoint.
+- `GET /admin/objects`
+  - Lists objects and their editable verbs for the admin editor.
 - `GET /admin/objects/{objectId}/verbs/{verbName}`
   - Loads editable verb source.
 - `PUT /admin/objects/{objectId}/verbs/{verbName}`
@@ -159,7 +161,7 @@ The kernel validates effects before applying them.
 The browser UI has:
 
 - player tab with output log, command input, and language selector
-- admin tab with Monaco for editing `forest:gather`, with a textarea fallback when the CDN is unavailable
+- admin tab with object and verb selectors plus Monaco, with a textarea fallback when the CDN is unavailable
 - compile diagnostics displayed as individual editor messages
 
 Admin can change the gather amount, save the verb, and later player `gather wood` / `sammle holz` commands use the changed logic.
@@ -216,7 +218,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 Good next slices:
 
-- let the admin editor select objects and verbs instead of hardcoding `forest:gather`
 - add script execution time and memory limits
 - map structured compiler diagnostics to Monaco markers
 - decide durable object ID strategy before persistence

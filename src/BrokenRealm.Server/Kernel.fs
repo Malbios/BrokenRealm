@@ -65,6 +65,14 @@ module Kernel =
         |> Map.tryFind objectId
         |> Option.bind (fun object -> object.Verbs |> Map.tryFind verbName)
 
+    let listAdminObjects (state: GameState) =
+        state.Objects
+        |> Map.toList
+        |> List.map (fun (_, object) ->
+            { objectId = object.Id
+              name = object.Name
+              verbs = object.Verbs |> Map.toList |> List.map fst })
+
     let tryUpdateVerbSource compile objectId verbName source (state: GameState) =
         match state.Objects |> Map.tryFind objectId with
         | None -> Ok None

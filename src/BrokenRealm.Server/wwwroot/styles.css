@@ -167,6 +167,18 @@ select {
   font-size: 14px;
 }
 
+.verb-controls,
+.verb-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verb-controls label {
+  color: #b8c7bc;
+  font-size: 13px;
+}
+
 .script-editor,
 .fallback-editor {
   min-height: 360px;
@@ -253,7 +265,9 @@ button:disabled {
   }
 
   .toolbar,
-  .editor-head {
+  .editor-head,
+  .verb-controls,
+  .verb-controls label {
     align-items: stretch;
     flex-direction: column;
     width: 100%;

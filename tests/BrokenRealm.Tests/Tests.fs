@@ -5,6 +5,14 @@ open Xunit
 
 module KernelTests =
     [<Fact>]
+    let ``Admin object catalog lists every editable verb`` () =
+        let objects = Kernel.listAdminObjects ObjectDatabase.initialState
+
+        Assert.Equal<string list>([ "forest"; "village" ], objects |> List.map _.objectId)
+        let forest = objects |> List.find (fun object -> object.objectId = "forest")
+        Assert.Equal<string list>([ "gather"; "inventory"; "look"; "move" ], forest.verbs)
+
+    [<Fact>]
     let ``German movement command resolves a neutral direction`` () =
         let matched = CommandMatching.tryMatch De "gehe nach norden" ObjectDatabase.initialState
 

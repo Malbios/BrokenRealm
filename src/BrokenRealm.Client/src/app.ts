@@ -45,6 +45,12 @@ type ScriptErrorResponse = {
   diagnostics?: string[];
 };
 
+type AdminObject = {
+  objectId: string;
+  name: string;
+  verbs: string[];
+};
+
 const form = document.querySelector<HTMLFormElement>("#command-form");
 const input = document.querySelector<HTMLInputElement>("#command");
 const culture = document.querySelector<HTMLSelectElement>("#culture");
@@ -57,8 +63,12 @@ const editorHost = document.querySelector<HTMLDivElement>("#script-editor");
 const scriptSource = document.querySelector<HTMLTextAreaElement>("#script-source");
 const saveScript = document.querySelector<HTMLButtonElement>("#save-script");
 const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
+const objectSelect = document.querySelector<HTMLSelectElement>("#admin-object");
+const verbSelect = document.querySelector<HTMLSelectElement>("#admin-verb");
+const verbTitle = document.querySelector<HTMLHeadingElement>("#verb-title");
 let editor: MonacoEditor | null = null;
 let editorReady: Promise<void> | null = null;
+let adminObjects: AdminObject[] = [];
 
 const gameApiTypes = `declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
@@ -152,6 +162,47 @@ function setScriptSource(value: string): void {
   }
 }
 
+function selectedTarget(): { objectId: string; verb: string } | null {
+  const objectId = objectSelect?.value;
+  const verb = verbSelect?.value;
+  return objectId && verb ? { objectId, verb } : null;
+}
+
+function populateVerbSelect(): void {
+  if (!objectSelect || !verbSelect) return;
+
+  const selectedObject = adminObjects.find((object) => object.objectId === objectSelect.value);
+  verbSelect.replaceChildren();
+
+  selectedObject?.verbs.forEach((verb) => {
+    const option = document.createElement("option");
+    option.value = verb;
+    option.textContent = verb;
+    verbSelect.appendChild(option);
+  });
+}
+
+async function loadAdminObjects(): Promise<void> {
+  if (!objectSelect || !verbSelect || adminObjects.length > 0) return;
+
+  const response = await fetch("/admin/objects");
+  if (!response.ok) throw new Error("Could not load admin objects.");
+
+  adminObjects = (await response.json()) as AdminObject[];
+  objectSelect.replaceChildren();
+
+  adminObjects.forEach((object) => {
+    const option = document.createElement("option");
+    option.value = object.objectId;
+    option.textContent = `${object.name} (${object.objectId})`;
+    option.selected = object.objectId === "forest";
+    objectSelect.appendChild(option);
+  });
+
+  populateVerbSelect();
+  if (verbSelect.querySelector('option[value="gather"]')) verbSelect.value = "gather";
+}
+
 function initializeEditor(): Promise<void> {
   if (editorReady) return editorReady;
 
@@ -235,7 +286,20 @@ async function loadScript(): Promise<void> {
   if (!scriptSource) return;
   await initializeEditor();
 
-  const response = await fetch("/admin/objects/forest/verbs/gather");
+  try {
+    await loadAdminObjects();
+  } catch {
+    setStatus("Could not load admin objects.", true);
+    return;
+  }
+
+  const target = selectedTarget();
+  if (!target) {
+    setStatus("No editable verb is available.", true);
+    return;
+  }
+
+  const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`);
   if (!response.ok) {
     setStatus("Could not load script.", true);
     return;
@@ -243,6 +307,7 @@ async function loadScript(): Promise<void> {
 
   const payload = (await response.json()) as ScriptResponse;
   setScriptSource(payload.source);
+  if (verbTitle) verbTitle.textContent = `${target.objectId}:${target.verb}`;
   setStatus("Loaded.");
 }
 
@@ -250,10 +315,16 @@ async function saveCurrentScript(): Promise<void> {
   if (!scriptSource) return;
   await initializeEditor();
 
+  const target = selectedTarget();
+  if (!target) {
+    setStatus("No editable verb is selected.", true);
+    return;
+  }
+
   saveScript?.setAttribute("disabled", "true");
   setStatus("Compiling...");
 
-  const response = await fetch("/admin/objects/forest/verbs/gather", {
+  const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: getScriptSource() }),
@@ -276,7 +347,7 @@ async function saveCurrentScript(): Promise<void> {
     return;
   }
 
-  setStatus("Saved and compiled. The next gather command will use this script.");
+  setStatus("Saved and compiled. Future commands will use this script.");
   saveScript?.removeAttribute("disabled");
 }
 
@@ -303,5 +374,10 @@ adminTab?.addEventListener("click", () => showPanel("admin"));
 saveScript?.addEventListener("click", () => {
   void saveCurrentScript().finally(() => saveScript?.removeAttribute("disabled"));
 });
+objectSelect?.addEventListener("change", () => {
+  populateVerbSelect();
+  void loadScript();
+});
+verbSelect?.addEventListener("change", () => void loadScript());
 
 appendLine("BrokenRealm awaits.");

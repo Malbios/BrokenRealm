@@ -35,6 +35,13 @@ module Program =
         |> ignore
 
         app.MapGet(
+            "/admin/objects",
+            Func<IResult>(fun () ->
+                lock stateLock (fun () ->
+                    Kernel.listAdminObjects gameState |> Results.Json)))
+        |> ignore
+
+        app.MapGet(
             "/admin/objects/{objectId}/verbs/{verbName}",
             Func<string, string, IResult>(fun objectId verbName ->
                 lock stateLock (fun () ->

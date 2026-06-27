@@ -36,10 +36,20 @@
       <div id="admin-panel" class="panel admin-panel">
         <div class="editor-head">
           <div>
-            <h2>forest:gather</h2>
-            <p>Editable verb source stored on the forest object.</p>
+            <h2 id="verb-title">Verb editor</h2>
+            <p>Edit TypeScript source stored on a game object.</p>
           </div>
-          <button id="save-script" type="button">Save</button>
+          <div class="verb-controls">
+            <label>
+              <span>Object</span>
+              <select id="admin-object"></select>
+            </label>
+            <label>
+              <span>Verb</span>
+              <select id="admin-verb"></select>
+            </label>
+            <button id="save-script" type="button">Save</button>
+          </div>
         </div>
         <div id="script-editor" class="script-editor" aria-label="Verb source editor"></div>
         <textarea id="script-source" class="fallback-editor" spellcheck="false" hidden></textarea>

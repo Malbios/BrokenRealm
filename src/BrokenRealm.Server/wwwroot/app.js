@@ -11,8 +11,12 @@ const editorHost = document.querySelector("#script-editor");
 const scriptSource = document.querySelector("#script-source");
 const saveScript = document.querySelector("#save-script");
 const scriptStatus = document.querySelector("#script-status");
+const objectSelect = document.querySelector("#admin-object");
+const verbSelect = document.querySelector("#admin-verb");
+const verbTitle = document.querySelector("#verb-title");
 let editor = null;
 let editorReady = null;
+let adminObjects = [];
 const gameApiTypes = `declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
   | { type: "movePlayer"; destinationId: string }
@@ -95,6 +99,42 @@ function setScriptSource(value) {
         scriptSource.value = value;
     }
 }
+function selectedTarget() {
+    const objectId = objectSelect?.value;
+    const verb = verbSelect?.value;
+    return objectId && verb ? { objectId, verb } : null;
+}
+function populateVerbSelect() {
+    if (!objectSelect || !verbSelect)
+        return;
+    const selectedObject = adminObjects.find((object) => object.objectId === objectSelect.value);
+    verbSelect.replaceChildren();
+    selectedObject?.verbs.forEach((verb) => {
+        const option = document.createElement("option");
+        option.value = verb;
+        option.textContent = verb;
+        verbSelect.appendChild(option);
+    });
+}
+async function loadAdminObjects() {
+    if (!objectSelect || !verbSelect || adminObjects.length > 0)
+        return;
+    const response = await fetch("/admin/objects");
+    if (!response.ok)
+        throw new Error("Could not load admin objects.");
+    adminObjects = (await response.json());
+    objectSelect.replaceChildren();
+    adminObjects.forEach((object) => {
+        const option = document.createElement("option");
+        option.value = object.objectId;
+        option.textContent = `${object.name} (${object.objectId})`;
+        option.selected = object.objectId === "forest";
+        objectSelect.appendChild(option);
+    });
+    populateVerbSelect();
+    if (verbSelect.querySelector('option[value="gather"]'))
+        verbSelect.value = "gather";
+}
 function initializeEditor() {
     if (editorReady)
         return editorReady;
@@ -170,22 +210,41 @@ async function loadScript() {
     if (!scriptSource)
         return;
     await initializeEditor();
-    const response = await fetch("/admin/objects/forest/verbs/gather");
+    try {
+        await loadAdminObjects();
+    }
+    catch {
+        setStatus("Could not load admin objects.", true);
+        return;
+    }
+    const target = selectedTarget();
+    if (!target) {
+        setStatus("No editable verb is available.", true);
+        return;
+    }
+    const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`);
     if (!response.ok) {
         setStatus("Could not load script.", true);
         return;
     }
     const payload = (await response.json());
     setScriptSource(payload.source);
+    if (verbTitle)
+        verbTitle.textContent = `${target.objectId}:${target.verb}`;
     setStatus("Loaded.");
 }
 async function saveCurrentScript() {
     if (!scriptSource)
         return;
     await initializeEditor();
+    const target = selectedTarget();
+    if (!target) {
+        setStatus("No editable verb is selected.", true);
+        return;
+    }
     saveScript?.setAttribute("disabled", "true");
     setStatus("Compiling...");
-    const response = await fetch("/admin/objects/forest/verbs/gather", {
+    const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: getScriptSource() }),
@@ -205,7 +264,7 @@ async function saveCurrentScript() {
         setStatus(message, true);
         return;
     }
-    setStatus("Saved and compiled. The next gather command will use this script.");
+    setStatus("Saved and compiled. Future commands will use this script.");
     saveScript?.removeAttribute("disabled");
 }
 form?.addEventListener("submit", async (event) => {
@@ -231,4 +290,9 @@ adminTab?.addEventListener("click", () => showPanel("admin"));
 saveScript?.addEventListener("click", () => {
     void saveCurrentScript().finally(() => saveScript?.removeAttribute("disabled"));
 });
+objectSelect?.addEventListener("change", () => {
+    populateVerbSelect();
+    void loadScript();
+});
+verbSelect?.addEventListener("change", () => void loadScript());
 appendLine("BrokenRealm awaits.");
