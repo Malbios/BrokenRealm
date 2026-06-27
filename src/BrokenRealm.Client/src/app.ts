@@ -57,18 +57,20 @@ type CommandResponse = {
 type SessionCharacter = {
   id: string;
   locationId: string;
+  displayName: string;
 };
 
 type GameSessionResponse = {
   accountId: string;
+  authenticated: boolean;
+  displayName: string | null;
   selectedCharacterId: string;
   characters: SessionCharacter[];
 };
 
-type SelectCharacterResponse = {
-  selectedCharacterId: string;
-  characters: SessionCharacter[];
-};
+type AuthResponse = GameSessionResponse;
+
+type SelectCharacterResponse = AuthResponse;
 
 const gameFetchInit: RequestInit = { credentials: "include" };
 
@@ -120,6 +122,13 @@ const input = document.querySelector<HTMLInputElement>("#command");
 const culture = document.querySelector<HTMLSelectElement>("#culture");
 const characterLabel = document.querySelector<HTMLLabelElement>("#character-label");
 const characterSelect = document.querySelector<HTMLSelectElement>("#character");
+const accountDisplay = document.querySelector<HTMLSpanElement>("#account-display");
+const logoutButton = document.querySelector<HTMLButtonElement>("#logout-button");
+const authPanel = document.querySelector<HTMLDivElement>("#auth-panel");
+const loginForm = document.querySelector<HTMLFormElement>("#login-form");
+const loginAccount = document.querySelector<HTMLInputElement>("#login-account");
+const loginPassword = document.querySelector<HTMLInputElement>("#login-password");
+const registerButton = document.querySelector<HTMLButtonElement>("#register-button");
 const log = document.querySelector<HTMLDivElement>("#log");
 const playerTab = document.querySelector<HTMLButtonElement>("#player-tab");
 const adminTab = document.querySelector<HTMLButtonElement>("#admin-tab");
@@ -331,6 +340,24 @@ function canLeaveModule(moduleId: string | null): boolean {
   return !moduleId
     || !isModuleDirty(moduleId)
     || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
+}
+
+function selectedCulture(): Culture {
+  return (culture?.value === "de" ? "de" : "en") as Culture;
+}
+
+function sessionUrl(): string {
+  return `/game/session?culture=${encodeURIComponent(selectedCulture())}`;
+}
+
+function updateAuthUi(session: GameSessionResponse): void {
+  if (accountDisplay) {
+    const label = session.displayName ?? session.accountId;
+    accountDisplay.textContent = session.authenticated ? label : `Guest (${session.accountId})`;
+  }
+
+  if (logoutButton) logoutButton.hidden = !session.authenticated;
+  if (authPanel) authPanel.hidden = session.authenticated;
 }
 
 function updateCharacterSelectorVisibility(panel: Panel): void {
@@ -585,17 +612,18 @@ function renderCharacterSelector(session: GameSessionResponse): void {
   session.characters.forEach((character) => {
     const option = document.createElement("option");
     option.value = character.id;
-    option.textContent = `${character.id} @ ${character.locationId}`;
+    option.textContent = `${character.displayName} @ ${character.locationId}`;
     characterSelect.append(option);
   });
 
   characterSelect.value = session.selectedCharacterId;
   currentSession = session;
+  updateAuthUi(session);
   updateCharacterSelectorVisibility(activePanel);
 }
 
 async function loadSession(): Promise<void> {
-  const response = await fetch("/game/session", gameFetchInit);
+  const response = await fetch(sessionUrl(), gameFetchInit);
   if (!response.ok) {
     appendLine("Could not load the current session.", "line error-line");
     return;
@@ -605,8 +633,62 @@ async function loadSession(): Promise<void> {
   renderCharacterSelector(payload);
 }
 
+async function login(accountId: string, password: string): Promise<void> {
+  const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
+    ...gameFetchInit,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accountId, password }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json()) as CommandResponse;
+    appendLine(payload.lines[0] ?? "Login failed.", "line error-line");
+    return;
+  }
+
+  const payload = (await response.json()) as AuthResponse;
+  renderCharacterSelector(payload);
+  appendLine(`Signed in as ${payload.displayName ?? payload.accountId}.`);
+}
+
+async function register(accountId: string, password: string): Promise<void> {
+  const response = await fetch(`/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`, {
+    ...gameFetchInit,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accountId, password, displayName: accountId }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json()) as CommandResponse;
+    appendLine(payload.lines[0] ?? "Registration failed.", "line error-line");
+    return;
+  }
+
+  const payload = (await response.json()) as AuthResponse;
+  renderCharacterSelector(payload);
+  appendLine(`Registered and signed in as ${payload.displayName ?? payload.accountId}.`);
+}
+
+async function logout(): Promise<void> {
+  const response = await fetch("/game/auth/logout", {
+    ...gameFetchInit,
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    appendLine("Could not log out.", "line error-line");
+    return;
+  }
+
+  if (loginPassword) loginPassword.value = "";
+  await loadSession();
+  appendLine("Logged out. Continuing as guest.");
+}
+
 async function selectCharacter(characterId: string): Promise<void> {
-  const response = await fetch("/game/session/character", {
+  const response = await fetch(`/game/session/character?culture=${encodeURIComponent(selectedCulture())}`, {
     ...gameFetchInit,
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -619,12 +701,9 @@ async function selectCharacter(characterId: string): Promise<void> {
   }
 
   const payload = (await response.json()) as SelectCharacterResponse;
-  renderCharacterSelector({
-    accountId: "",
-    selectedCharacterId: payload.selectedCharacterId,
-    characters: payload.characters,
-  });
-  appendLine(`Now playing as ${payload.selectedCharacterId}.`);
+  renderCharacterSelector(payload);
+  const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
+  appendLine(`Now playing as ${selected?.displayName ?? payload.selectedCharacterId}.`);
 }
 
 async function sendCommand(command: string, selectedCulture: Culture): Promise<void> {
@@ -807,6 +886,32 @@ async function saveCurrentScript(): Promise<void> {
   );
   saveScript?.removeAttribute("disabled");
 }
+
+loginForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const accountId = loginAccount?.value.trim() ?? "";
+  const password = loginPassword?.value ?? "";
+  if (!accountId || !password) return;
+  await login(accountId, password);
+});
+
+registerButton?.addEventListener("click", async () => {
+  const accountId = loginAccount?.value.trim() ?? "";
+  const password = loginPassword?.value ?? "";
+  if (!accountId || !password) {
+    appendLine("Enter an account id and password to register.", "line error-line");
+    return;
+  }
+  await register(accountId, password);
+});
+
+logoutButton?.addEventListener("click", () => {
+  void logout();
+});
+
+culture?.addEventListener("change", () => {
+  void loadSession();
+});
 
 characterSelect?.addEventListener("change", () => {
   const characterId = characterSelect.value;

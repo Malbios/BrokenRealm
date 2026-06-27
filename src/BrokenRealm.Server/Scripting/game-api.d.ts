@@ -1,5 +1,6 @@
 declare type ScriptEffect =
-  | { type: "addInventory"; itemId: "wood"; amount: number }
+  | { type: "addInventory"; itemId: "wood"; amount: number; objectId?: string }
+  | { type: "moveObject"; destinationId: string; objectId?: string }
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue }
   | { type: "invokeAnonymous"; path: (string | number)[]; methodName: string; args?: Record<string, string> }

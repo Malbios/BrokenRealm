@@ -41,14 +41,28 @@ module Kernel =
         | IndexSegment _ :: _ -> Error "replaceValue paths must start with an object property name."
         | [] -> Error "replaceValue paths must not be empty."
 
-    let rec private validateEffect (state: GameState) targetId effect =
+    let private resolvePlayerTarget (state: GameState) (actingCharacterId: CharacterId) (objectId: ObjectId option) =
+        match objectId with
+        | Some id ->
+            match PlayerObjects.tryGet state id with
+            | None -> Error $"Effect target is not a player object: {id}"
+            | Some _ -> Ok id
+        | None -> Ok actingCharacterId
+
+    let rec private validateEffect (state: GameState) actingCharacterId targetId effect =
         match effect with
-        | AddInventory(itemId, amount) when not (state.ItemIds.Contains itemId) ->
+        | AddInventory(objectId, itemId, amount) when not (state.ItemIds.Contains itemId) ->
             Error("Unknown item id: " + itemId)
-        | AddInventory(_, amount) when amount <= 0 || amount > 100 ->
+        | AddInventory(objectId, _, amount) when amount <= 0 || amount > 100 ->
             Error "addInventory effects require an amount from 1 to 100."
-        | MovePlayer destinationId when not (state.Objects.ContainsKey destinationId) ->
+        | AddInventory(objectId, _, _) ->
+            match resolvePlayerTarget state actingCharacterId objectId with
+            | Error error -> Error error
+            | Ok _ -> Ok()
+        | MoveObject(objectId, destinationId) when not (state.Objects.ContainsKey destinationId) ->
             Error("Unknown destination object id: " + destinationId)
+        | MoveObject(objectId, _) ->
+            resolvePlayerTarget state actingCharacterId objectId |> Result.map ignore
         | ReplaceValue(path, replacement) ->
             match validateValueReferences state "replacement" replacement with
             | Error error -> Error error
@@ -195,20 +209,26 @@ module Kernel =
     let private maxAnonymousInvocations = 16
 
     let rec private applyEffect characterId targetId depth (state: GameState) (messages: Message list) remainingInvocations effect =
-        match validateEffect state targetId effect with
+        match validateEffect state characterId targetId effect with
         | Error error -> Error error
         | Ok() ->
             match effect with
-            | AddInventory(itemId, amount) ->
-                let player = PlayerObjects.get state characterId
-                let updated =
-                    PlayerObjects.withInventory player (PlayerObjects.inventory player |> addInventory itemId amount)
+            | AddInventory(objectId, itemId, amount) ->
+                match resolvePlayerTarget state characterId objectId with
+                | Error error -> Error error
+                | Ok playerId ->
+                    let player = PlayerObjects.get state playerId
+                    let updated =
+                        PlayerObjects.withInventory player (PlayerObjects.inventory player |> addInventory itemId amount)
 
-                Ok({ state with Objects = Map.add characterId updated state.Objects }, messages, remainingInvocations)
-            | MovePlayer destinationId ->
-                let player = PlayerObjects.get state characterId
-                let updated = PlayerObjects.withLocation player destinationId
-                Ok({ state with Objects = Map.add characterId updated state.Objects }, messages, remainingInvocations)
+                    Ok({ state with Objects = Map.add playerId updated state.Objects }, messages, remainingInvocations)
+            | MoveObject(objectId, destinationId) ->
+                match resolvePlayerTarget state characterId objectId with
+                | Error error -> Error error
+                | Ok playerId ->
+                    let player = PlayerObjects.get state playerId
+                    let updated = PlayerObjects.withLocation player destinationId
+                    Ok({ state with Objects = Map.add playerId updated state.Objects }, messages, remainingInvocations)
             | ReplaceValue(path, replacement) ->
                 tryReplaceObjectValue path replacement state.Objects[targetId]
                 |> Result.map (fun target ->
@@ -254,7 +274,9 @@ module Kernel =
               Messages = [ message "command.unknown" Map.empty ] }
         | Some matched ->
             let target = state.Objects[matched.ObjectId]
-            let contents = contentsOf state target.Id
+            let contents =
+                contentsOf state target.Id
+                |> List.filter (fun object -> object.Id <> characterId)
 
             let execution =
                 match validateObjectProperties state target with
@@ -563,3 +585,38 @@ module Kernel =
         |> Result.map (Option.map (fun update ->
             { AffectedModules = update.AffectedModules
               AffectedObjects = update.AffectedObjects }))
+
+    let tryRegisterAccount accountId password displayName (state: GameState) =
+        match Auth.validateAccountId accountId with
+        | Error error -> Error error
+        | Ok validatedAccountId ->
+            match Auth.validatePassword password with
+            | Error error -> Error error
+            | Ok _ ->
+                if state.Accounts.ContainsKey validatedAccountId then
+                    Error "An account with that id already exists."
+                else
+                    let account: AccountState =
+                        { Id = validatedAccountId
+                          DisplayName = displayName
+                          PasswordHash = Some(Auth.hashPassword password) }
+
+                    let characterId = ObjectIds.create()
+
+                    let player =
+                        PlayerObjects.create
+                            characterId
+                            "traveler"
+                            "object.traveler.name"
+                            validatedAccountId
+                            "forest"
+                            Map.empty
+
+                    let updated =
+                        { state with
+                            Accounts = Map.add validatedAccountId account state.Accounts
+                            Objects = Map.add characterId player state.Objects }
+
+                    match validateGameState updated with
+                    | Error error -> Error error
+                    | Ok() -> Ok updated

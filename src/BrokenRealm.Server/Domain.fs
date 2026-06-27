@@ -84,7 +84,8 @@ type GameObject =
 
 type AccountState =
     { Id: AccountId
-      DisplayName: string option }
+      DisplayName: string option
+      PasswordHash: string option }
 
 type GameState =
     { ItemIds: Set<ItemId>
@@ -96,6 +97,7 @@ type GameSession =
     { Id: SessionId
       AccountId: AccountId
       SelectedCharacterId: CharacterId
+      Authenticated: bool
       CreatedAt: DateTimeOffset
       LastSeenAt: DateTimeOffset }
 
@@ -125,8 +127,8 @@ type MatchedBehaviorMethod =
       Args: Map<string, string> }
 
 type ScriptEffect =
-    | AddInventory of itemId: ItemId * amount: int
-    | MovePlayer of destinationId: ObjectId
+    | AddInventory of objectId: ObjectId option * itemId: ItemId * amount: int
+    | MoveObject of objectId: ObjectId option * destinationId: ObjectId
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
     | EmitMessage of Message
@@ -143,11 +145,33 @@ type CommandResponse =
 [<CLIMutable>]
 type SessionCharacterResponse =
     { id: string
-      locationId: string }
+      locationId: string
+      displayName: string }
 
 [<CLIMutable>]
 type GameSessionResponse =
     { accountId: string
+      authenticated: bool
+      displayName: string option
+      selectedCharacterId: string
+      characters: SessionCharacterResponse list }
+
+[<CLIMutable>]
+type LoginRequest =
+    { accountId: string
+      password: string }
+
+[<CLIMutable>]
+type RegisterRequest =
+    { accountId: string
+      password: string
+      displayName: string option }
+
+[<CLIMutable>]
+type AuthResponse =
+    { accountId: string
+      authenticated: bool
+      displayName: string option
       selectedCharacterId: string
       characters: SessionCharacterResponse list }
 
@@ -157,7 +181,10 @@ type SelectCharacterRequest =
 
 [<CLIMutable>]
 type SelectCharacterResponse =
-    { selectedCharacterId: string
+    { accountId: string
+      authenticated: bool
+      displayName: string option
+      selectedCharacterId: string
       characters: SessionCharacterResponse list }
 
 [<CLIMutable>]

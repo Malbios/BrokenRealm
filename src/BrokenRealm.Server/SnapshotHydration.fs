@@ -6,7 +6,8 @@ open System.IO
 module SnapshotMigrations =
     let private prototypeAccount: AccountSnapshot =
         { Id = GameSnapshots.PrototypeAccountId
-          DisplayName = Some "Prototype account" }
+          DisplayName = Some "Prototype account"
+          PasswordHash = None }
 
     let private migrateV1 snapshot =
         let accounts =
@@ -148,9 +149,20 @@ module SnapshotHydration =
               Classes = Map.empty })
 
     let private accountsFromSnapshot (accounts: Map<AccountId, AccountSnapshot>) =
-        accounts
-        |> Map.map (fun _ account ->
-            ({ Id = account.Id; DisplayName = account.DisplayName }: AccountState))
+        let mapped =
+            accounts
+            |> Map.map (fun _ account ->
+                ({ Id = account.Id
+                   DisplayName = account.DisplayName
+                   PasswordHash = account.PasswordHash }: AccountState))
+
+        match mapped |> Map.tryFind GameSnapshots.PrototypeAccountId with
+        | Some account when account.PasswordHash.IsNone ->
+            Map.add
+                GameSnapshots.PrototypeAccountId
+                { account with PasswordHash = Some(Auth.hashPassword "prototype") }
+                mapped
+        | _ -> mapped
 
     let private validateObjectIds (objects: Map<ObjectId, GameObject>) =
         objects

@@ -7,16 +7,21 @@ module Sessions =
     [<Literal>]
     let CookieName = "brokenrealm_session"
 
-    let ownedCharacters (accountId: AccountId) (state: GameState) =
+    let ownedCharacters culture (accountId: AccountId) (state: GameState) =
         PlayerObjects.playersByAccount state accountId
         |> List.map (fun player ->
             { id = player.Id
-              locationId = PlayerObjects.locationId player })
+              locationId = PlayerObjects.locationId player
+              displayName = Localizer.objectName state culture player.Id })
 
-    let toResponse (session: GameSession) (state: GameState) =
+    let toResponse culture (session: GameSession) (state: GameState) =
+        let account = state.Accounts[session.AccountId]
+
         { accountId = session.AccountId
+          authenticated = session.Authenticated
+          displayName = account.DisplayName
           selectedCharacterId = session.SelectedCharacterId
-          characters = ownedCharacters session.AccountId state }
+          characters = ownedCharacters culture session.AccountId state }
 
     let validateCharacterSelection accountId characterId (state: GameState) =
         match PlayerObjects.tryGet state characterId with
@@ -24,6 +29,12 @@ module Sessions =
         | Some player when PlayerObjects.accountId player <> accountId ->
             Error $"Character {characterId} is not owned by account {accountId}."
         | Some _ -> Ok characterId
+
+    let private defaultCharacterId accountId (state: GameState) =
+        PlayerObjects.playersByAccount state accountId
+        |> List.tryHead
+        |> Option.map _.Id
+        |> Option.defaultValue GameSnapshots.PrototypeCharacterId
 
 type SessionStore(?clock: unit -> DateTimeOffset) =
     let clock = defaultArg clock (fun () -> DateTimeOffset.UtcNow)
@@ -45,6 +56,7 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                 { Id = sessionId
                   AccountId = GameSnapshots.PrototypeAccountId
                   SelectedCharacterId = GameSnapshots.PrototypeCharacterId
+                  Authenticated = false
                   CreatedAt = now
                   LastSeenAt = now }
 
@@ -56,6 +68,62 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
             let updated = { session with LastSeenAt = clock () }
             sessions[session.Id] <- updated
             updated)
+
+    member _.Logout(sessionId: SessionId) =
+        lock gate (fun () -> sessions.Remove sessionId |> ignore)
+
+    member _.Login(sessionId: SessionId, accountId: AccountId, password: string, state: GameState) =
+        lock gate (fun () ->
+            match state.Accounts |> Map.tryFind accountId with
+            | None -> Error "Unknown account."
+            | Some account ->
+                match account.PasswordHash with
+                | None -> Error "This account does not support password login."
+                | Some hash when not (Auth.verifyPassword password hash) -> Error "Invalid password."
+                | Some _ ->
+                    match sessions.TryGetValue sessionId with
+                    | false, _ -> Error "Session not found."
+                    | true, session ->
+                        let characters = PlayerObjects.playersByAccount state accountId
+
+                        if List.isEmpty characters then
+                            Error "Account has no playable characters."
+                        else
+                            let selectedCharacterId =
+                                if characters |> List.exists (fun player -> player.Id = session.SelectedCharacterId) then
+                                    session.SelectedCharacterId
+                                else
+                                    (List.head characters).Id
+
+                            let updated =
+                                { session with
+                                    AccountId = accountId
+                                    SelectedCharacterId = selectedCharacterId
+                                    Authenticated = true
+                                    LastSeenAt = clock () }
+
+                            sessions[sessionId] <- updated
+                            Ok updated)
+
+    member _.BindRegisteredAccount(sessionId: SessionId, accountId: AccountId, state: GameState) =
+        lock gate (fun () ->
+            match sessions.TryGetValue sessionId with
+            | false, _ -> Error "Session not found."
+            | true, session ->
+                let characters = PlayerObjects.playersByAccount state accountId
+
+                if List.isEmpty characters then
+                    Error "Account has no playable characters."
+                else
+                    let updated =
+                        { session with
+                            AccountId = accountId
+                            SelectedCharacterId = (List.head characters).Id
+                            Authenticated = true
+                            LastSeenAt = clock () }
+
+                    sessions[sessionId] <- updated
+                    Ok updated)
 
     member _.SelectCharacter(sessionId: SessionId, characterId: CharacterId, state: GameState) =
         lock gate (fun () ->

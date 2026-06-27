@@ -9,6 +9,7 @@
     <Compile Include="PlayerObjects.fs" />
     <Compile Include="Persistence.fs" />
     <Compile Include="Localization.fs" />
+    <Compile Include="Auth.fs" />
     <Compile Include="BehaviorSources.fs" />
     <Compile Include="Scripting.fs" />
     <Compile Include="ObjectDatabase.fs" />

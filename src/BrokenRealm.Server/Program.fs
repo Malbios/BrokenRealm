@@ -59,19 +59,81 @@ module Program =
         app.UseDefaultFiles(DefaultFilesOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
         app.UseStaticFiles(StaticFileOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
 
+        let sessionCulture (ctx: HttpContext) =
+            Cultures.parse (ctx.Request.Query["culture"].ToString())
+
+        let authResponse (culture: Culture) (gameSession: GameSession) (state: GameState) =
+            let account = state.Accounts[gameSession.AccountId]
+
+            { accountId = gameSession.AccountId
+              authenticated = gameSession.Authenticated
+              displayName = account.DisplayName
+              selectedCharacterId = gameSession.SelectedCharacterId
+              characters = Sessions.ownedCharacters culture gameSession.AccountId state }
+            : AuthResponse
+
         app.MapGet(
             "/game/session",
             Func<HttpContext, IResult>(fun ctx ->
                 lock stateLock (fun () ->
+                    let culture = sessionCulture ctx
                     let session = resolveSession ctx
                     let state = gameStore.Read().State
-                    Sessions.toResponse session state |> Results.Json)))
+                    Sessions.toResponse culture session state |> Results.Json)))
+        |> ignore
+
+        app.MapPost(
+            "/game/auth/login",
+            Func<HttpContext, LoginRequest, IResult>(fun ctx request ->
+                lock stateLock (fun () ->
+                    let culture = sessionCulture ctx
+                    let session = resolveSession ctx
+                    let state = gameStore.Read().State
+
+                    match sessionStore.Login(session.Id, request.accountId, request.password, state) with
+                    | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                    | Ok updated ->
+                        ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+                        Results.Json(authResponse culture updated state))))
+        |> ignore
+
+        app.MapPost(
+            "/game/auth/register",
+            Func<HttpContext, RegisterRequest, IResult>(fun ctx request ->
+                lock stateLock (fun () ->
+                    let culture = sessionCulture ctx
+                    let session = resolveSession ctx
+                    let stored = gameStore.Read()
+
+                    match Kernel.tryRegisterAccount request.accountId request.password request.displayName stored.State with
+                    | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                    | Ok updatedState ->
+                        let committed = commit stored updatedState
+
+                        match sessionStore.BindRegisteredAccount(session.Id, request.accountId, committed.State) with
+                        | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                        | Ok updated ->
+                            ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+                            Results.Json(authResponse culture updated committed.State))))
+        |> ignore
+
+        app.MapPost(
+            "/game/auth/logout",
+            Func<HttpContext, IResult>(fun ctx ->
+                lock stateLock (fun () ->
+                    match ctx.Request.Cookies.TryGetValue Sessions.CookieName with
+                    | true, sessionId -> sessionStore.Logout sessionId
+                    | false, _ -> ()
+
+                    ctx.Response.Cookies.Delete(Sessions.CookieName, sessionCookieOptions)
+                    Results.Json({ lines = [ "Logged out." ] } : CommandResponse))))
         |> ignore
 
         app.MapPost(
             "/game/session/character",
             Func<HttpContext, SelectCharacterRequest, IResult>(fun ctx request ->
                 lock stateLock (fun () ->
+                    let culture = sessionCulture ctx
                     let session = resolveSession ctx
                     let state = gameStore.Read().State
 
@@ -79,11 +141,7 @@ module Program =
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
                         ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-
-                        Results.Json(
-                            { selectedCharacterId = updated.SelectedCharacterId
-                              characters = Sessions.ownedCharacters updated.AccountId state }
-                            : SelectCharacterResponse))))
+                        Results.Json(authResponse culture updated state))))
         |> ignore
 
         app.MapPost(

@@ -19,7 +19,8 @@ type WorldSnapshot =
 
 type AccountSnapshot =
     { Id: AccountId
-      DisplayName: string option }
+      DisplayName: string option
+      PasswordHash: string option }
 
 type CharacterSnapshot =
     { Id: string
@@ -94,7 +95,10 @@ module GameSnapshots =
               Objects = state.Objects }
           Accounts =
             state.Accounts
-            |> Map.map (fun _ account -> { Id = account.Id; DisplayName = account.DisplayName })
+            |> Map.map (fun _ account ->
+                { Id = account.Id
+                  DisplayName = account.DisplayName
+                  PasswordHash = account.PasswordHash })
           Characters = Map.empty
           PlayerRevisions = playerRevisionSeed state }
 
@@ -122,8 +126,14 @@ module GameSnapshots =
             state.Accounts
             |> Map.map (fun id account ->
                 match previous.Accounts |> Map.tryFind id with
-                | Some stored -> { stored with DisplayName = account.DisplayName }
-                | None -> { Id = account.Id; DisplayName = account.DisplayName })
+                | Some stored ->
+                    { stored with
+                        DisplayName = account.DisplayName
+                        PasswordHash = account.PasswordHash }
+                | None ->
+                    { Id = account.Id
+                      DisplayName = account.DisplayName
+                      PasswordHash = account.PasswordHash })
 
         let worldChanged =
             previous.World.ItemIds <> state.ItemIds

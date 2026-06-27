@@ -72,6 +72,41 @@ h1 {
   justify-content: flex-end;
 }
 
+.account-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-display {
+  color: #b8c7bc;
+  font-size: 13px;
+}
+
+.auth-panel {
+  padding: 14px 18px 0;
+}
+
+.auth-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #b8c7bc;
+  font-size: 13px;
+}
+
+.auth-form input {
+  min-width: 160px;
+  height: 34px;
+}
+
 .tabs {
   display: flex;
   gap: 6px;

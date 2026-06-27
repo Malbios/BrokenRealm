@@ -88,7 +88,7 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     }
     return {
       effects: [
-        { type: "movePlayer", destinationId },
+        { type: "moveObject", destinationId },
         { type: "message", key: "move.success", args: { direction } }
       ]
     };
@@ -259,7 +259,7 @@ const playerBehaviorClasses = { PlayerBehavior };"""
     const destinationId = context.this.references[direction];
     if (!destinationId) return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
     return { effects: [
-      { type: "movePlayer", destinationId },
+      { type: "moveObject", destinationId },
       { type: "message", key: "move.success", args: { direction } }
     ] };
   }

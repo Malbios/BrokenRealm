@@ -5,6 +5,13 @@ const input = document.querySelector("#command");
 const culture = document.querySelector("#culture");
 const characterLabel = document.querySelector("#character-label");
 const characterSelect = document.querySelector("#character");
+const accountDisplay = document.querySelector("#account-display");
+const logoutButton = document.querySelector("#logout-button");
+const authPanel = document.querySelector("#auth-panel");
+const loginForm = document.querySelector("#login-form");
+const loginAccount = document.querySelector("#login-account");
+const loginPassword = document.querySelector("#login-password");
+const registerButton = document.querySelector("#register-button");
 const log = document.querySelector("#log");
 const playerTab = document.querySelector("#player-tab");
 const adminTab = document.querySelector("#admin-tab");
@@ -206,6 +213,22 @@ function canLeaveModule(moduleId) {
     return !moduleId
         || !isModuleDirty(moduleId)
         || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
+}
+function selectedCulture() {
+    return (culture?.value === "de" ? "de" : "en");
+}
+function sessionUrl() {
+    return `/game/session?culture=${encodeURIComponent(selectedCulture())}`;
+}
+function updateAuthUi(session) {
+    if (accountDisplay) {
+        const label = session.displayName ?? session.accountId;
+        accountDisplay.textContent = session.authenticated ? label : `Guest (${session.accountId})`;
+    }
+    if (logoutButton)
+        logoutButton.hidden = !session.authenticated;
+    if (authPanel)
+        authPanel.hidden = session.authenticated;
 }
 function updateCharacterSelectorVisibility(panel) {
     if (!characterLabel)
@@ -429,15 +452,16 @@ function renderCharacterSelector(session) {
     session.characters.forEach((character) => {
         const option = document.createElement("option");
         option.value = character.id;
-        option.textContent = `${character.id} @ ${character.locationId}`;
+        option.textContent = `${character.displayName} @ ${character.locationId}`;
         characterSelect.append(option);
     });
     characterSelect.value = session.selectedCharacterId;
     currentSession = session;
+    updateAuthUi(session);
     updateCharacterSelectorVisibility(activePanel);
 }
 async function loadSession() {
-    const response = await fetch("/game/session", gameFetchInit);
+    const response = await fetch(sessionUrl(), gameFetchInit);
     if (!response.ok) {
         appendLine("Could not load the current session.", "line error-line");
         return;
@@ -445,8 +469,54 @@ async function loadSession() {
     const payload = (await response.json());
     renderCharacterSelector(payload);
 }
+async function login(accountId, password) {
+    const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
+        ...gameFetchInit,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, password }),
+    });
+    if (!response.ok) {
+        const payload = (await response.json());
+        appendLine(payload.lines[0] ?? "Login failed.", "line error-line");
+        return;
+    }
+    const payload = (await response.json());
+    renderCharacterSelector(payload);
+    appendLine(`Signed in as ${payload.displayName ?? payload.accountId}.`);
+}
+async function register(accountId, password) {
+    const response = await fetch(`/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`, {
+        ...gameFetchInit,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, password, displayName: accountId }),
+    });
+    if (!response.ok) {
+        const payload = (await response.json());
+        appendLine(payload.lines[0] ?? "Registration failed.", "line error-line");
+        return;
+    }
+    const payload = (await response.json());
+    renderCharacterSelector(payload);
+    appendLine(`Registered and signed in as ${payload.displayName ?? payload.accountId}.`);
+}
+async function logout() {
+    const response = await fetch("/game/auth/logout", {
+        ...gameFetchInit,
+        method: "POST",
+    });
+    if (!response.ok) {
+        appendLine("Could not log out.", "line error-line");
+        return;
+    }
+    if (loginPassword)
+        loginPassword.value = "";
+    await loadSession();
+    appendLine("Logged out. Continuing as guest.");
+}
 async function selectCharacter(characterId) {
-    const response = await fetch("/game/session/character", {
+    const response = await fetch(`/game/session/character?culture=${encodeURIComponent(selectedCulture())}`, {
         ...gameFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -457,12 +527,9 @@ async function selectCharacter(characterId) {
         return;
     }
     const payload = (await response.json());
-    renderCharacterSelector({
-        accountId: "",
-        selectedCharacterId: payload.selectedCharacterId,
-        characters: payload.characters,
-    });
-    appendLine(`Now playing as ${payload.selectedCharacterId}.`);
+    renderCharacterSelector(payload);
+    const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
+    appendLine(`Now playing as ${selected?.displayName ?? payload.selectedCharacterId}.`);
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");
@@ -626,6 +693,29 @@ async function saveCurrentScript() {
     setStatus(`Saved and compiled atomically. Updated modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`);
     saveScript?.removeAttribute("disabled");
 }
+loginForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const accountId = loginAccount?.value.trim() ?? "";
+    const password = loginPassword?.value ?? "";
+    if (!accountId || !password)
+        return;
+    await login(accountId, password);
+});
+registerButton?.addEventListener("click", async () => {
+    const accountId = loginAccount?.value.trim() ?? "";
+    const password = loginPassword?.value ?? "";
+    if (!accountId || !password) {
+        appendLine("Enter an account id and password to register.", "line error-line");
+        return;
+    }
+    await register(accountId, password);
+});
+logoutButton?.addEventListener("click", () => {
+    void logout();
+});
+culture?.addEventListener("change", () => {
+    void loadSession();
+});
 characterSelect?.addEventListener("change", () => {
     const characterId = characterSelect.value;
     if (!characterId)

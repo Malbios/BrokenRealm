@@ -587,12 +587,12 @@ module KernelTests =
         let english = Kernel.submitCommand En "look" ObjectDatabase.initialState
         let englishLines = english.Messages |> List.map (ResponseFormatting.localizeMessage english.State En)
         Assert.Contains(englishLines, fun line -> line.Contains("fallen log"))
-        Assert.Contains(englishLines, fun line -> line.Contains("prototype player"))
+        Assert.DoesNotContain(englishLines, fun line -> line.Contains("prototype player"))
 
         let german = Kernel.submitCommand De "schau" ObjectDatabase.initialState
         let germanLines = german.Messages |> List.map (ResponseFormatting.localizeMessage german.State De)
         Assert.Contains(germanLines, fun line -> line.Contains("umgestürzten Baumstamm"))
-        Assert.Contains(germanLines, fun line -> line.Contains("Prototyp-Spieler"))
+        Assert.DoesNotContain(germanLines, fun line -> line.Contains("Prototyp-Spieler"))
 
     [<Fact>]
     let ``Objects outside the current location are not visible or matchable`` () =
@@ -1020,6 +1020,24 @@ module ScriptingTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``moveObject can target an explicit player object`` () =
+        let source =
+            """function execute(context) {
+  return {
+    effects: [
+      { type: "moveObject", objectId: context.actor.id, destinationId: context.this.references.north }
+    ]
+  };
+}"""
+
+        let result = Scripting.executeVerb forest Map.empty testActor source
+
+        match result with
+        | Ok [ MoveObject(Some "prototype-player", destinationId) ] -> Assert.Equal("village", destinationId)
+        | Ok effects -> Assert.True(false, $"Expected one movement effect, got {effects.Length}.")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``Script context includes object references`` () =
         let source =
             """function execute(context) {
@@ -1033,7 +1051,7 @@ module ScriptingTests =
         let result = Scripting.executeVerb forest Map.empty testActor source
 
         match result with
-        | Ok [ MovePlayer destinationId ] -> Assert.Equal("village", destinationId)
+        | Ok [ MoveObject(None, destinationId) ] -> Assert.Equal("village", destinationId)
         | Ok _ -> Assert.True(false, "Expected one movement effect.")
         | Error error -> Assert.True(false, error)
 

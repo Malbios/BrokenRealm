@@ -16,6 +16,10 @@
             <button id="player-tab" class="tab active" type="button">Player</button>
             <button id="admin-tab" class="tab" type="button">Admin</button>
           </div>
+          <div id="account-controls" class="account-controls">
+            <span id="account-display" class="account-display">Guest</span>
+            <button id="logout-button" class="secondary-button" type="button" hidden>Logout</button>
+          </div>
           <label id="character-label" class="language" hidden>
             <span>Character</span>
             <select id="character"></select>
@@ -30,6 +34,20 @@
         </div>
       </div>
       <div id="player-panel" class="panel active">
+        <div id="auth-panel" class="auth-panel">
+          <form id="login-form" class="auth-form">
+            <label>
+              <span>Account</span>
+              <input id="login-account" name="accountId" autocomplete="username" value="prototype-account">
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="login-password" name="password" type="password" autocomplete="current-password">
+            </label>
+            <button type="submit">Login</button>
+            <button id="register-button" class="secondary-button" type="button">Register</button>
+          </form>
+        </div>
         <div id="log" class="log" aria-live="polite"></div>
         <form id="command-form" class="command-row">
           <span class="prompt">&gt;</span>

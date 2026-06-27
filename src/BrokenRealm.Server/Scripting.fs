@@ -150,13 +150,21 @@ module Scripting =
     let private decodeEffect limits (effect: JsonElement) =
         match readString "type" effect with
         | Some "addInventory" ->
+            let objectId = readString "objectId" effect
+
             match readString "itemId" effect, readInt "amount" effect with
-            | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(AddInventory(itemId, amount))
+            | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(AddInventory(objectId, itemId, amount))
             | _ -> Error "addInventory effects require itemId and an amount from 1 to 100."
         | Some "movePlayer" ->
             match readString "destinationId" effect with
-            | Some destinationId -> Ok(MovePlayer destinationId)
+            | Some destinationId -> Ok(MoveObject(None, destinationId))
             | None -> Error "movePlayer effects require a destinationId."
+        | Some "moveObject" ->
+            let objectId = readString "objectId" effect
+
+            match readString "destinationId" effect with
+            | Some destinationId -> Ok(MoveObject(objectId, destinationId))
+            | None -> Error "moveObject effects require a destinationId."
         | Some "replaceValue" ->
             match decodeValuePath effect, effect.TryGetProperty("value") with
             | Ok path, (true, value) -> decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(path, decoded))

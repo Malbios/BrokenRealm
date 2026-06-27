@@ -49,6 +49,8 @@ module Localizer =
         | De, "object.prototype-player.name" -> "einen Prototyp-Spieler"
         | En, "object.prototype-scout.name" -> "a prototype scout"
         | De, "object.prototype-scout.name" -> "einen Prototyp-Späher"
+        | En, "object.traveler.name" -> "a traveler"
+        | De, "object.traveler.name" -> "einen Reisenden"
         | En, "object.fallen-log.name" -> "a fallen log"
         | De, "object.fallen-log.name" -> "einen umgestürzten Baumstamm"
         | En, "object.fallen-log.description" -> "A moss-covered log lies across the forest floor."

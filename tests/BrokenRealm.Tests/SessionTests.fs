@@ -47,6 +47,36 @@ module SessionTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Login accepts the seeded prototype account password`` () =
+        let store = SessionStore()
+        let session = store.CreateAnonymousPrototypeSession()
+
+        match store.Login(session.Id, GameSnapshots.PrototypeAccountId, "prototype", ObjectDatabase.initialState) with
+        | Ok updated ->
+            Assert.True(updated.Authenticated)
+            Assert.Equal(GameSnapshots.PrototypeAccountId, updated.AccountId)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Login rejects invalid passwords`` () =
+        let store = SessionStore()
+        let session = store.CreateAnonymousPrototypeSession()
+
+        match store.Login(session.Id, GameSnapshots.PrototypeAccountId, "wrong-password", ObjectDatabase.initialState) with
+        | Error error -> Assert.Equal("Invalid password.", error)
+        | Ok _ -> Assert.True(false, "Expected invalid password login to be rejected.")
+
+    [<Fact>]
+    let ``Register creates an account with a playable character`` () =
+        match
+            Kernel.tryRegisterAccount "new-account" "secret" (Some "New account") ObjectDatabase.initialState
+        with
+        | Ok state ->
+            Assert.True(state.Accounts.ContainsKey "new-account")
+            Assert.Equal(1, PlayerObjects.playersByAccount state "new-account" |> List.length)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``Inventory matches on the player object before the room`` () =
         let state = ObjectDatabase.initialState
 

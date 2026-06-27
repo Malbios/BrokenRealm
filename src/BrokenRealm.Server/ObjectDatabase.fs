@@ -124,7 +124,8 @@ module ObjectDatabase =
 
         let prototypeAccount: AccountState =
             { Id = GameSnapshots.PrototypeAccountId
-              DisplayName = Some "Prototype account" }
+              DisplayName = Some "Prototype account"
+              PasswordHash = Some(Auth.hashPassword "prototype") }
 
         let prototypePlayer =
             PlayerObjects.create

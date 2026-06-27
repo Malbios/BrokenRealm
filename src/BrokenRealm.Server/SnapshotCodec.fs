@@ -495,6 +495,10 @@ module SnapshotCodec =
         | Some displayName -> object["displayName"] <- JsonValue.Create(displayName)
         | None -> ()
 
+        match account.PasswordHash with
+        | Some passwordHash -> object["passwordHash"] <- JsonValue.Create(passwordHash)
+        | None -> ()
+
         object
 
     let private decodeAccount node =
@@ -513,7 +517,13 @@ module SnapshotCodec =
                     | null -> Ok None
                     | _ -> Error "Account displayName must be a string when present."
 
-                return { Id = id; DisplayName = displayName }
+                let! passwordHash =
+                    match object["passwordHash"] with
+                    | JsonString value -> Ok(Some value)
+                    | null -> Ok None
+                    | _ -> Error "Account passwordHash must be a string when present."
+
+                return { Id = id; DisplayName = displayName; PasswordHash = passwordHash }
             }
         | _ -> Error "Accounts must be JSON objects."
 
