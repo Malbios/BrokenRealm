@@ -257,6 +257,14 @@ button:hover {
   background: #2d6046;
 }
 
+.secondary-button {
+  background: #18251e;
+}
+
+.secondary-button:hover {
+  background: #22362b;
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.62;

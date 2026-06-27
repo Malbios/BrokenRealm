@@ -102,6 +102,10 @@ type BehaviorUpdateResult =
       AffectedModules: string list
       AffectedObjects: ObjectId list }
 
+type BehaviorValidationResult =
+    { AffectedModules: string list
+      AffectedObjects: ObjectId list }
+
 type MatchedBehaviorMethod =
     { ObjectId: ObjectId
       BehaviorModuleId: string

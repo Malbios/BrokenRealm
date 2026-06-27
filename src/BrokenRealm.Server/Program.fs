@@ -94,5 +94,30 @@ module Program =
                         Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
         |> ignore
 
+        app.MapPost(
+            "/admin/behaviors/{moduleId}/validate",
+            Func<string, BehaviorModuleUpdateRequest, IResult>(fun moduleId request ->
+                lock stateLock (fun () ->
+                    match
+                        Kernel.tryValidateBehaviorModule
+                            (ScriptCompiler.compile app.Environment.ContentRootPath)
+                            Scripting.inspectBehaviorModule
+                            moduleId
+                            request.source
+                            gameState
+                    with
+                    | Ok(Some validated) ->
+                        Results.Json(
+                            { moduleId = moduleId
+                              source = request.source
+                              affectedModules = validated.AffectedModules
+                              affectedObjects = validated.AffectedObjects
+                              diagnostics = [] }
+                            : BehaviorModuleUpdateResponse)
+                    | Ok None -> Results.NotFound()
+                    | Error diagnostics ->
+                        Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
+        |> ignore
+
         app.Run()
         0

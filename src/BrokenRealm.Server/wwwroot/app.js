@@ -9,6 +9,7 @@ const playerPanel = document.querySelector("#player-panel");
 const adminPanel = document.querySelector("#admin-panel");
 const editorHost = document.querySelector("#script-editor");
 const scriptSource = document.querySelector("#script-source");
+const checkScript = document.querySelector("#check-script");
 const saveScript = document.querySelector("#save-script");
 const scriptStatus = document.querySelector("#script-status");
 const behaviorModuleSelect = document.querySelector("#behavior-module");
@@ -17,6 +18,7 @@ const moduleDetails = document.querySelector("#module-details");
 let editor = null;
 let editorReady = null;
 let behaviorModules = [];
+let activeModuleId = null;
 const moduleModels = new Map();
 const modulePayloads = new Map();
 const savedSources = new Map();
@@ -91,6 +93,8 @@ async function setDiagnostics(diagnostics) {
             item.tabIndex = 0;
             item.classList.add("diagnostic-link");
             const openDiagnostic = () => {
+                if (file !== activeModuleId && !canLeaveModule(activeModuleId))
+                    return;
                 behaviorModuleSelect.value = file;
                 const model = moduleModels.get(file);
                 const payload = modulePayloads.get(file);
@@ -100,6 +104,7 @@ async function setDiagnostics(diagnostics) {
                     editor.revealLineInCenter(Math.max(1, diagnostic.line));
                     editor.focus();
                     updateEditorTitle(file);
+                    activeModuleId = file;
                     if (payload) {
                         renderModuleDetails(payload);
                         void configureDependencyLibraries(payload);
@@ -145,6 +150,22 @@ function updateEditorTitle(moduleId) {
     const model = moduleModels.get(moduleId);
     const dirty = model && model.getValue() !== savedSources.get(moduleId);
     verbTitle.textContent = `${moduleId}${dirty ? " *" : ""}`;
+}
+function isModuleDirty(moduleId) {
+    const model = moduleModels.get(moduleId);
+    if (model)
+        return model.getValue() !== savedSources.get(moduleId);
+    return activeModuleId === moduleId && scriptSource
+        ? scriptSource.value !== savedSources.get(moduleId)
+        : false;
+}
+function hasUnsavedChanges() {
+    return [...savedSources.keys()].some(isModuleDirty);
+}
+function canLeaveModule(moduleId) {
+    return !moduleId
+        || !isModuleDirty(moduleId)
+        || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
 }
 function showPanel(panel) {
     const isAdmin = panel === "admin";
@@ -344,10 +365,46 @@ async function loadScript() {
     }
     setEditorMarkers([]);
     updateEditorTitle(moduleId);
+    activeModuleId = moduleId;
     renderModuleDetails(payload);
     const modules = payload.affectedModules.join(", ") || moduleId;
     const objects = payload.affectedObjects.join(", ") || "none";
     setStatus(`Loaded. Saving affects modules: ${modules}; objects: ${objects}.`);
+}
+async function checkCurrentScript() {
+    if (!scriptSource)
+        return;
+    await initializeEditor();
+    const moduleId = selectedModuleId();
+    if (!moduleId) {
+        setStatus("No editable behavior module is selected.", true);
+        return;
+    }
+    checkScript?.setAttribute("disabled", "true");
+    saveScript?.setAttribute("disabled", "true");
+    setStatus("Checking without activation...");
+    setEditorMarkers([]);
+    const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: getScriptSource() }),
+    });
+    if (!response.ok) {
+        try {
+            const payload = (await response.json());
+            if (payload.diagnostics && payload.diagnostics.length > 0) {
+                await setDiagnostics(payload.diagnostics);
+                return;
+            }
+        }
+        catch {
+            // Use the generic status for non-JSON failures.
+        }
+        setStatus("Could not check script.", true);
+        return;
+    }
+    const payload = (await response.json());
+    setStatus(`Valid. Nothing was activated. Saving would update modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`);
 }
 async function saveCurrentScript() {
     if (!scriptSource)
@@ -359,6 +416,7 @@ async function saveCurrentScript() {
         return;
     }
     saveScript?.setAttribute("disabled", "true");
+    checkScript?.setAttribute("disabled", "true");
     setStatus("Compiling...");
     setEditorMarkers([]);
     const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`, {
@@ -417,10 +475,35 @@ form?.addEventListener("submit", async (event) => {
         input?.focus();
     }
 });
-playerTab?.addEventListener("click", () => showPanel("player"));
-adminTab?.addEventListener("click", () => showPanel("admin"));
-saveScript?.addEventListener("click", () => {
-    void saveCurrentScript().finally(() => saveScript?.removeAttribute("disabled"));
+playerTab?.addEventListener("click", () => {
+    if (canLeaveModule(activeModuleId))
+        showPanel("player");
 });
-behaviorModuleSelect?.addEventListener("change", () => void loadScript());
+adminTab?.addEventListener("click", () => showPanel("admin"));
+checkScript?.addEventListener("click", () => {
+    void checkCurrentScript().finally(() => {
+        checkScript.removeAttribute("disabled");
+        saveScript?.removeAttribute("disabled");
+    });
+});
+saveScript?.addEventListener("click", () => {
+    void saveCurrentScript().finally(() => {
+        saveScript.removeAttribute("disabled");
+        checkScript?.removeAttribute("disabled");
+    });
+});
+behaviorModuleSelect?.addEventListener("change", () => {
+    if (!canLeaveModule(activeModuleId)) {
+        if (activeModuleId)
+            behaviorModuleSelect.value = activeModuleId;
+        return;
+    }
+    void loadScript();
+});
+window.addEventListener("beforeunload", (event) => {
+    if (!hasUnsavedChanges())
+        return;
+    event.preventDefault();
+    event.returnValue = "";
+});
 appendLine("BrokenRealm awaits.");

@@ -99,6 +99,7 @@ const playerPanel = document.querySelector<HTMLDivElement>("#player-panel");
 const adminPanel = document.querySelector<HTMLDivElement>("#admin-panel");
 const editorHost = document.querySelector<HTMLDivElement>("#script-editor");
 const scriptSource = document.querySelector<HTMLTextAreaElement>("#script-source");
+const checkScript = document.querySelector<HTMLButtonElement>("#check-script");
 const saveScript = document.querySelector<HTMLButtonElement>("#save-script");
 const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
 const behaviorModuleSelect = document.querySelector<HTMLSelectElement>("#behavior-module");
@@ -107,6 +108,7 @@ const moduleDetails = document.querySelector<HTMLDivElement>("#module-details");
 let editor: MonacoEditor | null = null;
 let editorReady: Promise<void> | null = null;
 let behaviorModules: AdminBehaviorModule[] = [];
+let activeModuleId: string | null = null;
 const moduleModels = new Map<string, MonacoModel>();
 const modulePayloads = new Map<string, ScriptResponse>();
 const savedSources = new Map<string, string>();
@@ -187,6 +189,7 @@ async function setDiagnostics(diagnostics: CompilerDiagnostic[]): Promise<void> 
       item.tabIndex = 0;
       item.classList.add("diagnostic-link");
       const openDiagnostic = (): void => {
+        if (file !== activeModuleId && !canLeaveModule(activeModuleId)) return;
         behaviorModuleSelect.value = file;
         const model = moduleModels.get(file);
         const payload = modulePayloads.get(file);
@@ -196,6 +199,7 @@ async function setDiagnostics(diagnostics: CompilerDiagnostic[]): Promise<void> 
           editor.revealLineInCenter(Math.max(1, diagnostic.line));
           editor.focus();
           updateEditorTitle(file);
+          activeModuleId = file;
           if (payload) {
             renderModuleDetails(payload);
             void configureDependencyLibraries(payload);
@@ -243,6 +247,24 @@ function updateEditorTitle(moduleId: string): void {
   const model = moduleModels.get(moduleId);
   const dirty = model && model.getValue() !== savedSources.get(moduleId);
   verbTitle.textContent = `${moduleId}${dirty ? " *" : ""}`;
+}
+
+function isModuleDirty(moduleId: string): boolean {
+  const model = moduleModels.get(moduleId);
+  if (model) return model.getValue() !== savedSources.get(moduleId);
+  return activeModuleId === moduleId && scriptSource
+    ? scriptSource.value !== savedSources.get(moduleId)
+    : false;
+}
+
+function hasUnsavedChanges(): boolean {
+  return [...savedSources.keys()].some(isModuleDirty);
+}
+
+function canLeaveModule(moduleId: string | null): boolean {
+  return !moduleId
+    || !isModuleDirty(moduleId)
+    || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
 }
 
 function showPanel(panel: Panel): void {
@@ -461,10 +483,53 @@ async function loadScript(): Promise<void> {
   }
   setEditorMarkers([]);
   updateEditorTitle(moduleId);
+  activeModuleId = moduleId;
   renderModuleDetails(payload);
   const modules = payload.affectedModules.join(", ") || moduleId;
   const objects = payload.affectedObjects.join(", ") || "none";
   setStatus(`Loaded. Saving affects modules: ${modules}; objects: ${objects}.`);
+}
+
+async function checkCurrentScript(): Promise<void> {
+  if (!scriptSource) return;
+  await initializeEditor();
+
+  const moduleId = selectedModuleId();
+  if (!moduleId) {
+    setStatus("No editable behavior module is selected.", true);
+    return;
+  }
+
+  checkScript?.setAttribute("disabled", "true");
+  saveScript?.setAttribute("disabled", "true");
+  setStatus("Checking without activation...");
+  setEditorMarkers([]);
+
+  const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: getScriptSource() }),
+  });
+
+  if (!response.ok) {
+    try {
+      const payload = (await response.json()) as ScriptErrorResponse;
+      if (payload.diagnostics && payload.diagnostics.length > 0) {
+        await setDiagnostics(payload.diagnostics);
+        return;
+      }
+    } catch {
+      // Use the generic status for non-JSON failures.
+    }
+
+    setStatus("Could not check script.", true);
+    return;
+  }
+
+  const payload = (await response.json()) as ScriptResponse;
+  setStatus(
+    `Valid. Nothing was activated. Saving would update modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`,
+  );
 }
 
 async function saveCurrentScript(): Promise<void> {
@@ -478,6 +543,7 @@ async function saveCurrentScript(): Promise<void> {
   }
 
   saveScript?.setAttribute("disabled", "true");
+  checkScript?.setAttribute("disabled", "true");
   setStatus("Compiling...");
   setEditorMarkers([]);
 
@@ -543,11 +609,34 @@ form?.addEventListener("submit", async (event) => {
   }
 });
 
-playerTab?.addEventListener("click", () => showPanel("player"));
-adminTab?.addEventListener("click", () => showPanel("admin"));
-saveScript?.addEventListener("click", () => {
-  void saveCurrentScript().finally(() => saveScript?.removeAttribute("disabled"));
+playerTab?.addEventListener("click", () => {
+  if (canLeaveModule(activeModuleId)) showPanel("player");
 });
-behaviorModuleSelect?.addEventListener("change", () => void loadScript());
+adminTab?.addEventListener("click", () => showPanel("admin"));
+checkScript?.addEventListener("click", () => {
+  void checkCurrentScript().finally(() => {
+    checkScript.removeAttribute("disabled");
+    saveScript?.removeAttribute("disabled");
+  });
+});
+saveScript?.addEventListener("click", () => {
+  void saveCurrentScript().finally(() => {
+    saveScript.removeAttribute("disabled");
+    checkScript?.removeAttribute("disabled");
+  });
+});
+behaviorModuleSelect?.addEventListener("change", () => {
+  if (!canLeaveModule(activeModuleId)) {
+    if (activeModuleId) behaviorModuleSelect.value = activeModuleId;
+    return;
+  }
+  void loadScript();
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 appendLine("BrokenRealm awaits.");

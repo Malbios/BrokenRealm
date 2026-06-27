@@ -486,3 +486,9 @@ module Kernel =
                                 { State = updatedState
                                   AffectedModules = affectedModules
                                   AffectedObjects = affectedObjects })
+
+    let tryValidateBehaviorModule compile inspect moduleId source state =
+        tryUpdateBehaviorModule compile inspect moduleId source state
+        |> Result.map (Option.map (fun update ->
+            { AffectedModules = update.AffectedModules
+              AffectedObjects = update.AffectedObjects }))

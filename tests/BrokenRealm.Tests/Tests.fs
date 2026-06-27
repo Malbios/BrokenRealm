@@ -108,6 +108,27 @@ module KernelTests =
         | Error diagnostics -> Assert.True(false, diagnostics |> List.map _.message |> String.concat "\n")
 
     [<Fact>]
+    let ``Behavior validation reports impact without returning activatable state`` () =
+        let state = ObjectDatabase.initialState
+        let source = BehaviorSources.forest + "\n// unsaved validation"
+        let classes = state.BehaviorModules["forest-behaviors"].Classes
+
+        match
+            Kernel.tryValidateBehaviorModule
+                (fun _ -> Ok forestCompiled)
+                (fun _ _ -> Ok classes)
+                "forest-behaviors"
+                source
+                state
+        with
+        | Ok(Some validated) ->
+            Assert.Equal<string list>([ "forest-behaviors" ], validated.AffectedModules)
+            Assert.Equal<string list>([ "forest" ], validated.AffectedObjects)
+            Assert.Equal(BehaviorSources.forest, state.BehaviorModules["forest-behaviors"].Source)
+        | Ok None -> Assert.True(false, "Expected the behavior module to validate.")
+        | Error diagnostics -> Assert.True(false, diagnostics |> List.map _.message |> String.concat "\n")
+
+    [<Fact>]
     let ``Behavior module dependency cycles are rejected`` () =
         let state = ObjectDatabase.initialState
         let core = state.BehaviorModules["core-behaviors"]

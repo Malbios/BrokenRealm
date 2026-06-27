@@ -116,6 +116,8 @@ Current endpoints:
 - `PUT /admin/behaviors/{moduleId}`
   - TypeScript-checks/compiles the module, reads registered class command metadata, and verifies referenced classes.
   - On failure, returns diagnostics and keeps the previous compiled module active.
+- `POST /admin/behaviors/{moduleId}/validate`
+  - Runs the same dependency-graph compilation and validation as save without activating or returning candidate state.
 
 ## Localization Rules
 
@@ -252,6 +254,8 @@ The browser UI has:
 - one Monaco model per behavior module, preserving undo history and unsaved edits while switching modules
 - structured class, dependency, affected-module, and affected-object metadata visible before save
 - compiler diagnostics mapped to behavior module IDs and module-local locations; Monaco marks the corresponding cached model and diagnostic entries open that module
+- a Check action that compiles the full affected graph without activation
+- unsaved-change guards for module switches, leaving the admin tab, and page unload; per-module Monaco models retain edits during in-page navigation
 
 Admin can change behavior methods or command metadata, save the module, and later player commands use the atomically activated class hierarchy.
 
@@ -305,4 +309,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add explicit unsaved-change navigation guards and a compile-without-activate action before expanding the editor further.
+1. Decide persistence boundaries before accounts: durable object/behavior state, migrations, and session storage should be designed together.
