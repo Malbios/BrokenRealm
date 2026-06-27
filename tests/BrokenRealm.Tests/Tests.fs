@@ -57,7 +57,7 @@ module KernelTests =
         let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "village-behaviors" ],
+            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules |> List.map _.moduleId)
 
         let forest = modules |> List.find (fun behaviorModule -> behaviorModule.moduleId = "forest-behaviors")
@@ -69,9 +69,9 @@ module KernelTests =
         let modules, objects = Kernel.behaviorImpact "core-behaviors" ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "village-behaviors" ],
+            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
-        Assert.Equal<string list>([ "forest"; "village" ], objects)
+        Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], objects)
 
     [<Fact>]
     let ``Updating a base module recompiles dependents in dependency order`` () =
@@ -97,9 +97,9 @@ module KernelTests =
         match result with
         | Ok(Some update) ->
             Assert.Equal<string list>(
-                [ "core-behaviors"; "location-behaviors"; "forest-behaviors"; "village-behaviors" ],
+                [ "core-behaviors"; "location-behaviors"; "forest-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
-            Assert.Equal<string list>([ "forest"; "village" ], update.AffectedObjects)
+            Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], update.AffectedObjects)
             Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
             Assert.Contains(editedCore, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
             Assert.Contains(BehaviorSources.location, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
@@ -245,22 +245,106 @@ module KernelTests =
         | None -> Assert.True(false, "Expected command to match the movement verb.")
 
     [<Fact>]
+    let ``Forest contents are derived from permanent object locations`` () =
+        let contents = Kernel.contentsOf ObjectDatabase.initialState "forest"
+
+        Assert.Equal<string list>([ "fallen-log" ], contents |> List.map _.Id)
+
+    [<Theory>]
+    [<InlineData("examine log", "en")>]
+    [<InlineData("untersuche baumstamm", "de")>]
+    let ``Localized examine commands dispatch to visible object behavior`` command cultureName =
+        let culture = if cultureName = "de" then De else En
+        let state = ObjectDatabase.initialState
+        let matched = CommandMatching.tryMatch culture command state |> Option.get
+
+        Assert.Equal("fallen-log", matched.ObjectId)
+        Assert.Equal("ThingBehavior", matched.BehaviorClassName)
+        Assert.Equal("examine", matched.MethodName)
+
+        let result = Kernel.submitCommand culture command state
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State culture
+        let expected =
+            if culture = De then
+                "Ein moosbedeckter Baumstamm liegt auf dem Waldboden."
+            else
+                "A moss-covered log lies across the forest floor."
+
+        Assert.Equal(expected, line)
+
+    [<Fact>]
+    let ``Look lists visible contents with localized object names`` () =
+        let english = Kernel.submitCommand En "look" ObjectDatabase.initialState
+        let englishLines = english.Messages |> List.map (ResponseFormatting.localizeMessage english.State En)
+        Assert.Contains("You see a fallen log.", englishLines)
+
+        let german = Kernel.submitCommand De "schau" ObjectDatabase.initialState
+        let germanLines = german.Messages |> List.map (ResponseFormatting.localizeMessage german.State De)
+        Assert.Contains("Du siehst einen umgestürzten Baumstamm.", germanLines)
+
+    [<Fact>]
+    let ``Objects outside the current location are not visible or matchable`` () =
+        let villageState = (Kernel.submitCommand En "go north" ObjectDatabase.initialState).State
+
+        Assert.Empty(Kernel.contentsOf villageState "village")
+        Assert.True(CommandMatching.tryMatch En "examine log" villageState |> Option.isNone)
+
+        let result = Kernel.submitCommand En "examine log" villageState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+        Assert.Equal("I do not understand that command.", line)
+
+    [<Fact>]
+    let ``Player movement does not move contained world objects`` () =
+        let result = Kernel.submitCommand En "go north" ObjectDatabase.initialState
+
+        Assert.Equal("village", result.State.Player.LocationId)
+        Assert.Equal(Some "forest", result.State.Objects["fallen-log"].LocationId)
+
+    [<Fact>]
+    let ``Containment rejects missing locations`` () =
+        let state = ObjectDatabase.initialState
+        let log = state.Objects["fallen-log"]
+        let broken = { log with LocationId = Some "missing" }
+        let brokenState = { state with Objects = state.Objects |> Map.add log.Id broken }
+
+        Assert.Equal(Error "Object fallen-log has unknown location id: missing", Kernel.validateContainment brokenState)
+
+    [<Fact>]
+    let ``Containment rejects self containment`` () =
+        let state = ObjectDatabase.initialState
+        let log = state.Objects["fallen-log"]
+        let broken = { log with LocationId = Some log.Id }
+        let brokenState = { state with Objects = state.Objects |> Map.add log.Id broken }
+
+        Assert.Equal(Error "Object cannot contain itself: fallen-log", Kernel.validateContainment brokenState)
+
+    [<Fact>]
+    let ``Containment rejects cycles`` () =
+        let state = ObjectDatabase.initialState
+        let forest = { state.Objects["forest"] with LocationId = Some "fallen-log" }
+        let brokenState = { state with Objects = state.Objects |> Map.add forest.Id forest }
+
+        match Kernel.validateContainment brokenState with
+        | Error error -> Assert.Contains("Containment cycle", error)
+        | Ok() -> Assert.True(false, "Expected containment cycle to be rejected.")
+
+    [<Fact>]
     let ``Movement follows object references between locations`` () =
         let villageResult = Kernel.submitCommand En "go north" ObjectDatabase.initialState
 
         Assert.Equal("village", villageResult.State.Player.LocationId)
-        Assert.Equal("You travel north.", villageResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En)
+        Assert.Equal("You travel north.", villageResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage villageResult.State En)
 
         let forestResult = Kernel.submitCommand De "gehe nach süden" villageResult.State
         Assert.Equal("forest", forestResult.State.Player.LocationId)
-        Assert.Equal("Du gehst nach Süden.", forestResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage De)
+        Assert.Equal("Du gehst nach Süden.", forestResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage forestResult.State De)
 
     [<Fact>]
     let ``Movement without an exit leaves the player in place`` () =
         let result = Kernel.submitCommand En "go south" ObjectDatabase.initialState
 
         Assert.Equal("forest", result.State.Player.LocationId)
-        Assert.Equal("You cannot go that way.", result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En)
+        Assert.Equal("You cannot go that way.", result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En)
 
     [<Fact>]
     let ``Kernel rejects movement to an unknown object`` () =
@@ -325,7 +409,7 @@ module KernelTests =
         let stateAfterGather = (Kernel.submitCommand De "sammle holz" ObjectDatabase.initialState).State
 
         let result = Kernel.submitCommand De "inventar" stateAfterGather
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage De
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State De
 
         Assert.Equal("Inventar: 2 Holz.", line)
 
@@ -342,7 +426,7 @@ module KernelTests =
         let result = Kernel.submitCommand En "gather wood" state
 
         Assert.Equal(5, result.State.Player.Inventory["wood"])
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
         Assert.Equal("You gather 5 wood.", line)
 
     [<Fact>]
@@ -366,7 +450,7 @@ module KernelTests =
     let ``Unknown command returns localized unknown message key`` () =
         let result = Kernel.submitCommand En "dance" ObjectDatabase.initialState
 
-        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
 
         Assert.Equal("I do not understand that command.", line)
 

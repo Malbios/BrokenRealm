@@ -48,6 +48,8 @@ English:
 - `inv`
 - `go north`
 - `walk north`
+- `examine log`
+- `x fallen log`
 
 Deutsch:
 
@@ -60,10 +62,13 @@ Deutsch:
 - `inv`
 - `gehe nach norden`
 - `geh nach süden`
+- `untersuche baumstamm`
 
 The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
 Object properties use neutral typed values: null, strings, 64-bit integers, floating-point numbers, booleans, object references, lists, and maps. They are exposed to behavior methods as ordinary JavaScript values. Object references are recursively validated before execution.
+
+Permanent objects have an optional location. Contents are derived from those location references, and the kernel rejects missing locations, self-containment, and containment cycles. The forest contains a localized `fallen-log` object using `ThingBehavior`; `look` lists it and localized `examine` commands dispatch directly to its behavior class.
 
 ## API
 
@@ -88,7 +93,7 @@ Admin editor transport:
 - `GET /admin/behaviors/{moduleId}`
 - `PUT /admin/behaviors/{moduleId}`
 
-The class library is split into `core-behaviors`, `location-behaviors`, `forest-behaviors`, and `village-behaviors`. Modules declare dependencies; the kernel rejects missing dependencies and cycles and compiles dependency source in deterministic topological order. Native `extends`, `override`, and `super` work across module boundaries.
+The class library is split into `core-behaviors`, `location-behaviors`, `forest-behaviors`, `village-behaviors`, and `thing-behaviors`. Modules declare dependencies; the kernel rejects missing dependencies and cycles and compiles dependency source in deterministic topological order. Native `extends`, `override`, and `super` work across module boundaries.
 
 The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit a selected module in memory. It reports which dependent modules and objects will be affected. On save, the server recompiles the edited module and all transitive dependents, validates every registered class and affected object, and activates the complete graph atomically. Any failure leaves the previous graph active. There is no authentication yet.
 

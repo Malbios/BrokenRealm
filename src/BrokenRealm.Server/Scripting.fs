@@ -121,7 +121,7 @@ module Scripting =
             values |> Map.iter (fun key value -> output[key] <- gameValueToObject value)
             output :> obj
 
-    let private executeWithinLimits limits invocation (target: GameObject) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
+    let private executeWithinLimits limits invocation (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
         try
             let context =
                 let properties = Dictionary<string, obj>()
@@ -134,7 +134,15 @@ module Scripting =
                        descriptionKey = target.DescriptionKey |> Option.defaultValue ""
                        tags = target.Tags |> Set.toArray
                        properties = properties
-                       references = target.References |}
+                       references = target.References
+                       contents =
+                        contents
+                        |> List.map (fun object ->
+                            {| id = object.Id
+                               name = object.Name
+                               descriptionKey = object.DescriptionKey |> Option.defaultValue ""
+                               tags = object.Tags |> Set.toArray |})
+                        |> List.toArray |}
                    actor = {| inventory = actorInventory |} |}
 
             let contextJson = JsonSerializer.Serialize(context, jsonOptions)
@@ -181,7 +189,7 @@ module Scripting =
         if source.Length > limits.MaxSourceCharacters then
             Error $"Script source may contain at most {limits.MaxSourceCharacters} characters."
         else
-            executeWithinLimits limits (fun context -> "execute(" + context + ")") target args actorInventory source
+            executeWithinLimits limits (fun context -> "execute(" + context + ")") target [] args actorInventory source
 
     let executeVerb target args actorInventory source =
         executeVerbWithLimits defaultLimits target args actorInventory source
@@ -195,10 +203,19 @@ module Scripting =
             Error $"Behavior source may contain at most {limits.MaxSourceCharacters} characters."
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
-            executeWithinLimits limits invocation target args actorInventory source
+            executeWithinLimits limits invocation target [] args actorInventory source
 
     let executeBehaviorMethod className methodName target args actorInventory source =
         executeBehaviorMethodWithLimits defaultLimits className methodName target args actorInventory source
+
+    let executeBehaviorMethodWithContents (className: string) (methodName: string) target contents args actorInventory (source: string) =
+        if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
+            Error "Behavior class and method names must be valid JavaScript identifiers."
+        elif source.Length > defaultLimits.MaxSourceCharacters then
+            Error $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters."
+        else
+            let invocation context = $"(new {className}()).{methodName}({context})"
+            executeWithinLimits defaultLimits invocation target contents args actorInventory source
 
     let inspectBehaviorModule (registryName: string) (source: string) =
         let diagnostic message = { message = message; line = 0; column = 0 }

@@ -59,7 +59,10 @@ type BehaviorModule =
 type GameObject =
     { Id: ObjectId
       Name: string
+      NameKey: string
+      Aliases: Map<Culture, string list>
       DescriptionKey: string option
+      LocationId: ObjectId option
       Tags: Set<string>
       Properties: Map<string, GameValue>
       References: Map<string, ObjectId>

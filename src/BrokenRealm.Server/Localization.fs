@@ -39,6 +39,16 @@ module Localizer =
         | De, "location.forest.atmosphere" -> "Kiefernduft zieht durch die Zweige."
         | En, "location.village.description" -> "You are standing in a small village."
         | De, "location.village.description" -> "Du stehst in einem kleinen Dorf."
+        | En, "location.contents" -> "You see {objects}."
+        | De, "location.contents" -> "Du siehst {objects}."
+        | En, "object.forest.name" -> "forest"
+        | De, "object.forest.name" -> "Wald"
+        | En, "object.village.name" -> "village"
+        | De, "object.village.name" -> "Dorf"
+        | En, "object.fallen-log.name" -> "a fallen log"
+        | De, "object.fallen-log.name" -> "einen umgestürzten Baumstamm"
+        | En, "object.fallen-log.description" -> "A moss-covered log lies across the forest floor."
+        | De, "object.fallen-log.description" -> "Ein moosbedeckter Baumstamm liegt auf dem Waldboden."
         | En, "move.success" -> "You travel {direction}."
         | De, "move.success" -> "Du gehst nach {direction}."
         | En, "move.no_exit" -> "You cannot go that way."
@@ -57,6 +67,12 @@ module Localizer =
         | De, "script.error" -> "Das Skript ist fehlgeschlagen: {error}"
         | _, missing -> missing
 
+    let objectName (state: GameState) culture objectId =
+        state.Objects
+        |> Map.tryFind objectId
+        |> Option.map (fun object -> template culture object.NameKey)
+        |> Option.defaultValue objectId
+
     let text culture (message: Message) =
         message.Args
         |> Map.fold (fun (output: string) key value -> output.Replace("{" + key + "}", value)) (template culture message.Key)
@@ -70,7 +86,12 @@ module ResponseFormatting =
             | _ -> None)
         |> String.concat ", "
 
-    let localizeMessage culture (message: Message) =
+    let private formatObjects state culture (value: string) =
+        value.Split(',', System.StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (Localizer.objectName state culture)
+        |> String.concat ", "
+
+    let localizeMessage state culture (message: Message) =
         let args =
             message.Args
             |> Map.map (fun key value ->
@@ -78,6 +99,7 @@ module ResponseFormatting =
                 | "item" -> Localizer.itemName culture value
                 | "items" -> formatInventoryItems culture value
                 | "direction" -> Localizer.directionName culture value
+                | "objects" -> formatObjects state culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }

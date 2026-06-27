@@ -19,6 +19,7 @@ module ObjectDatabase =
         let locationCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.locationCompiled ]
         let forestCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.forestCompiled ]
         let villageCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.villageCompiled ]
+        let thingCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.thingCompiled ]
 
         let behaviorModules =
             [ behaviorModule "core-behaviors" "coreBehaviorClasses" [] BehaviorSources.core coreCompiled
@@ -39,14 +40,23 @@ module ObjectDatabase =
                   "villageBehaviorClasses"
                   [ "location-behaviors" ]
                   BehaviorSources.village
-                  villageCompiled ]
+                  villageCompiled
+              behaviorModule
+                  "thing-behaviors"
+                  "thingBehaviorClasses"
+                  [ "core-behaviors" ]
+                  BehaviorSources.thing
+                  thingCompiled ]
             |> List.map (fun behaviorModule -> behaviorModule.Id, behaviorModule)
             |> Map.ofList
 
         let forest =
             { Id = "forest"
               Name = "forest"
+              NameKey = "object.forest.name"
+              Aliases = Map.ofList [ En, [ "forest" ]; De, [ "wald" ] ]
               DescriptionKey = Some "location.forest.description"
+              LocationId = None
               Tags = Set.ofList [ "forest"; "wood" ]
               Properties =
                 Map.ofList
@@ -64,7 +74,10 @@ module ObjectDatabase =
         let village =
             { Id = "village"
               Name = "village"
+              NameKey = "object.village.name"
+              Aliases = Map.ofList [ En, [ "village" ]; De, [ "dorf" ] ]
               DescriptionKey = Some "location.village.description"
+              LocationId = None
               Tags = Set.ofList [ "village" ]
               Properties =
                 Map.ofList
@@ -75,7 +88,23 @@ module ObjectDatabase =
               BehaviorModuleId = "village-behaviors"
               BehaviorClassName = "VillageBehavior" }
 
+        let fallenLog =
+            { Id = "fallen-log"
+              Name = "fallen log"
+              NameKey = "object.fallen-log.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "fallen log"; "log" ]
+                      De, [ "umgestürzter stamm"; "stamm"; "baumstamm" ] ]
+              DescriptionKey = Some "object.fallen-log.description"
+              LocationId = Some forest.Id
+              Tags = Set.ofList [ "thing"; "wood" ]
+              Properties = Map.ofList [ "material", StringValue "wood" ]
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "ThingBehavior" }
+
         { Player = { LocationId = forest.Id; Inventory = Map.empty }
           ItemIds = Set.ofList [ "wood" ]
           BehaviorModules = behaviorModules
-          Objects = Map.ofList [ forest.Id, forest; village.Id, village ] }
+          Objects = Map.ofList [ forest.Id, forest; village.Id, village; fallenLog.Id, fallenLog ] }

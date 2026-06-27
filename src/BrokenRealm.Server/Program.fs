@@ -30,7 +30,7 @@ module Program =
                         gameState <- result.State
                         result)
 
-                let lines = result.Messages |> List.map (ResponseFormatting.localizeMessage culture)
+                let lines = result.Messages |> List.map (ResponseFormatting.localizeMessage result.State culture)
                 Results.Json({ lines = lines } : CommandResponse)))
         |> ignore
 

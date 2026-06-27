@@ -6,16 +6,22 @@ module CommandMatching =
     let private normalize (raw: string) =
         raw.Trim().ToLowerInvariant()
 
-    let private tryArgument culture name value =
+    let private tryArgument culture (target: GameObject) name value =
         let aliases =
             match name with
             | "item" -> Localizer.itemAliases culture
             | "direction" -> Localizer.directionAliases culture
+            | "object" ->
+                target.Aliases
+                |> Map.tryFind culture
+                |> Option.defaultValue []
+                |> List.map (fun alias -> normalize alias, target.Id)
+                |> Map.ofList
             | _ -> Map.empty
 
         aliases |> Map.tryFind (normalize value)
 
-    let private matchPattern culture rawInput pattern =
+    let private matchPattern culture target rawInput pattern =
         let input = normalize rawInput
         let pattern = normalize pattern
 
@@ -31,7 +37,7 @@ module CommandMatching =
 
             if input.StartsWith(prefix) && input.EndsWith(suffix) && input.Length >= prefix.Length + suffix.Length then
                 let itemText = input.Substring(prefix.Length, input.Length - prefix.Length - suffix.Length)
-                tryArgument culture argumentName itemText
+                tryArgument culture target argumentName itemText
                 |> Option.map (fun value -> Map.ofList [ argumentName, value ])
             else
                 None
@@ -42,21 +48,30 @@ module CommandMatching =
 
     let tryMatch culture rawInput (state: GameState) =
         let location = state.Objects[state.Player.LocationId]
-        let behaviorModule = state.BehaviorModules[location.BehaviorModuleId]
-        let behaviorClass = behaviorModule.Classes[location.BehaviorClassName]
+        let visibleContents =
+            state.Objects
+            |> Map.toList
+            |> List.map snd
+            |> List.filter (fun object -> object.LocationId = Some location.Id)
+            |> List.sortBy _.Id
 
-        behaviorClass.Commands
-        |> List.tryPick (fun command ->
-            command.Patterns
-            |> List.filter (fun pattern -> pattern.Culture = culture)
-            |> List.tryPick (fun pattern ->
-                match matchPattern culture rawInput pattern.Pattern with
-                | Some args ->
-                    Some
-                        { ObjectId = location.Id
-                          BehaviorModuleId = behaviorModule.Id
-                          BehaviorClassName = behaviorClass.ClassName
-                          MethodName = command.MethodName
-                          CompiledSource = behaviorModule.CompiledSource
-                          Args = args }
-                | None -> None))
+        location :: visibleContents
+        |> List.tryPick (fun target ->
+            let behaviorModule = state.BehaviorModules[target.BehaviorModuleId]
+            let behaviorClass = behaviorModule.Classes[target.BehaviorClassName]
+
+            behaviorClass.Commands
+            |> List.tryPick (fun command ->
+                command.Patterns
+                |> List.filter (fun pattern -> pattern.Culture = culture)
+                |> List.tryPick (fun pattern ->
+                    match matchPattern culture target rawInput pattern.Pattern with
+                    | Some args ->
+                        Some
+                            { ObjectId = target.Id
+                              BehaviorModuleId = behaviorModule.Id
+                              BehaviorClassName = behaviorClass.ClassName
+                              MethodName = command.MethodName
+                              CompiledSource = behaviorModule.CompiledSource
+                              Args = args }
+                    | None -> None)))

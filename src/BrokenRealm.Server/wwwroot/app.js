@@ -33,6 +33,12 @@ declare interface VerbContext {
     tags: string[];
     properties: Record<string, GameValue>;
     references: Record<string, string>;
+    contents: {
+      id: ObjectId;
+      name: string;
+      descriptionKey: string;
+      tags: string[];
+    }[];
   };
   actor: {
     inventory: Record<string, number>;

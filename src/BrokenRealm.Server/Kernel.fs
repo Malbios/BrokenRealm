@@ -49,6 +49,39 @@ module Kernel =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
+    let contentsOf (state: GameState) containerId =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun object -> object.LocationId = Some containerId)
+        |> List.sortBy _.Id
+
+    let validateContainment (state: GameState) =
+        let rec validateChain visiting objectId =
+            if Set.contains objectId visiting then
+                Error $"Containment cycle detected at object id: {objectId}"
+            else
+                match state.Objects |> Map.tryFind objectId with
+                | None -> Error $"Unknown contained object id: {objectId}"
+                | Some object ->
+                    match object.LocationId with
+                    | None -> Ok()
+                    | Some locationId when locationId = object.Id ->
+                        Error $"Object cannot contain itself: {object.Id}"
+                    | Some locationId when not (state.Objects.ContainsKey locationId) ->
+                        Error $"Object {object.Id} has unknown location id: {locationId}"
+                    | Some locationId -> validateChain (Set.add objectId visiting) locationId
+
+        state.Objects
+        |> Map.toList
+        |> List.map fst
+        |> List.tryPick (fun objectId ->
+            match validateChain Set.empty objectId with
+            | Error error -> Some error
+            | Ok() -> None)
+        |> Option.map Error
+        |> Option.defaultValue (Ok())
+
     let private applyEffect (state: GameState) (messages: Message list) effect =
         match validateEffect state effect with
         | Error error -> Error error
@@ -63,22 +96,24 @@ module Kernel =
                 Ok({ state with Player = player }, messages)
             | EmitMessage message -> Ok(state, messages @ [ message ])
 
-    let submitCommand culture text (state: GameState) =
+    let private submitValidCommand culture text (state: GameState) =
         match CommandMatching.tryMatch culture text state with
         | None ->
             { State = state
               Messages = [ message "command.unknown" Map.empty ] }
         | Some matched ->
             let target = state.Objects[matched.ObjectId]
+            let contents = contentsOf state target.Id
 
             let execution =
                 match validateObjectProperties state target with
                 | Error error -> Error error
                 | Ok() ->
-                    Scripting.executeBehaviorMethod
+                    Scripting.executeBehaviorMethodWithContents
                         matched.BehaviorClassName
                         matched.MethodName
                         target
+                        contents
                         matched.Args
                         state.Player.Inventory
                         matched.CompiledSource
@@ -103,6 +138,13 @@ module Kernel =
                 | Ok(state, messages) ->
                     { State = state
                       Messages = messages }
+
+    let submitCommand culture text (state: GameState) =
+        match validateContainment state with
+        | Error error ->
+            { State = state
+              Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
+        | Ok() -> submitValidCommand culture text state
 
     let tryGetBehaviorModule moduleId (state: GameState) =
         state.BehaviorModules |> Map.tryFind moduleId

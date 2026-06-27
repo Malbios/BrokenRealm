@@ -92,10 +92,13 @@ Current object model:
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
 - `village` references `forest` to the south and uses `village-behaviors:VillageBehavior`.
+- `fallen-log` is a permanent object located in `forest` and uses `thing-behaviors:ThingBehavior`.
+- Permanent object contents are derived from each object's optional `LocationId`; no second mutable contents list is stored.
+- Missing locations, self-containment, and containment cycles are rejected before command dispatch.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
 - Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`.
-- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`.
+- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors` plus `core-behaviors <- thing-behaviors`.
 - Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
 - Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
 
@@ -143,6 +146,8 @@ English:
 - `inv`
 - `go north`
 - `walk north`
+- `examine log`
+- `x fallen log`
 
 German:
 
@@ -155,6 +160,7 @@ German:
 - `inv`
 - `gehe nach norden`
 - `geh nach süden`
+- `untersuche baumstamm`
 
 Neutral item IDs:
 
@@ -202,6 +208,8 @@ Object properties use the `GameValue` union:
 - recursive string-keyed map
 
 The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists or maps are recursively validated against the object database before a behavior method executes.
+
+`VerbContext.this.contents` contains neutral summaries of directly contained permanent objects. Location `look` methods use those IDs to emit neutral content-list messages; the F# response formatter resolves localized object names. Localized object aliases are used only for input matching and resolve to stable object IDs before behavior dispatch.
 
 Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `ForestBehavior implements Gatherable`; interfaces provide compile-time requirements but no runtime behavior.
 
@@ -285,4 +293,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
+1. Design lightweight anonymous/waif-like values separately from permanent contained world objects.

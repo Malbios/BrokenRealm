@@ -57,7 +57,17 @@ const coreBehaviorClasses = { GameBehavior };"""
   ];
 
   look(context: VerbContext): VerbResult {
-    return { effects: [{ type: "message", key: context.this.descriptionKey, args: {} }] };
+    const effects: ScriptEffect[] = [
+      { type: "message", key: context.this.descriptionKey, args: {} }
+    ];
+    if (context.this.contents.length > 0) {
+      effects.push({
+        type: "message",
+        key: "location.contents",
+        args: { objects: context.this.contents.map(object => object.id).join(",") }
+      });
+    }
+    return { effects };
   }
 
   move(context: VerbContext): VerbResult {
@@ -119,6 +129,28 @@ const locationBehaviorClasses = { LocationBehavior };"""
 
 const forestBehaviorClasses = { ForestBehavior };"""
 
+    let thing =
+        """class ThingBehavior extends GameBehavior {
+  static override commands: CommandDefinition[] = [
+    {
+      methodName: "examine",
+      patterns: [
+        { culture: "en", pattern: "examine {object}" },
+        { culture: "en", pattern: "x {object}" },
+        { culture: "de", pattern: "untersuche {object}" }
+      ]
+    }
+  ];
+
+  examine(context: VerbContext): VerbResult {
+    return {
+      effects: [{ type: "message", key: context.this.descriptionKey, args: {} }]
+    };
+  }
+}
+
+const thingBehaviorClasses = { ThingBehavior };"""
+
     let village =
         """class VillageBehavior extends LocationBehavior {}
 
@@ -156,7 +188,16 @@ const coreBehaviorClasses = { GameBehavior };"""
       { culture: "de", pattern: "gehe nach {direction}" }, { culture: "de", pattern: "geh nach {direction}" }
     ] }
   ];
-  look(context) { return { effects: [{ type: "message", key: context.this.descriptionKey, args: {} }] }; }
+  look(context) {
+    const effects = [{ type: "message", key: context.this.descriptionKey, args: {} }];
+    if (context.this.contents.length > 0) {
+      effects.push({
+        type: "message", key: "location.contents",
+        args: { objects: context.this.contents.map(object => object.id).join(",") }
+      });
+    }
+    return { effects };
+  }
   move(context) {
     const direction = context.args.direction;
     const destinationId = context.this.references[direction];
@@ -195,6 +236,21 @@ const locationBehaviorClasses = { LocationBehavior };"""
   }
 }
 const forestBehaviorClasses = { ForestBehavior };"""
+
+    let thingCompiled =
+        """class ThingBehavior extends GameBehavior {
+  static commands = [
+    { methodName: "examine", patterns: [
+      { culture: "en", pattern: "examine {object}" },
+      { culture: "en", pattern: "x {object}" },
+      { culture: "de", pattern: "untersuche {object}" }
+    ] }
+  ];
+  examine(context) {
+    return { effects: [{ type: "message", key: context.this.descriptionKey, args: {} }] };
+  }
+}
+const thingBehaviorClasses = { ThingBehavior };"""
 
     let villageCompiled =
         """class VillageBehavior extends LocationBehavior {}
