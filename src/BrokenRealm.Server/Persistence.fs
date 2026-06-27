@@ -49,7 +49,7 @@ type CommitConflict =
 
 module GameSnapshots =
     [<Literal>]
-    let CurrentFormatVersion = 3
+    let CurrentFormatVersion = 4
 
     [<Literal>]
     let PrototypeAccountId = "prototype-account"
@@ -69,8 +69,10 @@ module GameSnapshots =
           ActivationRevision = activationRevision
           ActivatedAt = now }
 
-    let private nonPlayerObjects (objects: Map<ObjectId, GameObject>) =
-        objects |> Map.filter (fun _ gameObject -> not (PlayerObjects.isPlayer gameObject))
+    let private worldObjects (objects: Map<ObjectId, GameObject>) =
+        objects
+        |> Map.filter (fun _ gameObject ->
+            not (PlayerObjects.isPlayer gameObject) && not (CarriedItems.isCarriedStack gameObject))
 
     let private playerIds (state: GameState) =
         state.Objects
@@ -115,9 +117,9 @@ module GameSnapshots =
                 captureBehavior now (stored.SourceRevision + 1L) (stored.ActivationRevision + 1L) behaviorModule
             | None -> captureBehavior now 0L 0L behaviorModule)
 
-    let private playerChanged (previousPlayer: GameObject) (currentPlayer: GameObject) =
+    let private playerChanged (previousState: GameState) (currentState: GameState) (previousPlayer: GameObject) (currentPlayer: GameObject) =
         previousPlayer.LocationId <> currentPlayer.LocationId
-        || PlayerObjects.inventory previousPlayer <> PlayerObjects.inventory currentPlayer
+        || PlayerObjects.inventory previousState previousPlayer.Id <> PlayerObjects.inventory currentState currentPlayer.Id
         || PlayerObjects.accountId previousPlayer <> PlayerObjects.accountId currentPlayer
 
     let update now previous (state: GameState) =
@@ -135,9 +137,17 @@ module GameSnapshots =
                       DisplayName = account.DisplayName
                       PasswordHash = account.PasswordHash })
 
+        let previousState =
+            { ItemIds = previous.World.ItemIds
+              BehaviorModules = Map.empty
+              Objects = previous.World.Objects
+              Accounts =
+                previous.Accounts
+                |> Map.map (fun _ account -> { Id = account.Id; DisplayName = account.DisplayName; PasswordHash = account.PasswordHash }) }
+
         let worldChanged =
             previous.World.ItemIds <> state.ItemIds
-            || nonPlayerObjects previous.World.Objects <> nonPlayerObjects state.Objects
+            || worldObjects previous.World.Objects <> worldObjects state.Objects
             || previous.World.BehaviorModules <> behaviorModules
             || previous.Accounts <> accounts
 
@@ -151,7 +161,11 @@ module GameSnapshots =
                     let revision =
                         match previous.PlayerRevisions |> Map.tryFind playerId with
                         | Some storedRevision ->
-                            storedRevision + (if playerChanged previousPlayer currentPlayer then 1L else 0L)
+                            storedRevision
+                            + (if playerChanged previousState state previousPlayer currentPlayer then
+                                   1L
+                               else
+                                   0L)
                         | None -> 0L
 
                     playerId, revision

@@ -43,7 +43,7 @@ module SnapshotMigrations =
 
         let nameKey = $"object.{character.Id}.name"
 
-        PlayerObjects.create character.Id name nameKey character.AccountId character.LocationId character.Inventory
+        PlayerObjects.createWithLegacyInventory character.Id name nameKey character.AccountId character.LocationId character.Inventory
 
     let private ensurePrototypeDevelopmentCharacters snapshot =
         let seedPlayers =
@@ -56,7 +56,7 @@ module SnapshotMigrations =
                           AccountId = PlayerObjects.accountId gameObject
                           Revision = 0L
                           LocationId = PlayerObjects.locationId gameObject
-                          Inventory = PlayerObjects.inventory gameObject }
+                          Inventory = PlayerObjects.legacyInventoryFromProperties gameObject.Properties }
                 else
                     None)
             |> List.map (fun character -> character.Id, character)
@@ -113,6 +113,36 @@ module SnapshotMigrations =
             Characters = Map.empty
             PlayerRevisions = playerRevisions }
 
+    let private migrateInventoryToCarriedStacks (snapshot: GameSnapshot) =
+        let objects =
+            snapshot.World.Objects
+            |> Map.toList
+            |> List.fold
+                (fun objects (_, gameObject) ->
+                    if not (PlayerObjects.isPlayer gameObject) then
+                        objects
+                    else
+                        let legacyInventory = PlayerObjects.legacyInventoryFromProperties gameObject.Properties
+                        let cleanedPlayer = PlayerObjects.withoutLegacyInventoryProperty gameObject
+                        let withPlayer = Map.add gameObject.Id cleanedPlayer objects
+
+                        legacyInventory
+                        |> Map.fold (fun objects itemId quantity ->
+                            let stackId = CarriedItems.migrationStackId gameObject.Id itemId
+                            let stack = CarriedItems.createStack stackId gameObject.Id itemId quantity
+                            Map.add stackId stack objects) withPlayer)
+                snapshot.World.Objects
+
+        { snapshot with
+            FormatVersion = 4
+            World = { snapshot.World with Objects = objects } }
+
+    let private migrateV3 snapshot =
+        if snapshot.FormatVersion < 4 then
+            migrateInventoryToCarriedStacks snapshot
+        else
+            snapshot
+
     let migrate snapshot =
         if snapshot.FormatVersion > GameSnapshots.CurrentFormatVersion then
             Error $"Snapshot format version {snapshot.FormatVersion} is newer than this server supports ({GameSnapshots.CurrentFormatVersion})."
@@ -131,11 +161,13 @@ module SnapshotMigrations =
                 else
                     migrated
 
-            Ok(
+            let afterV2 =
                 if withSeed.FormatVersion < 3 then
                     migrateV2 withSeed
                 else
-                    withSeed)
+                    withSeed
+
+            Ok(migrateV3 afterV2)
 
 module SnapshotHydration =
     let private behaviorModulesFromSnapshot (modules: Map<string, BehaviorModuleSnapshot>) =
@@ -286,6 +318,8 @@ type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -
     member _.CreateBackup(clock: unit -> DateTimeOffset) =
         SnapshotBackup.create snapshotPath (inner.GetSnapshot()) clock
 
+    member _.Flush() = persist()
+
     member _.TryRestore(contentRoot: string, fileName: string) =
         match SnapshotBackup.resolveBackupPath snapshotPath fileName with
         | Error error -> Error error
@@ -316,9 +350,13 @@ module GameStoreBootstrap =
         |> Result.bind (SnapshotHydration.hydrate (ScriptCompiler.compile contentRoot) Scripting.inspectBehaviorModule)
 
     let createGameStore contentRoot snapshotPath =
-        if File.Exists snapshotPath then
-            match tryLoad contentRoot snapshotPath with
-            | Ok(state, snapshot) -> FileGameStore(snapshotPath, state, seedSnapshot = snapshot)
-            | Error error -> failwith $"Failed to hydrate game snapshot from '{snapshotPath}': {error}"
-        else
-            FileGameStore(snapshotPath, ObjectDatabase.initialState)
+        let store =
+            if File.Exists snapshotPath then
+                match tryLoad contentRoot snapshotPath with
+                | Ok(state, snapshot) -> FileGameStore(snapshotPath, state, seedSnapshot = snapshot)
+                | Error error -> failwith $"Failed to hydrate game snapshot from '{snapshotPath}': {error}"
+            else
+                FileGameStore(snapshotPath, ObjectDatabase.initialState)
+
+        store.Flush()
+        store

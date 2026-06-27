@@ -28,6 +28,12 @@ module Program =
             startupSnapshot.World.Revision,
             startupSnapshot.World.Objects.Count)
 
+        app.Lifetime.ApplicationStopping.Register(fun () ->
+            lock stateLock (fun () ->
+                gameStore.Flush()
+                app.Logger.LogInformation("BrokenRealm snapshot flushed on shutdown. Snapshot={SnapshotPath}", snapshotPath)))
+        |> ignore
+
         let sessionCookieOptions =
             let options = CookieOptions()
             options.HttpOnly <- true

@@ -18,7 +18,7 @@ module PlayerObjects =
 
     let isPlayer (gameObject: GameObject) = gameObject.Tags.Contains PlayerTag
 
-    let inventoryFromProperties (properties: Map<string, GameValue>) =
+    let legacyInventoryFromProperties (properties: Map<string, GameValue>) =
         match properties |> Map.tryFind InventoryProperty with
         | Some(MapValue values) ->
             values
@@ -29,11 +29,6 @@ module PlayerObjects =
                 | _ -> None)
             |> Map.ofList
         | _ -> Map.empty
-
-    let inventoryToProperty (inventory: Map<ItemId, Quantity>) =
-        inventory
-        |> Map.map (fun _ quantity -> IntegerValue(int64 quantity))
-        |> MapValue
 
     let accountIdFromProperties (properties: Map<string, GameValue>) =
         match properties |> Map.tryFind AccountIdProperty with
@@ -46,7 +41,6 @@ module PlayerObjects =
         (nameKey: string)
         (accountId: AccountId)
         (locationId: ObjectId)
-        (inventory: Map<ItemId, Quantity>)
         =
         { Id = id
           Name = name
@@ -55,13 +49,32 @@ module PlayerObjects =
           DescriptionKey = None
           LocationId = Some locationId
           Tags = Set.ofList [ PlayerTag ]
-          Properties =
-            Map.ofList
-                [ AccountIdProperty, StringValue accountId
-                  InventoryProperty, inventoryToProperty inventory ]
+          Properties = Map.ofList [ AccountIdProperty, StringValue accountId ]
           References = Map.empty
           BehaviorModuleId = PlayerBehaviorModuleId
           BehaviorClassName = PlayerBehaviorClassName }
+
+    let createWithLegacyInventory
+        (id: CharacterId)
+        (name: string)
+        (nameKey: string)
+        (accountId: AccountId)
+        (locationId: ObjectId)
+        (inventory: Map<ItemId, Quantity>)
+        =
+        let player = create id name nameKey accountId locationId
+
+        if Map.isEmpty inventory then
+            player
+        else
+            { player with
+                Properties =
+                    player.Properties
+                    |> Map.add
+                        InventoryProperty
+                        (inventory
+                         |> Map.map (fun _ quantity -> IntegerValue(int64 quantity))
+                         |> MapValue) }
 
     let tryGet (state: GameState) (characterId: CharacterId) =
         state.Objects
@@ -73,7 +86,7 @@ module PlayerObjects =
         | Some gameObject -> gameObject
         | None -> failwith $"Unknown player object id: {characterId}"
 
-    let inventory (gameObject: GameObject) = inventoryFromProperties gameObject.Properties
+    let inventory (state: GameState) (playerId: CharacterId) = CarriedItems.inventoryMap state playerId
 
     let accountId (gameObject: GameObject) =
         accountIdFromProperties gameObject.Properties
@@ -83,12 +96,12 @@ module PlayerObjects =
         gameObject.LocationId
         |> Option.defaultWith (fun () -> failwith $"Player object {gameObject.Id} is missing a location.")
 
-    let withInventory (gameObject: GameObject) (inventory: Map<ItemId, Quantity>) =
-        { gameObject with
-            Properties = Map.add InventoryProperty (inventoryToProperty inventory) gameObject.Properties }
-
     let withLocation (gameObject: GameObject) (locationId: ObjectId) =
         { gameObject with LocationId = Some locationId }
+
+    let withoutLegacyInventoryProperty (gameObject: GameObject) =
+        { gameObject with
+            Properties = gameObject.Properties |> Map.remove InventoryProperty }
 
     let playersByAccount (state: GameState) (accountId: AccountId) =
         state.Objects
@@ -127,7 +140,11 @@ module PlayerObjects =
               | Some ownerAccountId when not (state.Accounts.ContainsKey ownerAccountId) ->
                   Some $"Player object {gameObject.Id} references unknown account id: {ownerAccountId}"
               | Some _ -> None
-              let inventory = inventoryFromProperties gameObject.Properties
+              if gameObject.Properties.ContainsKey InventoryProperty then
+                  Some $"Player object {gameObject.Id} must not store legacy properties.inventory."
+              else
+                  None
+              let inventory = CarriedItems.inventoryMap state gameObject.Id
 
               if
                   inventory
@@ -135,7 +152,7 @@ module PlayerObjects =
                   |> List.exists (fun (itemId, quantity) ->
                       not (state.ItemIds.Contains itemId) || quantity < 0)
               then
-                  Some $"Player object {gameObject.Id} has invalid inventory entries."
+                  Some $"Player object {gameObject.Id} has invalid carried inventory entries."
               else
                   None ]
             |> List.tryPick id

@@ -3,10 +3,6 @@ namespace BrokenRealm.Server
 module Kernel =
     let private message key args = { Key = key; Args = args }
 
-    let private addInventory itemId amount inventory =
-        let current = inventory |> Map.tryFind itemId |> Option.defaultValue 0
-        inventory |> Map.add itemId (current + amount)
-
     let rec private tryReplaceNestedValue path replacement current =
         match path, current with
         | [], _ -> Ok replacement
@@ -177,7 +173,10 @@ module Kernel =
                 | Ok() ->
                     match PlayerObjects.validatePlayerObject state object with
                     | Error error -> Some error
-                    | Ok() -> None)
+                    | Ok() ->
+                        match CarriedItems.validateCarriedStack state object with
+                        | Error error -> Some error
+                        | Ok() -> None)
             |> Option.map Error
             |> Option.defaultValue (Ok())
 
@@ -217,11 +216,7 @@ module Kernel =
                 match resolvePlayerTarget state characterId objectId with
                 | Error error -> Error error
                 | Ok playerId ->
-                    let player = PlayerObjects.get state playerId
-                    let updated =
-                        PlayerObjects.withInventory player (PlayerObjects.inventory player |> addInventory itemId amount)
-
-                    Ok({ state with Objects = Map.add playerId updated state.Objects }, messages, remainingInvocations)
+                    Ok(CarriedItems.addInventory state playerId itemId amount, messages, remainingInvocations)
             | MoveObject(objectId, destinationId) ->
                 match resolvePlayerTarget state characterId objectId with
                 | Error error -> Error error
@@ -252,7 +247,14 @@ module Kernel =
                                 |> List.toArray
 
                             Scripting.executeAnonymousBehaviorMethodAtPath
-                                value.BehaviorClassName methodName storagePath value args (PlayerObjects.get state characterId) behaviorModule.CompiledSource
+                                value.BehaviorClassName
+                                methodName
+                                storagePath
+                                value
+                                args
+                                state
+                                (PlayerObjects.get state characterId)
+                                behaviorModule.CompiledSource
                             |> Result.bind (fun effects ->
                                 applyEffects characterId targetId (depth + 1) effects state messages (remainingInvocations - 1))
                     | Ok _ -> Error "invokeAnonymous path does not select an anonymous behavior value."
@@ -285,6 +287,7 @@ module Kernel =
                     Scripting.executeBehaviorMethodWithContents
                         matched.BehaviorClassName
                         matched.MethodName
+                        state
                         target
                         contents
                         matched.Args
@@ -329,6 +332,7 @@ module Kernel =
                 methodName
                 value
                 args
+                state
                 (PlayerObjects.get state characterId)
                 behaviorModule.CompiledSource
 
@@ -352,7 +356,14 @@ module Kernel =
                         |> List.toArray
 
                     Scripting.executeAnonymousBehaviorMethodAtPath
-                        value.BehaviorClassName methodName storagePath value args (PlayerObjects.get state characterId) behaviorModule.CompiledSource
+                        value.BehaviorClassName
+                        methodName
+                        storagePath
+                        value
+                        args
+                        state
+                        (PlayerObjects.get state characterId)
+                        behaviorModule.CompiledSource
                     |> Result.bind (fun effects -> applyEffects characterId ownerId 0 effects state [] maxAnonymousInvocations)
                     |> Result.map (fun (state, messages, _) -> { State = state; Messages = messages })
             | Ok _ -> Error "Value path does not select an anonymous behavior value."
@@ -604,13 +615,7 @@ module Kernel =
                     let characterId = ObjectIds.create()
 
                     let player =
-                        PlayerObjects.create
-                            characterId
-                            "traveler"
-                            "object.traveler.name"
-                            validatedAccountId
-                            "forest"
-                            Map.empty
+                        PlayerObjects.create characterId "traveler" "object.traveler.name" validatedAccountId "forest"
 
                     let updated =
                         { state with

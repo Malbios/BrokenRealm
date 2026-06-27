@@ -316,6 +316,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add carried-items ADR and promote inventory from player property maps to contained objects where appropriate.
-2. Add player presence verbs (`say`, `emote`) and richer multi-character room visibility.
+1. Add player presence verbs (`say`, `emote`) and richer multi-character room visibility.
+2. Add drop/give mechanics for carried item stack objects.
 3. Select and implement a durable database adapter only after the file-backed snapshot contract has proven sufficient in development.

@@ -25,7 +25,6 @@ module SessionTests =
                 "object.other-account-character.name"
                 "other-account"
                 "forest"
-                Map.empty
 
         let state =
             { ObjectDatabase.initialState with

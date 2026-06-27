@@ -128,7 +128,7 @@ Admin-authored behavior methods run with centralized limits: 4 MB tracked memory
 
 ## Scope
 
-There is no PostgreSQL/Docker setup or SignalR yet. The process uses a revision-checked file-backed storage adapter that writes authoritative JSON snapshots to `data/game-snapshot.json` (override with `BROKENREALM_SNAPSHOT_PATH`). Snapshots retain world objects, player progress, accounts, and TypeScript source while excluding compiled behavior artifacts. Startup hydrates and migrates snapshots forward before accepting commands. Admin snapshot backup and restore endpoints write timestamped copies under `data/backups/`. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
+There is no PostgreSQL/Docker setup or SignalR yet. The process uses a revision-checked file-backed storage adapter that writes authoritative JSON snapshots to `data/game-snapshot.json` (override with `BROKENREALM_SNAPSHOT_PATH`). Snapshots retain world objects, player progress, accounts, and TypeScript source while excluding compiled behavior artifacts. Startup hydrates and migrates snapshots forward (currently format version 4) before accepting commands, flushes the seed snapshot on first run, and flushes again on graceful shutdown. Admin snapshot backup and restore endpoints write timestamped copies under `data/backups/`. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
 
 ## Object IDs
 

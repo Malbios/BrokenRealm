@@ -134,7 +134,6 @@ module ObjectDatabase =
                 "object.prototype-player.name"
                 prototypeAccount.Id
                 forest.Id
-                Map.empty
 
         let prototypeScout =
             PlayerObjects.create
@@ -143,7 +142,6 @@ module ObjectDatabase =
                 "object.prototype-scout.name"
                 prototypeAccount.Id
                 village.Id
-                Map.empty
 
         { ItemIds = Set.ofList [ "wood" ]
           BehaviorModules = behaviorModules

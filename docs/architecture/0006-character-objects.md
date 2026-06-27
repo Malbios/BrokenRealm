@@ -201,7 +201,7 @@ Implemented:
 
 Not yet implemented:
 
-- carried items as contained permanent objects
+- drop/give mechanics targeting carried item stacks
 
 Implemented since this ADR was written:
 
