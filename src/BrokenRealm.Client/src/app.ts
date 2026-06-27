@@ -41,6 +41,8 @@ type CommandResponse = {
 
 type ScriptResponse = {
   source: string;
+  affectedModules: string[];
+  affectedObjects: string[];
 };
 
 type ScriptErrorResponse = {
@@ -64,6 +66,7 @@ type MonacoMarker = {
 
 type AdminBehaviorModule = {
   moduleId: string;
+  dependencies: string[];
   classes: string[];
 };
 
@@ -221,7 +224,10 @@ async function loadBehaviorModules(): Promise<void> {
   behaviorModules.forEach((behaviorModule) => {
     const option = document.createElement("option");
     option.value = behaviorModule.moduleId;
-    option.textContent = `${behaviorModule.moduleId} (${behaviorModule.classes.join(", ")})`;
+    const dependencyText = behaviorModule.dependencies.length > 0
+      ? ` depends on ${behaviorModule.dependencies.join(", ")}`
+      : "";
+    option.textContent = `${behaviorModule.moduleId}${dependencyText}`;
     behaviorModuleSelect.appendChild(option);
   });
 }
@@ -332,7 +338,9 @@ async function loadScript(): Promise<void> {
   setScriptSource(payload.source);
   setEditorMarkers([]);
   if (verbTitle) verbTitle.textContent = moduleId;
-  setStatus("Loaded.");
+  const modules = payload.affectedModules.join(", ") || moduleId;
+  const objects = payload.affectedObjects.join(", ") || "none";
+  setStatus(`Loaded. Saving affects modules: ${modules}; objects: ${objects}.`);
 }
 
 async function saveCurrentScript(): Promise<void> {
@@ -372,7 +380,10 @@ async function saveCurrentScript(): Promise<void> {
     return;
   }
 
-  setStatus("Saved and compiled. Future commands will use this script.");
+  const payload = (await response.json()) as ScriptResponse;
+  setStatus(
+    `Saved and compiled atomically. Updated modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`,
+  );
   saveScript?.removeAttribute("disabled");
 }
 

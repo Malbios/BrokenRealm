@@ -26,7 +26,7 @@ Run the TypeScript check from `src/BrokenRealm.Client`.
 
 - `src/BrokenRealm.Server/Domain.fs`: object, verb, state, message, and effect types.
 - `src/BrokenRealm.Server/Kernel.fs`: generic command submission, behavior-method dispatch, and effect application.
-- `src/BrokenRealm.Server/BehaviorSources.fs`: editable TypeScript behavior class module.
+- `src/BrokenRealm.Server/BehaviorSources.fs`: editable TypeScript behavior modules and checked-in compiled fragments.
 - `src/BrokenRealm.Server/Scripting.fs`: Jint execution and script effect decoding.
 - `src/BrokenRealm.Server/ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
 - `src/BrokenRealm.Server/Scripting/game-api.d.ts`: typed API available to behavior modules.
@@ -85,10 +85,12 @@ Object properties use neutral typed values: null, strings, 64-bit integers, floa
 Admin editor transport:
 
 - `GET /admin/behaviors`
-- `GET /admin/behaviors/core-world`
-- `PUT /admin/behaviors/core-world`
+- `GET /admin/behaviors/{moduleId}`
+- `PUT /admin/behaviors/{moduleId}`
 
-The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit TypeScript class hierarchies in memory. Objects reference a module and class. Native `extends`, `override`, and `super` provide behavior inheritance. On save, the server type-checks and compiles the whole module, reads command metadata from its registered classes, verifies that every referenced class still exists, and atomically activates the new module. Failures leave the previous module active. There is no authentication yet.
+The class library is split into `core-behaviors`, `location-behaviors`, `forest-behaviors`, and `village-behaviors`. Modules declare dependencies; the kernel rejects missing dependencies and cycles and compiles dependency source in deterministic topological order. Native `extends`, `override`, and `super` work across module boundaries.
+
+The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit a selected module in memory. It reports which dependent modules and objects will be affected. On save, the server recompiles the edited module and all transitive dependents, validates every registered class and affected object, and activates the complete graph atomically. Any failure leaves the previous graph active. There is no authentication yet.
 
 Capability contracts use normal TypeScript interfaces. `ForestBehavior`, for example, implements `Gatherable`, so removing its `gather` method produces a compiler diagnostic before activation.
 

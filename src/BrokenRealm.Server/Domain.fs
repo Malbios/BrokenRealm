@@ -50,6 +50,8 @@ type BehaviorClassDefinition =
 
 type BehaviorModule =
     { Id: string
+      RegistryName: string
+      Dependencies: string list
       Source: string
       CompiledSource: string
       Classes: Map<string, BehaviorClassDefinition> }
@@ -82,6 +84,11 @@ type CommandResult =
     { State: GameState
       Messages: Message list }
 
+type BehaviorUpdateResult =
+    { State: GameState
+      AffectedModules: string list
+      AffectedObjects: ObjectId list }
+
 type MatchedBehaviorMethod =
     { ObjectId: ObjectId
       BehaviorModuleId: string
@@ -107,12 +114,16 @@ type CommandResponse =
 [<CLIMutable>]
 type BehaviorModuleResponse =
     { moduleId: string
+      dependencies: string list
       classes: string list
+      affectedModules: string list
+      affectedObjects: string list
       source: string }
 
 [<CLIMutable>]
 type AdminBehaviorModuleResponse =
     { moduleId: string
+      dependencies: string list
       classes: string list }
 
 [<CLIMutable>]
@@ -123,6 +134,8 @@ type BehaviorModuleUpdateRequest =
 type BehaviorModuleUpdateResponse =
     { moduleId: string
       source: string
+      affectedModules: string list
+      affectedObjects: string list
       diagnostics: string list }
 
 [<CLIMutable>]

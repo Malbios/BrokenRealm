@@ -137,7 +137,10 @@ async function loadBehaviorModules() {
     behaviorModules.forEach((behaviorModule) => {
         const option = document.createElement("option");
         option.value = behaviorModule.moduleId;
-        option.textContent = `${behaviorModule.moduleId} (${behaviorModule.classes.join(", ")})`;
+        const dependencyText = behaviorModule.dependencies.length > 0
+            ? ` depends on ${behaviorModule.dependencies.join(", ")}`
+            : "";
+        option.textContent = `${behaviorModule.moduleId}${dependencyText}`;
         behaviorModuleSelect.appendChild(option);
     });
 }
@@ -238,7 +241,9 @@ async function loadScript() {
     setEditorMarkers([]);
     if (verbTitle)
         verbTitle.textContent = moduleId;
-    setStatus("Loaded.");
+    const modules = payload.affectedModules.join(", ") || moduleId;
+    const objects = payload.affectedObjects.join(", ") || "none";
+    setStatus(`Loaded. Saving affects modules: ${modules}; objects: ${objects}.`);
 }
 async function saveCurrentScript() {
     if (!scriptSource)
@@ -272,7 +277,8 @@ async function saveCurrentScript() {
         setStatus(message, true);
         return;
     }
-    setStatus("Saved and compiled. Future commands will use this script.");
+    const payload = (await response.json());
+    setStatus(`Saved and compiled atomically. Updated modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`);
     saveScript?.removeAttribute("disabled");
 }
 form?.addEventListener("submit", async (event) => {

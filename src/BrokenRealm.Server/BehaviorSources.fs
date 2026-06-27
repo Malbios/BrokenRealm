@@ -25,12 +25,14 @@ class GameBehavior {
     const effects: ScriptEffect[] = entries.length === 0
       ? [{ type: "message", key: "inventory.empty", args: {} }]
       : [{ type: "message", key: "inventory.list", args: { items: context.actor.inventory } }];
-
     return { effects };
   }
 }
 
-class LocationBehavior extends GameBehavior {
+const coreBehaviorClasses = { GameBehavior };"""
+
+    let location =
+        """class LocationBehavior extends GameBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
     {
@@ -55,19 +57,15 @@ class LocationBehavior extends GameBehavior {
   ];
 
   look(context: VerbContext): VerbResult {
-    return {
-      effects: [{ type: "message", key: context.this.descriptionKey, args: {} }]
-    };
+    return { effects: [{ type: "message", key: context.this.descriptionKey, args: {} }] };
   }
 
   move(context: VerbContext): VerbResult {
     const direction = context.args.direction;
     const destinationId = context.this.references[direction];
-
     if (!destinationId) {
       return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
     }
-
     return {
       effects: [
         { type: "movePlayer", destinationId },
@@ -77,7 +75,10 @@ class LocationBehavior extends GameBehavior {
   }
 }
 
-class ForestBehavior extends LocationBehavior implements Gatherable {
+const locationBehaviorClasses = { LocationBehavior };"""
+
+    let forest =
+        """class ForestBehavior extends LocationBehavior implements Gatherable {
   static override commands: CommandDefinition[] = [
     ...super.commands,
     {
@@ -103,11 +104,9 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
 
   gather(context: VerbContext): VerbResult {
     const item = context.args.item;
-
     if (item !== "wood" || !context.this.tags.includes("wood")) {
       return { effects: [{ type: "message", key: "gather.no_wood_here", args: {} }] };
     }
-
     const amount = 2;
     return {
       effects: [
@@ -118,14 +117,12 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
   }
 }
 
-class VillageBehavior extends LocationBehavior {}
+const forestBehaviorClasses = { ForestBehavior };"""
 
-const behaviorClasses = {
-  GameBehavior,
-  LocationBehavior,
-  ForestBehavior,
-  VillageBehavior
-};"""
+    let village =
+        """class VillageBehavior extends LocationBehavior {}
+
+const villageBehaviorClasses = { VillageBehavior };"""
 
     let coreCompiled =
         """class GameBehavior {
@@ -143,7 +140,10 @@ const behaviorClasses = {
     return { effects };
   }
 }
-class LocationBehavior extends GameBehavior {
+const coreBehaviorClasses = { GameBehavior };"""
+
+    let locationCompiled =
+        """class LocationBehavior extends GameBehavior {
   static commands = [
     ...super.commands,
     { methodName: "look", patterns: [
@@ -167,7 +167,10 @@ class LocationBehavior extends GameBehavior {
     ] };
   }
 }
-class ForestBehavior extends LocationBehavior {
+const locationBehaviorClasses = { LocationBehavior };"""
+
+    let forestCompiled =
+        """class ForestBehavior extends LocationBehavior {
   static commands = [
     ...super.commands,
     { methodName: "gather", patterns: [
@@ -191,5 +194,11 @@ class ForestBehavior extends LocationBehavior {
     ] };
   }
 }
-class VillageBehavior extends LocationBehavior {}
-const behaviorClasses = { GameBehavior, LocationBehavior, ForestBehavior, VillageBehavior };"""
+const forestBehaviorClasses = { ForestBehavior };"""
+
+    let villageCompiled =
+        """class VillageBehavior extends LocationBehavior {}
+const villageBehaviorClasses = { VillageBehavior };"""
+
+    let join (sources: string list) =
+        System.String.Join(System.Environment.NewLine + System.Environment.NewLine, sources)

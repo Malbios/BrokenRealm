@@ -77,7 +77,7 @@ Current server modules:
 - `Domain.fs`: culture, typed game value, object, behavior, state, message, effect, and DTO types.
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
-- `BehaviorSources.fs`: active TypeScript behavior class hierarchy and localized command metadata.
+- `BehaviorSources.fs`: active TypeScript behavior modules, localized command metadata, and checked-in compiled fragments.
 - `CommandMatching.fs`: localized command text to object verb match.
 - `Scripting.fs`: Jint execution and script effect decoding.
 - `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
@@ -90,11 +90,14 @@ Current object model:
 - The current player starts at `forest`.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
-- `forest` references `village` to the north and uses `core-world:ForestBehavior`.
-- `village` references `forest` to the south and uses `core-world:VillageBehavior`.
+- `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
+- `village` references `forest` to the south and uses `village-behaviors:VillageBehavior`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
 - Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`.
+- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`.
+- Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
+- Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
 
 Current endpoints:
 
@@ -282,5 +285,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Split behavior modules and add explicit dependency/impact reporting as the class library grows.
-2. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
+1. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.

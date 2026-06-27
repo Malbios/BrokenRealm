@@ -200,16 +200,18 @@ module Scripting =
     let executeBehaviorMethod className methodName target args actorInventory source =
         executeBehaviorMethodWithLimits defaultLimits className methodName target args actorInventory source
 
-    let inspectBehaviorModule (source: string) =
+    let inspectBehaviorModule (registryName: string) (source: string) =
         let diagnostic message = { message = message; line = 0; column = 0 }
 
-        if source.Length > defaultLimits.MaxSourceCharacters then
+        if not (identifierPattern.IsMatch registryName) then
+            Error(diagnostic "Behavior registry names must be valid JavaScript identifiers.")
+        elif source.Length > defaultLimits.MaxSourceCharacters then
             Error(diagnostic $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters.")
         else
             try
                 let script =
                     source
-                    + "\nJSON.stringify(Object.fromEntries(Object.entries(behaviorClasses).map(([name, behavior]) => [name, { commands: behavior.commands, methodsValid: Array.isArray(behavior.commands) && behavior.commands.every(command => typeof behavior.prototype[command.methodName] === 'function') }])));"
+                    + $"\nJSON.stringify(Object.fromEntries(Object.entries({registryName}).map(([name, behavior]) => [name, {{ commands: behavior.commands, methodsValid: Array.isArray(behavior.commands) && behavior.commands.every(command => typeof behavior.prototype[command.methodName] === 'function') }}])));"
 
                 let json =
                     (new Engine(fun options ->

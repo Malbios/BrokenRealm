@@ -107,44 +107,168 @@ module Kernel =
     let tryGetBehaviorModule moduleId (state: GameState) =
         state.BehaviorModules |> Map.tryFind moduleId
 
+    let private graphError message =
+        { message = message; line = 0; column = 0 }
+
+    let private tryTopologicalOrder (modules: Map<string, BehaviorModule>) =
+        let rec visit moduleId visiting visited order =
+            if Set.contains moduleId visiting then
+                Error $"Behavior module dependency cycle detected at {moduleId}."
+            elif Set.contains moduleId visited then
+                Ok(visited, order)
+            else
+                match modules |> Map.tryFind moduleId with
+                | None -> Error $"Missing behavior module dependency: {moduleId}."
+                | Some behaviorModule ->
+                    let visiting = Set.add moduleId visiting
+
+                    behaviorModule.Dependencies
+                    |> List.fold
+                        (fun result dependencyId ->
+                            result
+                            |> Result.bind (fun (visited, order) ->
+                                visit dependencyId visiting visited order))
+                        (Ok(visited, order))
+                    |> Result.map (fun (visited, order) ->
+                        Set.add moduleId visited, order @ [ moduleId ])
+
+        modules
+        |> Map.toList
+        |> List.map fst
+        |> List.fold
+            (fun result moduleId ->
+                result
+                |> Result.bind (fun (visited, order) ->
+                    visit moduleId Set.empty visited order))
+            (Ok(Set.empty, []))
+        |> Result.map snd
+
+    let private dependencyClosure (modules: Map<string, BehaviorModule>) (moduleId: string) : Set<string> =
+        let rec collect collected currentId =
+            if Set.contains currentId collected then
+                collected
+            else
+                match modules |> Map.tryFind currentId with
+                | None -> Set.add currentId collected
+                | Some behaviorModule ->
+                    behaviorModule.Dependencies
+                    |> List.fold collect (Set.add currentId collected)
+
+        collect Set.empty moduleId
+
+    let behaviorImpact moduleId (state: GameState) =
+        let affectedModules =
+            state.BehaviorModules
+            |> Map.toList
+            |> List.map fst
+            |> List.filter (fun candidateId ->
+                dependencyClosure state.BehaviorModules candidateId
+                |> Set.contains moduleId)
+            |> List.sort
+
+        let affectedObjects =
+            state.Objects
+            |> Map.toList
+            |> List.map snd
+            |> List.filter (fun object -> affectedModules |> List.contains object.BehaviorModuleId)
+            |> List.map _.Id
+            |> List.sort
+
+        affectedModules, affectedObjects
+
     let listAdminBehaviorModules (state: GameState) =
         state.BehaviorModules
         |> Map.toList
         |> List.map (fun (_, behaviorModule) ->
             { moduleId = behaviorModule.Id
+              dependencies = behaviorModule.Dependencies
               classes = behaviorModule.Classes |> Map.toList |> List.map fst })
 
-    let tryUpdateBehaviorModule compile (inspect: string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>) moduleId source (state: GameState) =
+    let tryUpdateBehaviorModule
+        (compile: string -> Result<string, CompilerDiagnostic list>)
+        (inspect: string -> string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>)
+        moduleId
+        source
+        (state: GameState)
+        =
         match state.BehaviorModules |> Map.tryFind moduleId with
         | None -> Ok None
         | Some behaviorModule ->
-            match compile source with
-            | Error diagnostics -> Error diagnostics
-            | Ok compiledSource ->
-                match inspect compiledSource with
-                | Error diagnostic -> Error [ diagnostic ]
-                | Ok classes ->
+            let candidateModules =
+                state.BehaviorModules
+                |> Map.add moduleId { behaviorModule with Source = source }
+
+            match tryTopologicalOrder candidateModules with
+            | Error error -> Error [ graphError error ]
+            | Ok order ->
+                let affectedSet =
+                    candidateModules
+                    |> Map.toList
+                    |> List.map fst
+                    |> List.filter (fun candidateId ->
+                        dependencyClosure candidateModules candidateId
+                        |> Set.contains moduleId)
+                    |> Set.ofList
+
+                let affectedModules = order |> List.filter (fun id -> Set.contains id affectedSet)
+
+                let compilationResult: Result<Map<string, BehaviorModule>, CompilerDiagnostic list> =
+                    affectedModules
+                    |> List.fold
+                        (fun result affectedId ->
+                            result
+                            |> Result.bind (fun (modules: Map<string, BehaviorModule>) ->
+                                let affectedModule = modules[affectedId]
+                                let closure = dependencyClosure modules affectedId
+
+                                let compilationUnit =
+                                    order
+                                    |> List.filter (fun id -> Set.contains id closure)
+                                    |> List.map (fun id -> modules[id].Source)
+                                    |> BehaviorSources.join
+
+                                match compile compilationUnit with
+                                | Error diagnostics -> Error diagnostics
+                                | Ok compiledSource ->
+                                    match inspect affectedModule.RegistryName compiledSource with
+                                    | Error diagnostic -> Error [ diagnostic ]
+                                    | Ok classes ->
+                                        Ok(
+                                            modules
+                                            |> Map.add
+                                                affectedId
+                                                { affectedModule with
+                                                    CompiledSource = compiledSource
+                                                    Classes = classes })))
+                        (Ok candidateModules)
+
+                match compilationResult with
+                | Error diagnostics -> Error diagnostics
+                | Ok updatedModules ->
                     let missingClass =
                         state.Objects
                         |> Map.toList
                         |> List.map snd
-                        |> List.filter (fun object -> object.BehaviorModuleId = moduleId)
-                        |> List.tryFind (fun object -> not (classes.ContainsKey object.BehaviorClassName))
+                        |> List.tryFind (fun object ->
+                            match updatedModules |> Map.tryFind object.BehaviorModuleId with
+                            | None -> true
+                            | Some objectModule -> not (objectModule.Classes.ContainsKey object.BehaviorClassName))
 
                     match missingClass with
                     | Some object ->
                         Error
-                            [ { message = $"Behavior module is missing class {object.BehaviorClassName}, used by object {object.Id}."
-                                line = 0
-                                column = 0 } ]
+                            [ graphError $"Behavior module is missing class {object.BehaviorClassName}, used by object {object.Id}." ]
                     | None ->
-                        let updatedModule =
-                            { behaviorModule with
-                                Source = source
-                                CompiledSource = compiledSource
-                                Classes = classes }
+                        let affectedObjects =
+                            state.Objects
+                            |> Map.toList
+                            |> List.map snd
+                            |> List.filter (fun object -> Set.contains object.BehaviorModuleId affectedSet)
+                            |> List.map _.Id
+                            |> List.sort
 
                         Ok(
                             Some
-                                { state with
-                                    BehaviorModules = state.BehaviorModules |> Map.add moduleId updatedModule })
+                                { State = { state with BehaviorModules = updatedModules }
+                                  AffectedModules = affectedModules
+                                  AffectedObjects = affectedObjects })

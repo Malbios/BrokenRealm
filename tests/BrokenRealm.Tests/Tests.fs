@@ -6,13 +6,17 @@ open Xunit
 module KernelTests =
     let private diagnostic message = { message = message; line = 0; column = 0 }
 
-    let private updateCoreBehavior compiledSource source =
-        let classes = ObjectDatabase.initialState.BehaviorModules["core-world"].Classes
+    let private forestSource = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.location; BehaviorSources.forest ]
+    let private forestCompiled =
+        BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.locationCompiled; BehaviorSources.forestCompiled ]
+
+    let private updateForestBehavior compiledSource source =
+        let classes = ObjectDatabase.initialState.BehaviorModules["forest-behaviors"].Classes
 
         Kernel.tryUpdateBehaviorModule
             (fun _ -> Ok compiledSource)
-            (fun _ -> Ok classes)
-            "core-world"
+            (fun _ _ -> Ok classes)
+            "forest-behaviors"
             source
             ObjectDatabase.initialState
 
@@ -52,14 +56,129 @@ module KernelTests =
     let ``Admin catalog lists behavior modules and classes`` () =
         let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
 
-        let core = modules |> List.exactlyOne
-        Assert.Equal("core-world", core.moduleId)
-        Assert.Equal<string list>([ "ForestBehavior"; "GameBehavior"; "LocationBehavior"; "VillageBehavior" ], core.classes)
+        Assert.Equal<string list>(
+            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "village-behaviors" ],
+            modules |> List.map _.moduleId)
+
+        let forest = modules |> List.find (fun behaviorModule -> behaviorModule.moduleId = "forest-behaviors")
+        Assert.Equal<string list>([ "location-behaviors" ], forest.dependencies)
+        Assert.Equal<string list>([ "ForestBehavior" ], forest.classes)
+
+    [<Fact>]
+    let ``Base behavior impact includes transitive modules and objects`` () =
+        let modules, objects = Kernel.behaviorImpact "core-behaviors" ObjectDatabase.initialState
+
+        Assert.Equal<string list>(
+            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "village-behaviors" ],
+            modules)
+        Assert.Equal<string list>([ "forest"; "village" ], objects)
+
+    [<Fact>]
+    let ``Updating a base module recompiles dependents in dependency order`` () =
+        let state = ObjectDatabase.initialState
+        let editedCore = BehaviorSources.core + "\n// edited core"
+
+        let inspect registryName _ =
+            state.BehaviorModules
+            |> Map.toList
+            |> List.map snd
+            |> List.find (fun behaviorModule -> behaviorModule.RegistryName = registryName)
+            |> _.Classes
+            |> Ok
+
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                Ok
+                inspect
+                "core-behaviors"
+                editedCore
+                state
+
+        match result with
+        | Ok(Some update) ->
+            Assert.Equal<string list>(
+                [ "core-behaviors"; "location-behaviors"; "forest-behaviors"; "village-behaviors" ],
+                update.AffectedModules)
+            Assert.Equal<string list>([ "forest"; "village" ], update.AffectedObjects)
+            Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
+            Assert.Contains(editedCore, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
+            Assert.Contains(BehaviorSources.location, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
+            Assert.Contains(BehaviorSources.forest, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
+        | Ok None -> Assert.True(false, "Expected the base module to update.")
+        | Error diagnostics -> Assert.True(false, diagnostics |> List.map _.message |> String.concat "\n")
+
+    [<Fact>]
+    let ``Behavior module dependency cycles are rejected`` () =
+        let state = ObjectDatabase.initialState
+        let core = state.BehaviorModules["core-behaviors"]
+        let cyclicCore = { core with Dependencies = [ "forest-behaviors" ] }
+        let cyclicState =
+            { state with
+                BehaviorModules = state.BehaviorModules |> Map.add core.Id cyclicCore }
+
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                Ok
+                (fun _ _ -> Ok Map.empty)
+                core.Id
+                core.Source
+                cyclicState
+
+        match result with
+        | Error [ diagnostic ] -> Assert.Contains("dependency cycle", diagnostic.message)
+        | _ -> Assert.True(false, "Expected the dependency cycle to be rejected.")
+
+    [<Fact>]
+    let ``Missing behavior module dependencies are rejected`` () =
+        let state = ObjectDatabase.initialState
+        let forest = state.BehaviorModules["forest-behaviors"]
+        let brokenForest = { forest with Dependencies = [ "missing-behaviors" ] }
+        let brokenState =
+            { state with
+                BehaviorModules = state.BehaviorModules |> Map.add forest.Id brokenForest }
+
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                Ok
+                (fun _ _ -> Ok Map.empty)
+                forest.Id
+                forest.Source
+                brokenState
+
+        match result with
+        | Error [ diagnostic ] -> Assert.Equal("Missing behavior module dependency: missing-behaviors.", diagnostic.message)
+        | _ -> Assert.True(false, "Expected the missing dependency to be rejected.")
+
+    [<Fact>]
+    let ``Failed descendant compilation leaves the entire graph unchanged`` () =
+        let state = ObjectDatabase.initialState
+        let editedCore = BehaviorSources.core + "\n// edited"
+        let failure = diagnostic "forest compile failed"
+
+        let compile (source: string) =
+            if source.Contains(BehaviorSources.forest) then Error [ failure ] else Ok source
+
+        let inspect registryName _ =
+            state.BehaviorModules
+            |> Map.toList
+            |> List.map snd
+            |> List.find (fun behaviorModule -> behaviorModule.RegistryName = registryName)
+            |> _.Classes
+            |> Ok
+
+        let result =
+            Kernel.tryUpdateBehaviorModule compile inspect "core-behaviors" editedCore state
+
+        match result with
+        | Error [ diagnostic ] -> Assert.Equal("forest compile failed", diagnostic.message)
+        | _ -> Assert.True(false, "Expected descendant compilation to fail.")
+
+        Assert.Equal(BehaviorSources.core, state.BehaviorModules["core-behaviors"].Source)
 
     [<Fact>]
     let ``Behavior command metadata is read from compiled TypeScript classes`` () =
         let classes =
-            match Scripting.inspectBehaviorModule BehaviorSources.coreCompiled with
+            match Scripting.inspectBehaviorModule "forestBehaviorClasses" forestCompiled with
             | Ok classes -> classes
             | Error diagnostic -> failwith diagnostic.message
 
@@ -68,18 +187,18 @@ module KernelTests =
 
     [<Fact>]
     let ``Updating class command metadata changes localized dispatch`` () =
-        let compiled = BehaviorSources.coreCompiled.Replace("gather {item}", "harvest {item}")
+        let compiled = forestCompiled.Replace("gather {item}", "harvest {item}")
 
         let state =
             match
                 Kernel.tryUpdateBehaviorModule
                     (fun _ -> Ok compiled)
                     Scripting.inspectBehaviorModule
-                    "core-world"
-                    BehaviorSources.core
+                    "forest-behaviors"
+                    BehaviorSources.forest
                     ObjectDatabase.initialState
             with
-            | Ok(Some state) -> state
+            | Ok(Some update) -> update.State
             | Ok None -> failwith "Expected behavior module to update."
             | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
@@ -89,16 +208,16 @@ module KernelTests =
     [<Fact>]
     let ``Behavior updates cannot remove a class used by an object`` () =
         let compiled =
-            BehaviorSources.coreCompiled.Replace(
-                "const behaviorClasses = { GameBehavior, LocationBehavior, ForestBehavior, VillageBehavior };",
-                "const behaviorClasses = { GameBehavior, LocationBehavior, VillageBehavior };")
+            forestCompiled.Replace(
+                "const forestBehaviorClasses = { ForestBehavior };",
+                "const forestBehaviorClasses = {};")
 
         let result =
             Kernel.tryUpdateBehaviorModule
                 (fun _ -> Ok compiled)
                 Scripting.inspectBehaviorModule
-                "core-world"
-                BehaviorSources.core
+                "forest-behaviors"
+                BehaviorSources.forest
                 ObjectDatabase.initialState
 
         match result with
@@ -108,9 +227,9 @@ module KernelTests =
 
     [<Fact>]
     let ``Behavior command metadata must reference an implemented method`` () =
-        let compiled = BehaviorSources.coreCompiled.Replace("methodName: \"gather\"", "methodName: \"missing\"")
+        let compiled = forestCompiled.Replace("methodName: \"gather\"", "methodName: \"missing\"")
 
-        match Scripting.inspectBehaviorModule compiled with
+        match Scripting.inspectBehaviorModule "forestBehaviorClasses" compiled with
         | Error diagnostic ->
             Assert.Equal("Behavior class ForestBehavior registers a command without a matching method.", diagnostic.message)
         | Ok _ -> Assert.True(false, "Expected invalid command metadata to be rejected.")
@@ -212,11 +331,11 @@ module KernelTests =
 
     [<Fact>]
     let ``Updating forest gather source changes later gather behavior`` () =
-        let updatedSource = BehaviorSources.core.Replace("const amount = 2;", "const amount = 5;")
-        let updatedCompiled = BehaviorSources.coreCompiled.Replace("const amount = 2;", "const amount = 5;")
+        let updatedSource = BehaviorSources.forest.Replace("const amount = 2;", "const amount = 5;")
+        let updatedCompiled = forestCompiled.Replace("const amount = 2;", "const amount = 5;")
         let state =
-            match updateCoreBehavior updatedCompiled updatedSource with
-            | Ok(Some state) -> state
+            match updateForestBehavior updatedCompiled updatedSource with
+            | Ok(Some update) -> update.State
             | Ok None -> failwith "Expected behavior module to update."
             | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
@@ -231,8 +350,8 @@ module KernelTests =
         let result =
             Kernel.tryUpdateBehaviorModule
                 (fun _ -> Error [ diagnostic "bad script" ])
-                (fun _ -> Ok Map.empty)
-                "core-world"
+                (fun _ _ -> Ok Map.empty)
+                "forest-behaviors"
                 "broken"
                 ObjectDatabase.initialState
 
@@ -262,11 +381,11 @@ module KernelTests =
   };
 };"""
 
-        let compiledSource = BehaviorSources.coreCompiled + "\n" + overrideSource
+        let compiledSource = forestCompiled + "\n" + overrideSource
 
         let state =
-            match updateCoreBehavior compiledSource BehaviorSources.core with
-            | Ok(Some state) -> state
+            match updateForestBehavior compiledSource BehaviorSources.forest with
+            | Ok(Some update) -> update.State
             | Ok None -> failwith "Expected behavior module to update."
             | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
@@ -286,11 +405,11 @@ module KernelTests =
         let overrideSource =
             $"ForestBehavior.prototype.gather = function(context) {{ return {{ effects: [{{ type: 'addInventory', itemId: 'wood', amount: 1 }},{messages}] }}; }};"
 
-        let compiledSource = BehaviorSources.coreCompiled + "\n" + overrideSource
+        let compiledSource = forestCompiled + "\n" + overrideSource
 
         let state =
-            match updateCoreBehavior compiledSource BehaviorSources.core with
-            | Ok(Some state) -> state
+            match updateForestBehavior compiledSource BehaviorSources.forest with
+            | Ok(Some update) -> update.State
             | Ok None -> failwith "Expected behavior module to update."
             | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
@@ -535,6 +654,9 @@ module ScriptCompilerTests =
 
 module BehaviorClassRuntimeTests =
     let private forest = ObjectDatabase.initialState.Objects["forest"]
+    let private forestSource = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.location; BehaviorSources.forest ]
+    let private forestCompiled =
+        BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.locationCompiled; BehaviorSources.forestCompiled ]
 
     let rec private findRepoRoot (directory: System.IO.DirectoryInfo) =
         if System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "BrokenRealm.slnx")) then
@@ -544,7 +666,7 @@ module BehaviorClassRuntimeTests =
         else
             findRepoRoot directory.Parent
 
-    let private compileCore source =
+    let private compileBehavior source =
         let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
 
         match ScriptCompiler.compile repoRoot source with
@@ -553,7 +675,7 @@ module BehaviorClassRuntimeTests =
 
     [<Fact>]
     let ``Compiled behavior classes use native super dispatch`` () =
-        let compiled = compileCore BehaviorSources.core |> Result.defaultWith failwith
+        let compiled = compileBehavior forestSource |> Result.defaultWith failwith
 
         let result =
             Scripting.executeBehaviorMethod "ForestBehavior" "look" forest Map.empty Map.empty compiled
@@ -567,29 +689,29 @@ module BehaviorClassRuntimeTests =
 
     [<Fact>]
     let ``Checked-in compiled behavior matches TypeScript source behavior`` () =
-        let compiled = compileCore BehaviorSources.core |> Result.defaultWith failwith
+        let compiled = compileBehavior forestSource |> Result.defaultWith failwith
         let args = Map.ofList [ "item", "wood" ]
 
         let fromCompiler =
             Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty compiled
 
         let checkedIn =
-            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty BehaviorSources.coreCompiled
+            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty forestCompiled
 
         Assert.Equal<Result<ScriptEffect list, string>>(fromCompiler, checkedIn)
 
-        let compiledMetadata = Scripting.inspectBehaviorModule compiled
-        let checkedInMetadata = Scripting.inspectBehaviorModule BehaviorSources.coreCompiled
+        let compiledMetadata = Scripting.inspectBehaviorModule "forestBehaviorClasses" compiled
+        let checkedInMetadata = Scripting.inspectBehaviorModule "forestBehaviorClasses" forestCompiled
         Assert.Equal<Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>>(compiledMetadata, checkedInMetadata)
 
     [<Fact>]
     let ``Gatherable interface requires a gather method`` () =
         let invalidSource =
-            BehaviorSources.core.Replace(
+            forestSource.Replace(
                 "  gather(context: VerbContext): VerbResult {",
                 "  harvest(context: VerbContext): VerbResult {")
 
-        match compileCore invalidSource with
+        match compileBehavior invalidSource with
         | Error error -> Assert.Contains("Gatherable", error)
         | Ok _ -> Assert.True(false, "Expected the missing Gatherable method to fail compilation.")
 

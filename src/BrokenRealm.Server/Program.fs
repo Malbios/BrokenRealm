@@ -47,9 +47,14 @@ module Program =
                 lock stateLock (fun () ->
                     match Kernel.tryGetBehaviorModule moduleId gameState with
                     | Some behaviorModule ->
+                        let affectedModules, affectedObjects = Kernel.behaviorImpact moduleId gameState
+
                         Results.Json(
                             { moduleId = behaviorModule.Id
+                              dependencies = behaviorModule.Dependencies
                               classes = behaviorModule.Classes |> Map.toList |> List.map fst
+                              affectedModules = affectedModules
+                              affectedObjects = affectedObjects
                               source = behaviorModule.Source }
                             : BehaviorModuleResponse)
                     | None -> Results.NotFound())))
@@ -68,9 +73,13 @@ module Program =
                             gameState
                     with
                     | Ok(Some updated) ->
-                        gameState <- updated
+                        gameState <- updated.State
                         Results.Json(
-                            { moduleId = moduleId; source = request.source; diagnostics = [] }
+                            { moduleId = moduleId
+                              source = request.source
+                              affectedModules = updated.AffectedModules
+                              affectedObjects = updated.AffectedObjects
+                              diagnostics = [] }
                             : BehaviorModuleUpdateResponse)
                     | Ok None -> Results.NotFound()
                     | Error diagnostics ->
