@@ -125,24 +125,27 @@ module CommandMatching =
 
             actor :: location :: visibleContents
             |> List.tryPick (fun target ->
-                let behaviorModule = state.BehaviorModules[target.BehaviorModuleId]
-                let behaviorClass = behaviorModule.Classes[target.BehaviorClassName]
-
-                behaviorClass.Commands
-                |> List.tryPick (fun command ->
-                    command.Patterns
-                    |> List.filter (fun pattern -> pattern.Culture = culture)
-                    |> List.tryPick (fun pattern ->
-                        match matchPattern culture state locationId target rawInput pattern.Pattern with
-                        | Some args ->
-                            Some
-                                { ObjectId = target.Id
-                                  BehaviorModuleId = behaviorModule.Id
-                                  BehaviorClassName = behaviorClass.ClassName
-                                  MethodName = command.MethodName
-                                  CompiledSource = behaviorModule.CompiledSource
-                                  Args = args }
-                        | None -> None)))
+                match state.BehaviorModules |> Map.tryFind target.BehaviorModuleId with
+                | None -> None
+                | Some behaviorModule ->
+                    match behaviorModule.Classes |> Map.tryFind target.BehaviorClassName with
+                    | None -> None
+                    | Some behaviorClass ->
+                        behaviorClass.Commands
+                        |> List.tryPick (fun command ->
+                            command.Patterns
+                            |> List.filter (fun pattern -> pattern.Culture = culture)
+                            |> List.tryPick (fun pattern ->
+                                match matchPattern culture state locationId target rawInput pattern.Pattern with
+                                | Some args ->
+                                    Some
+                                        { ObjectId = target.Id
+                                          BehaviorModuleId = behaviorModule.Id
+                                          BehaviorClassName = behaviorClass.ClassName
+                                          MethodName = command.MethodName
+                                          CompiledSource = behaviorModule.CompiledSource
+                                          Args = args }
+                                | None -> None)))
 
     let tryMatch culture rawInput state =
         tryMatchForCharacter GameSnapshots.PrototypeCharacterId culture rawInput state

@@ -180,6 +180,16 @@ module SnapshotHydration =
               CompiledSource = ""
               Classes = Map.empty })
 
+    let private mergeSeedBehaviorModules (modules: Map<string, BehaviorModule>) =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.fold
+            (fun merged moduleId seedModule ->
+                if Map.containsKey moduleId merged then
+                    merged
+                else
+                    Map.add moduleId seedModule merged)
+            modules
+
     let private accountsFromSnapshot (accounts: Map<AccountId, AccountSnapshot>) =
         let mapped =
             accounts
@@ -287,6 +297,8 @@ module SnapshotHydration =
                 |> List.map _.message
                 |> String.concat Environment.NewLine)
             |> Result.bind (fun activeBehaviorModules ->
+                let activeBehaviorModules = mergeSeedBehaviorModules activeBehaviorModules
+
                 let state =
                     { ItemIds = snapshot.World.ItemIds
                       BehaviorModules = activeBehaviorModules

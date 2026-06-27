@@ -278,6 +278,26 @@ module SnapshotPersistenceTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Hydration restores missing seed behavior modules required by stored objects`` () =
+        let snapshot = createSnapshot ()
+
+        let legacySnapshot =
+            { snapshot with
+                World =
+                    { snapshot.World with
+                        BehaviorModules = snapshot.World.BehaviorModules |> Map.remove "player-behaviors" } }
+
+        match SnapshotHydration.hydrate mockCompile mockInspect legacySnapshot with
+        | Ok(state, _) ->
+            Assert.True(state.BehaviorModules.ContainsKey "player-behaviors")
+
+            let looked =
+                Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "look" state
+
+            Assert.NotEqual<string>("command.unknown", looked.Messages |> List.head |> fun message -> message.Key)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``File game store persists commits across reload`` () =
         let path = Path.Combine(Path.GetTempPath(), "brokenrealm-test-" + Guid.NewGuid().ToString("N") + ".json")
 

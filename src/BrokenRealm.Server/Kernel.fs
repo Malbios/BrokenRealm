@@ -272,6 +272,13 @@ module Kernel =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
+    let private validateObjectBehaviorReference (state: GameState) (gameObject: GameObject) =
+        match state.BehaviorModules |> Map.tryFind gameObject.BehaviorModuleId with
+        | None -> Error $"Object {gameObject.Id} references unknown behavior module: {gameObject.BehaviorModuleId}"
+        | Some behaviorModule when not (behaviorModule.Classes.ContainsKey gameObject.BehaviorClassName) ->
+            Error $"Object {gameObject.Id} references unknown behavior class: {gameObject.BehaviorClassName}"
+        | Some _ -> Ok()
+
     let validateGameState (state: GameState) =
         match validateContainment state with
         | Error error -> Error error
@@ -279,16 +286,19 @@ module Kernel =
             state.Objects
             |> Map.toList
             |> List.map snd
-            |> List.tryPick (fun object ->
-                match validateObjectProperties state object with
+            |> List.tryPick (fun gameObject ->
+                match validateObjectBehaviorReference state gameObject with
                 | Error error -> Some error
                 | Ok() ->
-                    match PlayerObjects.validatePlayerObject state object with
+                    match validateObjectProperties state gameObject with
                     | Error error -> Some error
                     | Ok() ->
-                        match CarriedItems.validateCarriedStack state object with
+                        match PlayerObjects.validatePlayerObject state gameObject with
                         | Error error -> Some error
-                        | Ok() -> None)
+                        | Ok() ->
+                            match CarriedItems.validateCarriedStack state gameObject with
+                            | Error error -> Some error
+                            | Ok() -> None)
             |> Option.map Error
             |> Option.defaultValue (Ok())
 
