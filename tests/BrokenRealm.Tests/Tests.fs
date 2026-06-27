@@ -929,6 +929,53 @@ module KernelTests =
         | None -> Assert.True(false, "Expected give command to match.")
 
     [<Fact>]
+    let ``Take picks up one item from a floor stack in the room`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand En "drop wood" gathered.State
+        let taken = Kernel.submitCommand En "take wood" dropped.State
+
+        Assert.Equal(2, taken.State.Player.Inventory["wood"])
+        Assert.Empty(CarriedItems.stacksIn taken.State "forest")
+        Assert.Contains(taken.Messages, fun message -> message.Key = "take.success")
+
+    [<Fact>]
+    let ``German take command picks up a floor stack`` () =
+        let gathered = Kernel.submitCommand De "sammle holz" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand De "lege holz ab" gathered.State
+        let taken = Kernel.submitCommand De "nimm holz" dropped.State
+
+        Assert.Equal(2, taken.State.Player.Inventory["wood"])
+        Assert.Contains(taken.Messages, fun message -> message.Key = "take.success")
+
+    [<Fact>]
+    let ``Pick up command alias takes one item from the floor`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        let dropped = Kernel.submitCommand En "drop wood" gathered.State
+        let taken = Kernel.submitCommand En "pick up wood" dropped.State
+
+        Assert.Equal(2, taken.State.Player.Inventory["wood"])
+
+    [<Fact>]
+    let ``Take with no floor stack reports take none`` () =
+        let result = Kernel.submitCommand En "take wood" ObjectDatabase.initialState
+
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("take.none", message.Key)
+        Assert.Equal("wood", message.Args["item"])
+
+    [<Fact>]
+    let ``Drop take round trip restores inventory without duplicating stacks`` () =
+        let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
+        Assert.Equal(2, gathered.State.Player.Inventory["wood"])
+
+        let dropped = Kernel.submitCommand En "drop wood" gathered.State
+        Assert.Equal(1, dropped.State.Player.Inventory["wood"])
+
+        let taken = Kernel.submitCommand En "take wood" dropped.State
+        Assert.Equal(2, taken.State.Player.Inventory["wood"])
+        Assert.Empty(CarriedItems.stacksIn taken.State "forest")
+
+    [<Fact>]
     let ``Updating forest gather source changes later gather behavior`` () =
         let updatedSource = BehaviorSources.forest.Replace("const amount = 2;", "const amount = 5;")
         let updatedCompiled = forestCompiled.Replace("const amount = 2;", "const amount = 5;")

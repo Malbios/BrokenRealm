@@ -96,7 +96,7 @@ module CarriedItems =
             Error "transferItem effects require an amount from 1 to 100."
         else
             match stacksIn state containerId |> List.tryFind (fun stack -> stackItemId stack = Some itemId) with
-            | None -> Error $"You are not carrying any {itemId}."
+            | None -> Error $"Container does not contain any {itemId}."
             | Some stack ->
                 match stackQuantity stack with
                 | None -> Error $"Carried stack {stack.Id} must have a positive quantity."

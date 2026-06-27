@@ -166,11 +166,11 @@ module Scripting =
             | Some destinationId -> Ok(MoveObject(objectId, destinationId))
             | None -> Error "moveObject effects require a destinationId."
         | Some "transferItem" ->
-            let objectId = readString "objectId" effect
+            let sourceId = readString "sourceId" effect
 
             match readString "itemId" effect, readInt "amount" effect, readString "destinationId" effect with
             | Some itemId, Some amount, Some destinationId when amount > 0 && amount <= 100 ->
-                Ok(TransferItem(objectId, itemId, amount, destinationId))
+                Ok(TransferItem(sourceId, itemId, amount, destinationId))
             | _ -> Error "transferItem effects require itemId, destinationId, and an amount from 1 to 100."
         | Some "replaceValue" ->
             match decodeValuePath effect, effect.TryGetProperty("value") with

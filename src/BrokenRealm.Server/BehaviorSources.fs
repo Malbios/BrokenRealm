@@ -41,6 +41,15 @@ const coreBehaviorClasses = { GameBehavior };"""
         { culture: "en", pattern: "give {item} to {player}" },
         { culture: "de", pattern: "gib {item} an {player}" }
       ]
+    },
+    {
+      methodName: "take",
+      patterns: [
+        { culture: "en", pattern: "take {item}" },
+        { culture: "en", pattern: "pick up {item}" },
+        { culture: "de", pattern: "nimm {item}" },
+        { culture: "de", pattern: "hebe {item} auf" }
+      ]
     }
   ];
 
@@ -84,6 +93,28 @@ const coreBehaviorClasses = { GameBehavior };"""
       effects: [
         { type: "transferItem", itemId, amount: 1, destinationId: playerId },
         { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+      ]
+    };
+  }
+
+  take(context: VerbContext): VerbResult {
+    const itemId = context.args.item;
+    const floorStack = context.actor.locationContents.find(
+      object => object.tags.includes("carried") && object.tags.includes(itemId)
+    );
+    if (!floorStack) {
+      return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
+    }
+    return {
+      effects: [
+        {
+          type: "transferItem",
+          itemId,
+          amount: 1,
+          sourceId: context.actor.locationId,
+          destinationId: context.actor.id
+        },
+        { type: "message", key: "take.success", args: { item: itemId } }
       ]
     };
   }
@@ -275,6 +306,10 @@ const coreBehaviorClasses = { GameBehavior };"""
     ] },
     { methodName: "give", patterns: [
       { culture: "en", pattern: "give {item} to {player}" }, { culture: "de", pattern: "gib {item} an {player}" }
+    ] },
+    { methodName: "take", patterns: [
+      { culture: "en", pattern: "take {item}" }, { culture: "en", pattern: "pick up {item}" },
+      { culture: "de", pattern: "nimm {item}" }, { culture: "de", pattern: "hebe {item} auf" }
     ] }
   ];
   inventory(context) {
@@ -312,6 +347,19 @@ const coreBehaviorClasses = { GameBehavior };"""
     return { effects: [
       { type: "transferItem", itemId, amount: 1, destinationId: playerId },
       { type: "message", key: "give.success", args: { item: itemId, player: playerId } }
+    ] };
+  }
+  take(context) {
+    const itemId = context.args.item;
+    const floorStack = context.actor.locationContents.find(
+      object => object.tags.includes("carried") && object.tags.includes(itemId)
+    );
+    if (!floorStack) {
+      return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
+    }
+    return { effects: [
+      { type: "transferItem", itemId, amount: 1, sourceId: context.actor.locationId, destinationId: context.actor.id },
+      { type: "message", key: "take.success", args: { item: itemId } }
     ] };
   }
 }
