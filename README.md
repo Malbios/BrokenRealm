@@ -67,7 +67,7 @@ Deutsch:
 - `untersuche baumstamm`
 - `nenne pfad grüner weg`
 
-The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
+The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. Characters have independent IDs, locations, and inventories; command execution names the acting character explicitly. The unauthenticated endpoint currently selects the seeded `prototype-player`, which starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
 Object properties use neutral typed values: null, strings, 64-bit integers, floating-point numbers, booleans, object references, lists, maps, and identity-free anonymous behavior values. They are exposed to behavior methods as ordinary JavaScript values. Nested object and behavior-class references are recursively validated before execution.
 

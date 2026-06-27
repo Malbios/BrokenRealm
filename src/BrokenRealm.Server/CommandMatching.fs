@@ -47,8 +47,8 @@ module CommandMatching =
         else
             None
 
-    let tryMatch culture rawInput (state: GameState) =
-        let location = state.Objects[state.Player.LocationId]
+    let tryMatchForCharacter characterId culture rawInput (state: GameState) =
+        let location = state.Objects[state.Characters[characterId].LocationId]
         let visibleContents =
             state.Objects
             |> Map.toList
@@ -76,3 +76,6 @@ module CommandMatching =
                               CompiledSource = behaviorModule.CompiledSource
                               Args = args }
                     | None -> None)))
+
+    let tryMatch culture rawInput state =
+        tryMatchForCharacter GameSnapshots.PrototypeCharacterId culture rawInput state

@@ -4,6 +4,11 @@ open System
 open BrokenRealm.Server
 open Xunit
 
+[<AutoOpen>]
+module GameStateTestCompatibility =
+    type GameState with
+        member state.Player = state.Characters[GameSnapshots.PrototypeCharacterId]
+
 module PersistenceTests =
     let private timestamp = DateTimeOffset(2026, 6, 27, 12, 0, 0, TimeSpan.Zero)
     let private createStore () = InMemoryGameStore(ObjectDatabase.initialState, fun () -> timestamp)
@@ -14,7 +19,7 @@ module PersistenceTests =
         let forest = snapshot.World.BehaviorModules["forest-behaviors"]
 
         Assert.Equal(GameSnapshots.CurrentFormatVersion, snapshot.FormatVersion)
-        Assert.Equal(GameSnapshots.PrototypeCharacterId, snapshot.Character.Id)
+        Assert.Equal(GameSnapshots.PrototypeCharacterId, snapshot.Characters[GameSnapshots.PrototypeCharacterId].Id)
         Assert.Equal(BehaviorSources.forest, forest.Source)
         Assert.Equal(0L, forest.SourceRevision)
         Assert.Equal(0L, forest.ActivationRevision)
@@ -29,10 +34,10 @@ module PersistenceTests =
         let stored = store.Read()
         let result = Kernel.submitCommand En "gather wood" stored.State
 
-        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, result.State) with
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, result.State) with
         | Ok committed ->
             Assert.Equal(0L, committed.WorldRevision)
-            Assert.Equal(1L, committed.CharacterRevision)
+            Assert.Equal(1L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
             Assert.Equal(2, committed.State.Player.Inventory["wood"])
         | Error _ -> Assert.True(false, "Expected the character commit to succeed.")
 
@@ -42,10 +47,10 @@ module PersistenceTests =
         let stored = store.Read()
         let result = Kernel.submitCommand En "name trail green way" stored.State
 
-        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, result.State) with
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, result.State) with
         | Ok committed ->
             Assert.Equal(1L, committed.WorldRevision)
-            Assert.Equal(0L, committed.CharacterRevision)
+            Assert.Equal(0L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
         | Error _ -> Assert.True(false, "Expected the world commit to succeed.")
 
     [<Fact>]
@@ -58,7 +63,7 @@ module PersistenceTests =
             { stored.State with
                 BehaviorModules = Map.add behavior.Id changedBehavior stored.State.BehaviorModules }
 
-        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, changedState) with
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, changedState) with
         | Ok committed ->
             let persisted = store.GetSnapshot().World.BehaviorModules[behavior.Id]
             Assert.Equal(1L, committed.WorldRevision)
@@ -77,7 +82,7 @@ module PersistenceTests =
             { stored.State with
                 BehaviorModules = Map.add behavior.Id changedBehavior stored.State.BehaviorModules }
 
-        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, changedState) with
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, changedState) with
         | Ok committed ->
             Assert.Equal(0L, committed.WorldRevision)
             Assert.Equal(BehaviorSources.forest, store.GetSnapshot().World.BehaviorModules[behavior.Id].Source)
@@ -88,16 +93,35 @@ module PersistenceTests =
         let store = createStore ()
         let first = store.Read()
         let gathered = Kernel.submitCommand En "gather wood" first.State
-        store.TryCommit(first.WorldRevision, first.CharacterRevision, gathered.State) |> Result.defaultWith (fun _ -> failwith "commit") |> ignore
+        store.TryCommit(first.WorldRevision, first.CharacterRevisions, gathered.State) |> Result.defaultWith (fun _ -> failwith "commit") |> ignore
 
         let moved = Kernel.submitCommand En "go north" first.State
 
-        match store.TryCommit(first.WorldRevision, first.CharacterRevision, moved.State) with
+        match store.TryCommit(first.WorldRevision, first.CharacterRevisions, moved.State) with
         | Error conflict ->
-            Assert.Equal(0L, conflict.ExpectedCharacterRevision)
-            Assert.Equal(1L, conflict.ActualCharacterRevision)
+            Assert.Equal(0L, conflict.ExpectedCharacterRevisions[GameSnapshots.PrototypeCharacterId])
+            Assert.Equal(1L, conflict.ActualCharacterRevisions[GameSnapshots.PrototypeCharacterId])
             Assert.Equal("forest", store.Read().State.Player.LocationId)
         | Ok _ -> Assert.True(false, "Expected the stale commit to be rejected.")
+
+    [<Fact>]
+    let ``Snapshots track character revisions independently`` () =
+        let prototype = ObjectDatabase.initialState.Player
+        let second = { prototype with Id = "second-character"; LocationId = "village" }
+        let initial =
+            { ObjectDatabase.initialState with
+                Characters = ObjectDatabase.initialState.Characters |> Map.add second.Id second }
+        let store = InMemoryGameStore(initial, fun () -> timestamp)
+        let stored = store.Read()
+        let changedSecond = { stored.State.Characters[second.Id] with Inventory = Map.ofList [ "wood", 3 ] }
+        let changedState =
+            { stored.State with Characters = Map.add second.Id changedSecond stored.State.Characters }
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, changedState) with
+        | Ok committed ->
+            Assert.Equal(0L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
+            Assert.Equal(1L, committed.CharacterRevisions[second.Id])
+        | Error _ -> Assert.True(false, "Expected the second character commit to succeed.")
 
 module KernelTests =
     let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }
@@ -115,6 +139,30 @@ module KernelTests =
             "forest-behaviors"
             source
             ObjectDatabase.initialState
+
+    [<Fact>]
+    let ``Commands use and mutate only the selected character`` () =
+        let prototype = ObjectDatabase.initialState.Player
+        let second = { prototype with Id = "second-character"; LocationId = "village" }
+        let state =
+            { ObjectDatabase.initialState with
+                Characters = ObjectDatabase.initialState.Characters |> Map.add second.Id second }
+
+        let result = Kernel.submitCommandForCharacter second.Id De "gehe nach süden" state
+
+        Assert.Equal("forest", result.State.Characters[second.Id].LocationId)
+        Assert.Equal("forest", result.State.Characters[GameSnapshots.PrototypeCharacterId].LocationId)
+        Assert.Empty(result.State.Characters[GameSnapshots.PrototypeCharacterId].Inventory)
+
+    [<Fact>]
+    let ``Unknown character commands fail without changing state`` () =
+        let state = ObjectDatabase.initialState
+        let result = Kernel.submitCommandForCharacter "missing-character" En "look" state
+
+        Assert.Equal(state, result.State)
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("script.error", message.Key)
+        Assert.Equal("Unknown character id: missing-character", message.Args["error"])
 
     [<Fact>]
     let ``Initial object IDs and references satisfy the durable ID contract`` () =

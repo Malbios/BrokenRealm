@@ -13,7 +13,7 @@ module Program =
         let gameStore = InMemoryGameStore(ObjectDatabase.initialState)
 
         let commit stored state =
-            match gameStore.TryCommit(stored.WorldRevision, stored.CharacterRevision, state) with
+            match gameStore.TryCommit(stored.WorldRevision, stored.CharacterRevisions, state) with
             | Ok committed -> committed
             | Error _ -> failwith "The process-local game state changed while its exclusive lock was held."
 
@@ -32,7 +32,8 @@ module Program =
                 let result =
                     lock stateLock (fun () ->
                         let stored = gameStore.Read()
-                        let result = Kernel.submitCommand culture request.text stored.State
+                        let result =
+                            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId culture request.text stored.State
                         let committed = commit stored result.State
                         { result with State = committed.State })
 

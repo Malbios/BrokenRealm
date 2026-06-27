@@ -88,7 +88,7 @@ Current server modules:
 Current object model:
 
 - Stable object ID: `forest`.
-- The current player starts at `forest`.
+- The seeded `prototype-player` character starts at `forest`; the unauthenticated command endpoint selects it explicitly until sessions exist.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
@@ -219,6 +219,8 @@ Object properties use the `GameValue` union:
 
 The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists, maps, or anonymous values are recursively validated against the object database before a behavior method executes. Anonymous behavior module and class references are also validated. Anonymous methods receive `AnonymousBehaviorContext`, which exposes only properties, arguments, and actor inventory rather than fabricating a permanent-object context.
 
+`GameState` stores characters by stable character ID. Command dispatch, matching, effects, and anonymous behavior invocation receive an explicit acting character ID; character location and inventory are not singleton world fields.
+
 `VerbContext.this.contents` contains neutral summaries of directly contained permanent objects. Location `look` methods use those IDs to emit neutral content-list messages; the F# response formatter resolves localized object names. Localized object aliases are used only for input matching and resolve to stable object IDs before behavior dispatch.
 
 Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `ForestBehavior implements Gatherable`; interfaces provide compile-time requirements but no runtime behavior.
@@ -312,6 +314,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Split the singleton `PlayerState` into character-scoped durable state before adding accounts or authentication.
-2. Expose expected source revisions through behavior validation and activation before supporting concurrent admin sessions.
-3. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
+1. Expose expected source revisions through behavior validation and activation before supporting concurrent admin sessions.
+2. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
+3. Define account-to-character ownership and session selection before adding authentication.

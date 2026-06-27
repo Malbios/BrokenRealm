@@ -10,6 +10,7 @@ type Culture =
 type ObjectId = string
 type ItemId = string
 type Quantity = int
+type CharacterId = string
 
 type ValuePathSegment =
     | PropertySegment of string
@@ -79,15 +80,16 @@ type GameObject =
       BehaviorModuleId: string
       BehaviorClassName: string }
 
-type PlayerState =
-    { LocationId: ObjectId
+type CharacterState =
+    { Id: CharacterId
+      LocationId: ObjectId
       Inventory: Map<ItemId, Quantity> }
 
 type GameState =
-    { Player: PlayerState
-      ItemIds: Set<ItemId>
+    { ItemIds: Set<ItemId>
       BehaviorModules: Map<string, BehaviorModule>
-      Objects: Map<ObjectId, GameObject> }
+      Objects: Map<ObjectId, GameObject>
+      Characters: Map<CharacterId, CharacterState> }
 
 type Message =
     { Key: string
