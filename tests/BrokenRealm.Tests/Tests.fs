@@ -1,6 +1,7 @@
 namespace BrokenRealm.Tests
 
 open System
+open System.IO
 open BrokenRealm.Server
 open Xunit
 
@@ -122,6 +123,122 @@ module PersistenceTests =
             Assert.Equal(0L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
             Assert.Equal(1L, committed.CharacterRevisions[second.Id])
         | Error _ -> Assert.True(false, "Expected the second character commit to succeed.")
+
+module SnapshotPersistenceTests =
+    let private timestamp = DateTimeOffset(2026, 6, 27, 12, 0, 0, TimeSpan.Zero)
+
+    let private createSnapshot () =
+        (InMemoryGameStore(ObjectDatabase.initialState, fun () -> timestamp)).GetSnapshot()
+
+    let private mockCompile (source: string) =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.filter (fun (moduleId, _) ->
+            source.Contains(BehaviorSources.moduleMarkerPrefix + moduleId))
+        |> List.sortByDescending (fun (_, behaviorModule) -> behaviorModule.Dependencies.Length)
+        |> List.tryHead
+        |> function
+        | Some(_, behaviorModule) -> Ok behaviorModule.CompiledSource
+        | None -> Error [ { message = "Unknown compilation unit."; file = ""; line = 0; column = 0 } ]
+
+    let private mockInspect registryName _compiled =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.tryPick (fun (_, behaviorModule) ->
+            if behaviorModule.RegistryName = registryName then
+                Some behaviorModule.Classes
+            else
+                None)
+        |> function
+        | Some classes -> Ok classes
+        | None -> Error { message = "Unknown registry."; file = ""; line = 0; column = 0 }
+
+    [<Fact>]
+    let ``Snapshot codec round-trips authoritative state`` () =
+        let snapshot = createSnapshot ()
+
+        match SnapshotCodec.tryDeserialize(SnapshotCodec.serialize snapshot) with
+        | Ok decoded ->
+            Assert.Equal(snapshot.FormatVersion, decoded.FormatVersion)
+            Assert.Equal(snapshot.World.Revision, decoded.World.Revision)
+            Assert.Equal<Set<ItemId>>(snapshot.World.ItemIds, decoded.World.ItemIds)
+            Assert.Equal(snapshot.World.Objects.Count, decoded.World.Objects.Count)
+            Assert.Equal(snapshot.Characters.Count, decoded.Characters.Count)
+            Assert.Equal<GameValue>(
+                snapshot.World.Objects["forest"].Properties["trailToken"],
+                decoded.World.Objects["forest"].Properties["trailToken"])
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Migration rejects newer snapshot format versions`` () =
+        let snapshot = { createSnapshot () with FormatVersion = GameSnapshots.CurrentFormatVersion + 1 }
+
+        match SnapshotMigrations.migrate snapshot with
+        | Error error -> Assert.Contains("newer than this server supports", error)
+        | Ok _ -> Assert.True(false, "Expected an unsupported format version error.")
+
+    [<Fact>]
+    let ``Migration upgrades format version 1 snapshots to accounts and ownership`` () =
+        let character =
+            { Id = GameSnapshots.PrototypeCharacterId
+              AccountId = ""
+              Revision = 0L
+              LocationId = "forest"
+              Inventory = Map.empty }
+
+        let legacy =
+            { FormatVersion = 1
+              World = createSnapshot().World
+              Accounts = Map.empty
+              Characters = Map.ofList [ character.Id, character ] }
+
+        match SnapshotMigrations.migrate legacy with
+        | Ok migrated ->
+            Assert.Equal(2, migrated.FormatVersion)
+            Assert.True(migrated.Accounts.ContainsKey GameSnapshots.PrototypeAccountId)
+            Assert.Equal(GameSnapshots.PrototypeAccountId, migrated.Characters[character.Id].AccountId)
+            Assert.True(migrated.Characters.ContainsKey GameSnapshots.PrototypeScoutCharacterId)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Hydration rebuilds runtime behavior modules from stored source`` () =
+        let snapshot = createSnapshot ()
+
+        match SnapshotHydration.hydrate mockCompile mockInspect snapshot with
+        | Ok(state, hydratedSnapshot) ->
+            Assert.Equal(snapshot, hydratedSnapshot)
+            Assert.Equal(ObjectDatabase.initialState.BehaviorModules.Count, state.BehaviorModules.Count)
+            Assert.Equal(2, (Kernel.submitCommand En "gather wood" state).State.Player.Inventory["wood"])
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``File game store persists commits across reload`` () =
+        let path = Path.Combine(Path.GetTempPath(), "brokenrealm-test-" + Guid.NewGuid().ToString("N") + ".json")
+
+        try
+            let store = FileGameStore(path, ObjectDatabase.initialState, fun () -> timestamp)
+            let stored = store.Read()
+            let gathered = Kernel.submitCommand En "gather wood" stored.State
+
+            match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, gathered.State) with
+            | Ok _ -> ()
+            | Error _ -> Assert.True(false, "Expected the persisted commit to succeed.")
+
+            Assert.True(File.Exists path)
+
+            let reloaded =
+                match
+                    SnapshotCodec.tryReadFile path
+                    |> Result.bind SnapshotMigrations.migrate
+                    |> Result.bind (SnapshotHydration.hydrate mockCompile mockInspect)
+                with
+                | Ok(state, _) -> state
+                | Error error -> failwith error
+
+            Assert.Equal(2, reloaded.Characters[GameSnapshots.PrototypeCharacterId].Inventory["wood"])
+        finally
+            if File.Exists path then
+                File.Delete path
 
 module KernelTests =
     let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }
@@ -888,6 +1005,31 @@ module ScriptingTests =
         | Error error -> Assert.True(false, error)
 
 module ScriptCompilerTests =
+    [<Fact>]
+    let ``Compiler reports a clear error when TypeScript is not installed`` () =
+        let tempRoot =
+            Path.Combine(Path.GetTempPath(), "brokenrealm-no-tsc-" + Guid.NewGuid().ToString("N"))
+
+        let serverRoot = Path.Combine(tempRoot, "src", "BrokenRealm.Server")
+        let clientRoot = Path.Combine(tempRoot, "src", "BrokenRealm.Client")
+        let scriptingRoot = Path.Combine(serverRoot, "Scripting")
+
+        try
+            Directory.CreateDirectory(scriptingRoot) |> ignore
+            Directory.CreateDirectory(clientRoot) |> ignore
+            File.WriteAllText(Path.Combine(scriptingRoot, "game-api.d.ts"), "declare const x: number;") |> ignore
+
+            match ScriptCompiler.compile tempRoot "const y: number = 1;" with
+            | Error [ diagnostic ] ->
+                Assert.Contains("npm install", diagnostic.message)
+                Assert.Contains("BrokenRealm.Client", diagnostic.message)
+                Assert.Contains("TypeScript compiler not found", diagnostic.message)
+            | Error diagnostics -> Assert.True(false, diagnostics |> List.map _.message |> String.concat "\n")
+            | Ok _ -> Assert.True(false, "Expected a missing TypeScript compiler diagnostic.")
+        finally
+            if Directory.Exists tempRoot then
+                Directory.Delete(tempRoot, true)
+
     [<Fact>]
     let ``Compiler rejects oversized source before invoking TypeScript`` () =
         let source = String.replicate (Scripting.defaultLimits.MaxSourceCharacters + 1) "x"

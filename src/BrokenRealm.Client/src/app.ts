@@ -54,6 +54,24 @@ type CommandResponse = {
   lines: string[];
 };
 
+type SessionCharacter = {
+  id: string;
+  locationId: string;
+};
+
+type GameSessionResponse = {
+  accountId: string;
+  selectedCharacterId: string;
+  characters: SessionCharacter[];
+};
+
+type SelectCharacterResponse = {
+  selectedCharacterId: string;
+  characters: SessionCharacter[];
+};
+
+const gameFetchInit: RequestInit = { credentials: "include" };
+
 type ScriptResponse = {
   moduleId: string;
   sourceRevision: number;
@@ -100,6 +118,8 @@ type AdminBehaviorModule = {
 const form = document.querySelector<HTMLFormElement>("#command-form");
 const input = document.querySelector<HTMLInputElement>("#command");
 const culture = document.querySelector<HTMLSelectElement>("#culture");
+const characterLabel = document.querySelector<HTMLLabelElement>("#character-label");
+const characterSelect = document.querySelector<HTMLSelectElement>("#character");
 const log = document.querySelector<HTMLDivElement>("#log");
 const playerTab = document.querySelector<HTMLButtonElement>("#player-tab");
 const adminTab = document.querySelector<HTMLButtonElement>("#admin-tab");
@@ -117,6 +137,8 @@ let editor: MonacoEditor | null = null;
 let editorReady: Promise<void> | null = null;
 let behaviorModules: AdminBehaviorModule[] = [];
 let activeModuleId: string | null = null;
+let activePanel: Panel = "player";
+let currentSession: GameSessionResponse | null = null;
 const moduleModels = new Map<string, MonacoModel>();
 const modulePayloads = new Map<string, ScriptResponse>();
 const savedSources = new Map<string, string>();
@@ -276,12 +298,22 @@ function canLeaveModule(moduleId: string | null): boolean {
     || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
 }
 
+function updateCharacterSelectorVisibility(panel: Panel): void {
+  if (!characterLabel) return;
+
+  const isPlayer = panel === "player";
+  const hasCharacters = (currentSession?.characters.length ?? 0) > 0;
+  characterLabel.hidden = !isPlayer || !hasCharacters;
+}
+
 function showPanel(panel: Panel): void {
   const isAdmin = panel === "admin";
+  activePanel = panel;
   playerTab?.classList.toggle("active", !isAdmin);
   adminTab?.classList.toggle("active", isAdmin);
   playerPanel?.classList.toggle("active", !isAdmin);
   adminPanel?.classList.toggle("active", isAdmin);
+  updateCharacterSelectorVisibility(panel);
 
   if (isAdmin) {
     void loadScript();
@@ -439,10 +471,61 @@ function initializeEditor(): Promise<void> {
   return editorReady;
 }
 
+function renderCharacterSelector(session: GameSessionResponse): void {
+  if (!characterSelect || !characterLabel) return;
+
+  characterSelect.replaceChildren();
+
+  session.characters.forEach((character) => {
+    const option = document.createElement("option");
+    option.value = character.id;
+    option.textContent = `${character.id} @ ${character.locationId}`;
+    characterSelect.append(option);
+  });
+
+  characterSelect.value = session.selectedCharacterId;
+  currentSession = session;
+  updateCharacterSelectorVisibility(activePanel);
+}
+
+async function loadSession(): Promise<void> {
+  const response = await fetch("/game/session", gameFetchInit);
+  if (!response.ok) {
+    appendLine("Could not load the current session.", "line error-line");
+    return;
+  }
+
+  const payload = (await response.json()) as GameSessionResponse;
+  renderCharacterSelector(payload);
+}
+
+async function selectCharacter(characterId: string): Promise<void> {
+  const response = await fetch("/game/session/character", {
+    ...gameFetchInit,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ characterId }),
+  });
+
+  if (!response.ok) {
+    appendLine("Could not switch characters.", "line error-line");
+    return;
+  }
+
+  const payload = (await response.json()) as SelectCharacterResponse;
+  renderCharacterSelector({
+    accountId: "",
+    selectedCharacterId: payload.selectedCharacterId,
+    characters: payload.characters,
+  });
+  appendLine(`Now playing as ${payload.selectedCharacterId}.`);
+}
+
 async function sendCommand(command: string, selectedCulture: Culture): Promise<void> {
   appendLine(`> ${command}`, "line input-line");
 
   const response = await fetch("/game/command", {
+    ...gameFetchInit,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: command, culture: selectedCulture }),
@@ -619,6 +702,12 @@ async function saveCurrentScript(): Promise<void> {
   saveScript?.removeAttribute("disabled");
 }
 
+characterSelect?.addEventListener("change", () => {
+  const characterId = characterSelect.value;
+  if (!characterId) return;
+  void selectCharacter(characterId);
+});
+
 form?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -668,3 +757,4 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 appendLine("BrokenRealm awaits.");
+void loadSession();

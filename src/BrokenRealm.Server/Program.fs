@@ -1,6 +1,7 @@
 namespace BrokenRealm.Server
 
 open System
+open System.IO
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.FileProviders
@@ -10,7 +11,31 @@ module Program =
     [<EntryPoint>]
     let main args =
         let stateLock = obj()
-        let gameStore = InMemoryGameStore(ObjectDatabase.initialState)
+        let builder = WebApplication.CreateBuilder(args)
+        let app = builder.Build()
+        let contentRoot = app.Environment.ContentRootPath
+        let snapshotPath = GameStoreBootstrap.resolveSnapshotPath contentRoot
+        let gameStore = GameStoreBootstrap.createGameStore contentRoot snapshotPath
+        let sessionStore = SessionStore()
+
+        let sessionCookieOptions =
+            let options = CookieOptions()
+            options.HttpOnly <- true
+            options.SameSite <- SameSiteMode.Lax
+            options.Path <- "/"
+            options
+
+        let resolveSession (ctx: HttpContext) =
+            let session =
+                match ctx.Request.Cookies.TryGetValue Sessions.CookieName with
+                | true, sessionId ->
+                    match sessionStore.TryGet sessionId with
+                    | Some existing -> sessionStore.Touch existing
+                    | None -> sessionStore.CreateAnonymousPrototypeSession()
+                | false, _ -> sessionStore.CreateAnonymousPrototypeSession()
+
+            ctx.Response.Cookies.Append(Sessions.CookieName, session.Id, sessionCookieOptions)
+            session
 
         let commit stored state =
             match gameStore.TryCommit(stored.WorldRevision, stored.CharacterRevisions, state) with
@@ -30,23 +55,48 @@ module Program =
                   message = "The behavior module changed after it was loaded. Reload it before saving again." }
                 : BehaviorModuleConflictResponse)
 
-        let builder = WebApplication.CreateBuilder(args)
-        let app = builder.Build()
-
-        let staticRoot = IO.Path.Combine(app.Environment.ContentRootPath, "wwwroot")
+        let staticRoot = Path.Combine(contentRoot, "wwwroot")
         app.UseDefaultFiles(DefaultFilesOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
         app.UseStaticFiles(StaticFileOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
 
+        app.MapGet(
+            "/game/session",
+            Func<HttpContext, IResult>(fun ctx ->
+                lock stateLock (fun () ->
+                    let session = resolveSession ctx
+                    let state = gameStore.Read().State
+                    Sessions.toResponse session state |> Results.Json)))
+        |> ignore
+
+        app.MapPost(
+            "/game/session/character",
+            Func<HttpContext, SelectCharacterRequest, IResult>(fun ctx request ->
+                lock stateLock (fun () ->
+                    let session = resolveSession ctx
+                    let state = gameStore.Read().State
+
+                    match sessionStore.SelectCharacter(session.Id, request.characterId, state) with
+                    | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
+                    | Ok updated ->
+                        ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+
+                        Results.Json(
+                            { selectedCharacterId = updated.SelectedCharacterId
+                              characters = Sessions.ownedCharacters updated.AccountId state }
+                            : SelectCharacterResponse))))
+        |> ignore
+
         app.MapPost(
             "/game/command",
-            Func<GameCommandRequest, IResult>(fun request ->
+            Func<HttpContext, GameCommandRequest, IResult>(fun ctx request ->
                 let culture = Cultures.parse request.culture
 
                 let result =
                     lock stateLock (fun () ->
+                        let session = resolveSession ctx
                         let stored = gameStore.Read()
                         let result =
-                            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId culture request.text stored.State
+                            Kernel.submitCommandForCharacter session.SelectedCharacterId culture request.text stored.State
                         let committed = commit stored result.State
                         { result with State = committed.State })
 

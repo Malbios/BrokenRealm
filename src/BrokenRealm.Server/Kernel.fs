@@ -150,6 +150,20 @@ module Kernel =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
+    let validateGameState (state: GameState) =
+        match validateContainment state with
+        | Error error -> Error error
+        | Ok() ->
+            state.Objects
+            |> Map.toList
+            |> List.map snd
+            |> List.tryPick (fun object ->
+                match validateObjectProperties state object with
+                | Error error -> Some error
+                | Ok() -> None)
+            |> Option.map Error
+            |> Option.defaultValue (Ok())
+
     let rec private tryGetNestedValue path current =
         match path, current with
         | [], value -> Ok value
@@ -398,6 +412,43 @@ module Kernel =
             { moduleId = behaviorModule.Id
               dependencies = behaviorModule.Dependencies
               classes = behaviorModule.Classes |> Map.toList |> List.map fst })
+
+    let recompileBehaviorModules
+        (compile: string -> Result<string, CompilerDiagnostic list>)
+        (inspect: string -> string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>)
+        (seedBehaviorModules: Map<string, BehaviorModule>)
+        : Result<Map<string, BehaviorModule>, CompilerDiagnostic list> =
+        match tryTopologicalOrder seedBehaviorModules with
+        | Error error -> Error [ graphError error ]
+        | Ok order ->
+            order
+            |> List.fold
+                (fun (result: Result<Map<string, BehaviorModule>, CompilerDiagnostic list>) (moduleId: string) ->
+                    result
+                    |> Result.bind (fun (activeBehaviorModules: Map<string, BehaviorModule>) ->
+                        let moduleDefinition = activeBehaviorModules.[moduleId]
+                        let closure = dependencyClosure activeBehaviorModules moduleId
+
+                        let compilationUnit =
+                            order
+                            |> List.filter (fun id -> Set.contains id closure)
+                            |> List.map (fun id -> id, activeBehaviorModules.[id].Source)
+                            |> BehaviorSources.joinModules
+
+                        match compile compilationUnit with
+                        | Error diagnostics -> Error diagnostics
+                        | Ok compiledSource ->
+                            match inspect moduleDefinition.RegistryName compiledSource with
+                            | Error diagnostic ->
+                                Error [ if diagnostic.file = "" then { diagnostic with file = moduleId } else diagnostic ]
+                            | Ok classes ->
+                                let updatedModule =
+                                    { moduleDefinition with
+                                        CompiledSource = compiledSource
+                                        Classes = classes }
+
+                                Ok(activeBehaviorModules |> Map.add moduleId updatedModule)))
+                (Ok seedBehaviorModules)
 
     let tryUpdateBehaviorModule
         (compile: string -> Result<string, CompilerDiagnostic list>)

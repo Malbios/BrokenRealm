@@ -10,6 +10,7 @@
 dist/
 .env
 *.db
+data/
 .DS_Store
 
 # User-specific files

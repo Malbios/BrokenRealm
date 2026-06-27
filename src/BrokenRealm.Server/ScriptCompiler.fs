@@ -22,6 +22,15 @@ module ScriptCompiler =
         let executable = if OperatingSystem.IsWindows() then "tsc.cmd" else "tsc"
         Path.Combine(clientRoot, "node_modules", ".bin", executable)
 
+    let private missingCompilerDiagnostic clientRoot =
+        let compilerPath = compilerCommand clientRoot
+
+        { message =
+            $"TypeScript compiler not found at {compilerPath}. Run npm install in src/BrokenRealm.Client before compiling behavior modules or running the full test suite."
+          file = ""
+          line = 0
+          column = 0 }
+
     let private normalizePath (path: string) =
         path.Replace("\\", "/")
 
@@ -72,6 +81,11 @@ module ScriptCompiler =
             match tryFindClientRoot contentRoot serverRoot with
             | None -> Error [ { message = "Could not find src/BrokenRealm.Client for the TypeScript compiler."; file = ""; line = 0; column = 0 } ]
             | Some clientRoot ->
+                let compilerPath = compilerCommand clientRoot
+
+                if not (File.Exists compilerPath) then
+                    Error [ missingCompilerDiagnostic clientRoot ]
+                else
                 let tempRoot = Path.Combine(Path.GetTempPath(), "BrokenRealm", "verb-compile-" + Guid.NewGuid().ToString("N"))
                 let inputPath = Path.Combine(tempRoot, "verb.ts")
                 let apiPath = Path.GetFullPath(Path.Combine(serverRoot, "Scripting", "game-api.d.ts"))
@@ -83,7 +97,7 @@ module ScriptCompiler =
                         File.WriteAllText(inputPath, "/// <reference path=\"" + referencePath + "\" />" + Environment.NewLine + source)
 
                         let startInfo = ProcessStartInfo()
-                        startInfo.FileName <- compilerCommand clientRoot
+                        startInfo.FileName <- compilerPath
                         startInfo.WorkingDirectory <- clientRoot
                         startInfo.RedirectStandardOutput <- true
                         startInfo.RedirectStandardError <- true

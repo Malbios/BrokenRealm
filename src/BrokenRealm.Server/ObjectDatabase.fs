@@ -115,12 +115,27 @@ module ObjectDatabase =
               BehaviorModuleId = "thing-behaviors"
               BehaviorClassName = "ThingBehavior" }
 
+        let prototypeAccount: AccountState =
+            { Id = GameSnapshots.PrototypeAccountId
+              DisplayName = Some "Prototype account" }
+
         let prototypeCharacter =
             { Id = GameSnapshots.PrototypeCharacterId
+              AccountId = prototypeAccount.Id
               LocationId = forest.Id
+              Inventory = Map.empty }
+
+        let prototypeScout =
+            { Id = GameSnapshots.PrototypeScoutCharacterId
+              AccountId = prototypeAccount.Id
+              LocationId = village.Id
               Inventory = Map.empty }
 
         { ItemIds = Set.ofList [ "wood" ]
           BehaviorModules = behaviorModules
           Objects = Map.ofList [ forest.Id, forest; village.Id, village; fallenLog.Id, fallenLog ]
-          Characters = Map.ofList [ prototypeCharacter.Id, prototypeCharacter ] }
+          Accounts = Map.ofList [ prototypeAccount.Id, prototypeAccount ]
+          Characters =
+            Map.ofList
+                [ prototypeCharacter.Id, prototypeCharacter
+                  prototypeScout.Id, prototypeScout ] }

@@ -1,7 +1,10 @@
 "use strict";
+const gameFetchInit = { credentials: "include" };
 const form = document.querySelector("#command-form");
 const input = document.querySelector("#command");
 const culture = document.querySelector("#culture");
+const characterLabel = document.querySelector("#character-label");
+const characterSelect = document.querySelector("#character");
 const log = document.querySelector("#log");
 const playerTab = document.querySelector("#player-tab");
 const adminTab = document.querySelector("#admin-tab");
@@ -19,6 +22,8 @@ let editor = null;
 let editorReady = null;
 let behaviorModules = [];
 let activeModuleId = null;
+let activePanel = "player";
+let currentSession = null;
 const moduleModels = new Map();
 const modulePayloads = new Map();
 const savedSources = new Map();
@@ -168,12 +173,21 @@ function canLeaveModule(moduleId) {
         || !isModuleDirty(moduleId)
         || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
 }
+function updateCharacterSelectorVisibility(panel) {
+    if (!characterLabel)
+        return;
+    const isPlayer = panel === "player";
+    const hasCharacters = (currentSession?.characters.length ?? 0) > 0;
+    characterLabel.hidden = !isPlayer || !hasCharacters;
+}
 function showPanel(panel) {
     const isAdmin = panel === "admin";
+    activePanel = panel;
     playerTab?.classList.toggle("active", !isAdmin);
     adminTab?.classList.toggle("active", isAdmin);
     playerPanel?.classList.toggle("active", !isAdmin);
     adminPanel?.classList.toggle("active", isAdmin);
+    updateCharacterSelectorVisibility(panel);
     if (isAdmin) {
         void loadScript();
         editor?.layout();
@@ -316,9 +330,52 @@ function initializeEditor() {
     });
     return editorReady;
 }
+function renderCharacterSelector(session) {
+    if (!characterSelect || !characterLabel)
+        return;
+    characterSelect.replaceChildren();
+    session.characters.forEach((character) => {
+        const option = document.createElement("option");
+        option.value = character.id;
+        option.textContent = `${character.id} @ ${character.locationId}`;
+        characterSelect.append(option);
+    });
+    characterSelect.value = session.selectedCharacterId;
+    currentSession = session;
+    updateCharacterSelectorVisibility(activePanel);
+}
+async function loadSession() {
+    const response = await fetch("/game/session", gameFetchInit);
+    if (!response.ok) {
+        appendLine("Could not load the current session.", "line error-line");
+        return;
+    }
+    const payload = (await response.json());
+    renderCharacterSelector(payload);
+}
+async function selectCharacter(characterId) {
+    const response = await fetch("/game/session/character", {
+        ...gameFetchInit,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId }),
+    });
+    if (!response.ok) {
+        appendLine("Could not switch characters.", "line error-line");
+        return;
+    }
+    const payload = (await response.json());
+    renderCharacterSelector({
+        accountId: "",
+        selectedCharacterId: payload.selectedCharacterId,
+        characters: payload.characters,
+    });
+    appendLine(`Now playing as ${payload.selectedCharacterId}.`);
+}
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");
     const response = await fetch("/game/command", {
+        ...gameFetchInit,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: command, culture: selectedCulture }),
@@ -477,6 +534,12 @@ async function saveCurrentScript() {
     setStatus(`Saved and compiled atomically. Updated modules: ${payload.affectedModules.join(", ")}; objects: ${payload.affectedObjects.join(", ") || "none"}.`);
     saveScript?.removeAttribute("disabled");
 }
+characterSelect?.addEventListener("change", () => {
+    const characterId = characterSelect.value;
+    if (!characterId)
+        return;
+    void selectCharacter(characterId);
+});
 form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const command = input?.value.trim() ?? "";
@@ -527,3 +590,4 @@ window.addEventListener("beforeunload", (event) => {
     event.returnValue = "";
 });
 appendLine("BrokenRealm awaits.");
+void loadSession();

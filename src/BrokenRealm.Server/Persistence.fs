@@ -17,8 +17,13 @@ type WorldSnapshot =
       BehaviorModules: Map<string, BehaviorModuleSnapshot>
       Objects: Map<ObjectId, GameObject> }
 
+type AccountSnapshot =
+    { Id: AccountId
+      DisplayName: string option }
+
 type CharacterSnapshot =
     { Id: string
+      AccountId: AccountId
       Revision: int64
       LocationId: ObjectId
       Inventory: Map<ItemId, Quantity> }
@@ -26,6 +31,7 @@ type CharacterSnapshot =
 type GameSnapshot =
     { FormatVersion: int
       World: WorldSnapshot
+      Accounts: Map<AccountId, AccountSnapshot>
       Characters: Map<CharacterId, CharacterSnapshot> }
 
 type StoredGameState =
@@ -41,10 +47,16 @@ type CommitConflict =
 
 module GameSnapshots =
     [<Literal>]
-    let CurrentFormatVersion = 1
+    let CurrentFormatVersion = 2
+
+    [<Literal>]
+    let PrototypeAccountId = "prototype-account"
 
     [<Literal>]
     let PrototypeCharacterId = "prototype-player"
+
+    [<Literal>]
+    let PrototypeScoutCharacterId = "prototype-scout"
 
     let private captureBehavior now sourceRevision activationRevision (behaviorModule: BehaviorModule) =
         { Id = behaviorModule.Id
@@ -66,10 +78,14 @@ module GameSnapshots =
               ItemIds = state.ItemIds
               BehaviorModules = behaviors
               Objects = state.Objects }
+          Accounts =
+            state.Accounts
+            |> Map.map (fun _ account -> { Id = account.Id; DisplayName = account.DisplayName })
           Characters =
             state.Characters
             |> Map.map (fun id character ->
                 { Id = id
+                  AccountId = character.AccountId
                   Revision = 0L
                   LocationId = character.LocationId
                   Inventory = character.Inventory }) }
@@ -89,16 +105,25 @@ module GameSnapshots =
 
     let update now previous (state: GameState) =
         let behaviorModules = updateBehaviors now previous.World.BehaviorModules state.BehaviorModules
+        let accounts =
+            state.Accounts
+            |> Map.map (fun id account ->
+                match previous.Accounts |> Map.tryFind id with
+                | Some stored -> { stored with DisplayName = account.DisplayName }
+                | None -> { Id = account.Id; DisplayName = account.DisplayName })
+
         let worldChanged =
             previous.World.ItemIds <> state.ItemIds
             || previous.World.Objects <> state.Objects
             || previous.World.BehaviorModules <> behaviorModules
+            || previous.Accounts <> accounts
         let characters =
             state.Characters
             |> Map.map (fun id character ->
                 match previous.Characters |> Map.tryFind id with
                 | Some stored ->
                     { stored with
+                        AccountId = character.AccountId
                         Revision =
                             stored.Revision
                             + (if stored.LocationId <> character.LocationId || stored.Inventory <> character.Inventory then 1L else 0L)
@@ -106,6 +131,7 @@ module GameSnapshots =
                         Inventory = character.Inventory }
                 | None ->
                     { Id = id
+                      AccountId = character.AccountId
                       Revision = 0L
                       LocationId = character.LocationId
                       Inventory = character.Inventory })
@@ -116,13 +142,17 @@ module GameSnapshots =
               ItemIds = state.ItemIds
               BehaviorModules = behaviorModules
               Objects = state.Objects }
+          Accounts = accounts
           Characters = characters }
 
-type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset) =
+type InMemoryGameStore(initialState: GameState, ?clock: unit -> DateTimeOffset, ?seedSnapshot: GameSnapshot) =
     let clock = defaultArg clock (fun () -> DateTimeOffset.UtcNow)
     let gate = obj()
     let mutable runtimeState = initialState
-    let mutable snapshot = GameSnapshots.create (clock ()) initialState
+    let mutable snapshot =
+        match seedSnapshot with
+        | Some loaded -> loaded
+        | None -> GameSnapshots.create (clock ()) initialState
 
     member _.Read() =
         lock gate (fun () ->

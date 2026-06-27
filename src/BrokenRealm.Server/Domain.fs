@@ -11,6 +11,8 @@ type ObjectId = string
 type ItemId = string
 type Quantity = int
 type CharacterId = string
+type AccountId = string
+type SessionId = string
 
 type ValuePathSegment =
     | PropertySegment of string
@@ -80,8 +82,13 @@ type GameObject =
       BehaviorModuleId: string
       BehaviorClassName: string }
 
+type AccountState =
+    { Id: AccountId
+      DisplayName: string option }
+
 type CharacterState =
     { Id: CharacterId
+      AccountId: AccountId
       LocationId: ObjectId
       Inventory: Map<ItemId, Quantity> }
 
@@ -89,7 +96,15 @@ type GameState =
     { ItemIds: Set<ItemId>
       BehaviorModules: Map<string, BehaviorModule>
       Objects: Map<ObjectId, GameObject>
+      Accounts: Map<AccountId, AccountState>
       Characters: Map<CharacterId, CharacterState> }
+
+type GameSession =
+    { Id: SessionId
+      AccountId: AccountId
+      SelectedCharacterId: CharacterId
+      CreatedAt: DateTimeOffset
+      LastSeenAt: DateTimeOffset }
 
 type Message =
     { Key: string
@@ -131,6 +146,26 @@ type GameCommandRequest =
 [<CLIMutable>]
 type CommandResponse =
     { lines: string list }
+
+[<CLIMutable>]
+type SessionCharacterResponse =
+    { id: string
+      locationId: string }
+
+[<CLIMutable>]
+type GameSessionResponse =
+    { accountId: string
+      selectedCharacterId: string
+      characters: SessionCharacterResponse list }
+
+[<CLIMutable>]
+type SelectCharacterRequest =
+    { characterId: string }
+
+[<CLIMutable>]
+type SelectCharacterResponse =
+    { selectedCharacterId: string
+      characters: SessionCharacterResponse list }
 
 [<CLIMutable>]
 type BehaviorModuleResponse =
