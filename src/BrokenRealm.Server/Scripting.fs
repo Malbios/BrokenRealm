@@ -2,6 +2,7 @@ namespace BrokenRealm.Server
 
 open System
 open System.Text.Json
+open System.Text.RegularExpressions
 open Jint
 
 module Scripting =
@@ -105,7 +106,7 @@ module Scripting =
         else
             "Script execution failed."
 
-    let private executeVerbWithinLimits limits (target: GameObject) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
+    let private executeWithinLimits limits invocation (target: GameObject) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
         try
             let context =
                 {| args = args
@@ -119,7 +120,7 @@ module Scripting =
                    actor = {| inventory = actorInventory |} |}
 
             let contextJson = JsonSerializer.Serialize(context, jsonOptions)
-            let script = source + "\nJSON.stringify(execute(" + contextJson + "));"
+            let script = source + "\nJSON.stringify(" + invocation contextJson + ");"
             let json =
                 (new Engine(fun options ->
                     options.LimitMemory(limits.MemoryBytes).TimeoutInterval(limits.Timeout) |> ignore))
@@ -162,7 +163,21 @@ module Scripting =
         if source.Length > limits.MaxSourceCharacters then
             Error $"Verb source may contain at most {limits.MaxSourceCharacters} characters."
         else
-            executeVerbWithinLimits limits target args actorInventory source
+            executeWithinLimits limits (fun context -> "execute(" + context + ")") target args actorInventory source
 
     let executeVerb target args actorInventory source =
         executeVerbWithLimits defaultLimits target args actorInventory source
+
+    let private identifierPattern = Regex("^[A-Za-z_$][A-Za-z0-9_$]*$", RegexOptions.CultureInvariant)
+
+    let executeBehaviorMethodWithLimits limits (className: string) (methodName: string) target args actorInventory (source: string) =
+        if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
+            Error "Behavior class and method names must be valid JavaScript identifiers."
+        elif source.Length > limits.MaxSourceCharacters then
+            Error $"Verb source may contain at most {limits.MaxSourceCharacters} characters."
+        else
+            let invocation context = $"(new {className}()).{methodName}({context})"
+            executeWithinLimits limits invocation target args actorInventory source
+
+    let executeBehaviorMethod className methodName target args actorInventory source =
+        executeBehaviorMethodWithLimits defaultLimits className methodName target args actorInventory source

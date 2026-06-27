@@ -77,6 +77,7 @@ Current server modules:
 - `Domain.fs`: culture, object, verb, state, message, effect, and DTO types.
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
+- `BehaviorSources.fs`: TypeScript class-runtime spike proving native `extends`, `override`, and `super` execution.
 - `CommandMatching.fs`: localized command text to object verb match.
 - `Scripting.fs`: Jint execution and script effect decoding.
 - `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited verb source.
@@ -93,6 +94,7 @@ Current object model:
 - `village` references `forest` to the south and has verbs: `look`, `inventory`, `move`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
+- Live command dispatch still uses standalone object-attached verbs during migration. A tested class-runtime spike compiles and executes `GameBehavior -> LocationBehavior -> ForestBehavior`; it is not yet wired into player commands.
 
 Current endpoints:
 
@@ -260,9 +262,8 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Prove `GameBehavior -> LocationBehavior -> ForestBehavior` compilation and native `super` dispatch through Jint.
-2. Add behavior class IDs and a compiled behavior registry to the in-memory state.
-3. Migrate command dispatch from object-attached verb functions to behavior-class methods.
-4. Migrate the admin editor from object/verb selection to behavior-class editing.
-5. Introduce typed object properties and capability interfaces after the class runtime is stable.
-6. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
+1. Add behavior class IDs and a compiled behavior registry to the in-memory state.
+2. Migrate command dispatch from object-attached verb functions to behavior-class methods.
+3. Migrate the admin editor from object/verb selection to behavior-class editing.
+4. Introduce typed object properties and capability interfaces after the class runtime is stable.
+5. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.

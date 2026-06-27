@@ -8,6 +8,7 @@
     <Compile Include="Domain.fs" />
     <Compile Include="Localization.fs" />
     <Compile Include="ScriptSources.fs" />
+    <Compile Include="BehaviorSources.fs" />
     <Compile Include="ObjectDatabase.fs" />
     <Compile Include="CommandMatching.fs" />
     <Compile Include="Scripting.fs" />

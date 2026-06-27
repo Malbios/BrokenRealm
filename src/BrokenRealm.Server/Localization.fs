@@ -35,6 +35,8 @@ module Localizer =
         match culture, key with
         | En, "location.forest.description" -> "You are standing in a quiet forest."
         | De, "location.forest.description" -> "Du stehst in einem stillen Wald."
+        | En, "location.forest.atmosphere" -> "Pine-scented air moves through the branches."
+        | De, "location.forest.atmosphere" -> "Kiefernduft zieht durch die Zweige."
         | En, "location.village.description" -> "You are standing in a small village."
         | De, "location.village.description" -> "Du stehst in einem kleinen Dorf."
         | En, "move.success" -> "You travel {direction}."

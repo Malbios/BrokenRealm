@@ -396,3 +396,48 @@ module ScriptCompilerTests =
             Assert.Equal(0, diagnostic.column)
         | Error _ -> Assert.True(false, "Expected one source-length diagnostic.")
         | Ok _ -> Assert.True(false, "Expected oversized source to be rejected.")
+
+module BehaviorClassRuntimeTests =
+    let private forest = ObjectDatabase.initialState.Objects["forest"]
+
+    let rec private findRepoRoot (directory: System.IO.DirectoryInfo) =
+        if System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "BrokenRealm.slnx")) then
+            directory.FullName
+        elif isNull directory.Parent then
+            failwith "Could not find the BrokenRealm repository root."
+        else
+            findRepoRoot directory.Parent
+
+    [<Fact>]
+    let ``Compiled behavior classes use native super dispatch`` () =
+        let compiled =
+            let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
+
+            match ScriptCompiler.compile repoRoot BehaviorSources.inheritanceSpike with
+            | Ok source -> source
+            | Error diagnostics ->
+                diagnostics
+                |> List.map _.message
+                |> String.concat "\n"
+                |> failwith
+
+        let result =
+            Scripting.executeBehaviorMethod "ForestBehavior" "look" forest Map.empty Map.empty compiled
+
+        match result with
+        | Ok [ EmitMessage description; EmitMessage atmosphere ] ->
+            Assert.Equal("location.forest.description", description.Key)
+            Assert.Equal("location.forest.atmosphere", atmosphere.Key)
+        | Ok _ -> Assert.True(false, "Expected parent and child message effects.")
+        | Error error -> Assert.True(false, error)
+
+    [<Theory>]
+    [<InlineData("ForestBehavior;attack", "look")>]
+    [<InlineData("ForestBehavior", "look()")>]
+    let ``Behavior invocation rejects invalid identifiers`` className methodName =
+        let result =
+            Scripting.executeBehaviorMethod className methodName forest Map.empty Map.empty ""
+
+        match result with
+        | Error error -> Assert.Equal("Behavior class and method names must be valid JavaScript identifiers.", error)
+        | Ok _ -> Assert.True(false, "Expected invalid identifiers to be rejected.")
