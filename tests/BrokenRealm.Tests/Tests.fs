@@ -5,6 +5,38 @@ open Xunit
 
 module KernelTests =
     [<Fact>]
+    let ``Initial object IDs and references satisfy the durable ID contract`` () =
+        let state = ObjectDatabase.initialState
+
+        state.Objects
+        |> Map.iter (fun objectId object ->
+            Assert.True(ObjectIds.isValid objectId, $"Invalid object ID: {objectId}")
+            Assert.Equal(objectId, object.Id)
+
+            object.References
+            |> Map.iter (fun _ destinationId ->
+                Assert.True(state.Objects.ContainsKey destinationId, $"Unknown object reference: {destinationId}")))
+
+    [<Fact>]
+    let ``Generated object IDs are valid and unique`` () =
+        let first = ObjectIds.create ()
+        let second = ObjectIds.create ()
+
+        Assert.True(ObjectIds.isValid first)
+        Assert.True(ObjectIds.isValid second)
+        Assert.StartsWith("obj_", first)
+        Assert.NotEqual<string>(first, second)
+
+    [<Theory>]
+    [<InlineData("")>]
+    [<InlineData("Forest")>]
+    [<InlineData("1forest")>]
+    [<InlineData("forest room")>]
+    [<InlineData("forest/room")>]
+    let ``Invalid object IDs are rejected`` value =
+        Assert.False(ObjectIds.isValid value)
+
+    [<Fact>]
     let ``Admin object catalog lists every editable verb`` () =
         let objects = Kernel.listAdminObjects ObjectDatabase.initialState
 

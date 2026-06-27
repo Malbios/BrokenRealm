@@ -1,5 +1,8 @@
 namespace BrokenRealm.Server
 
+open System
+open System.Text.RegularExpressions
+
 type Culture =
     | En
     | De
@@ -8,6 +11,21 @@ type ObjectId = string
 type VerbName = string
 type ItemId = string
 type Quantity = int
+
+module ObjectIds =
+    let private pattern = Regex("^[a-z][a-z0-9_-]{0,63}$", RegexOptions.CultureInvariant)
+
+    let isValid (value: string) =
+        not (String.IsNullOrWhiteSpace value) && pattern.IsMatch value
+
+    let tryParse value =
+        if isValid value then
+            Ok value
+        else
+            Error "Object IDs must be 1-64 lowercase ASCII characters, start with a letter, and contain only letters, digits, underscores, or hyphens."
+
+    let create () : ObjectId =
+        "obj_" + Guid.CreateVersion7().ToString("N")
 
 type VerbPattern =
     { Culture: Culture

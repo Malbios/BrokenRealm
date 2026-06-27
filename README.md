@@ -90,3 +90,7 @@ The browser admin panel loads the object and verb catalog and uses Monaco, loade
 ## Scope
 
 There is no durable database, Docker setup, authentication, or SignalR. State and edited verb source are held in memory and reset when the server restarts.
+
+## Object IDs
+
+Object IDs are immutable, locale-neutral identifiers. Seeded objects may use stable semantic IDs such as `forest`; runtime-created objects use `obj_` followed by a UUIDv7 in compact hexadecimal form. IDs are restricted to 1-64 lowercase ASCII letters, digits, underscores, and hyphens, must begin with a letter, and are never changed when an object's display name changes. See `docs/architecture/0001-object-ids.md`.

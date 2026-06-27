@@ -61,6 +61,7 @@ Current object model:
 - `forest` references `village` to the north and has verbs: `look`, `gather`, `inventory`, `move`.
 - `village` references `forest` to the south and has verbs: `look`, `inventory`, `move`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
+- Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
 
 Current endpoints:
 
@@ -216,6 +217,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-Good next slices:
-
-- decide durable object ID strategy before persistence
+Good next slices should build on the existing generic object, verb, reference, effect, and admin-editor mechanisms.
