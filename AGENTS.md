@@ -4,7 +4,7 @@ These notes are repo memory for future Codex sessions. Keep them focused on proj
 
 ## Product Goal
 
-BrokenRealm is a browser-playable, MOO-inspired, mechanics-first text empire/sandbox game.
+BrokenRealm is a browser-playable, ToastStunt-inspired, mechanics-first text empire/sandbox game.
 
 The core idea is a MOO-like object system with TypeScript instead of MOOcode:
 
@@ -12,6 +12,22 @@ The core idea is a MOO-like object system with TypeScript instead of MOOcode:
 - Admins edit object verbs in-browser with Monaco, syntax highlighting, IntelliSense, and diagnostics.
 - Most mutable game behavior should live in admin-authored TypeScript verbs attached to game objects.
 - The trusted F# runtime should stay small and act as a kernel.
+
+## Design Reference
+
+Use ToastStunt, rather than original LambdaMOO alone, as the primary conceptual reference for the programmable object system. Preserve BrokenRealm's own technology choices: TypeScript verbs, a trusted F# kernel, browser-first interaction, neutral effects, and localized input/output.
+
+Relevant ToastStunt concepts include:
+
+- ordered multiple parents
+- inherited verbs and properties
+- permanent objects and lightweight anonymous/waif-like values
+- typed collection values
+- object lifecycle and containment
+- task limits, diagnostics, and runtime introspection
+- behavior on primitive/value prototypes where useful
+
+Do not pursue source compatibility with MOOcode or copy ToastStunt's C server architecture, networking stack, SQLite built-ins, or operating-system integrations. Adopt concepts only when they support BrokenRealm's product goal.
 
 ## Architecture Direction
 
@@ -31,6 +47,21 @@ The kernel owns:
 - diagnostics and script execution resource limits
 
 Game logic should not become hardcoded F# command handlers. F# should dispatch to object verbs and apply validated neutral effects.
+
+## Planned Object Model Direction
+
+The next object-model foundation is ordered multiple inheritance, not a single-parent prototype chain.
+
+- Objects will have an ordered list of parent object IDs.
+- Locally defined verbs and properties override inherited definitions.
+- Parent order must produce deterministic resolution.
+- Shared ancestors should be resolved once.
+- Missing parents, duplicate direct parents, cycles, and inconsistent graphs must be rejected.
+- Resolution must preserve the defining object ID for diagnostics and admin tooling.
+- Overridden verbs need a controlled equivalent of MOO's `pass()` to invoke the next resolved implementation.
+- The exact linearization and `pass()` semantics must be recorded in an architecture decision before dispatch is changed.
+
+Multiple parents provide concrete behavior and property defaults. They are not TypeScript interfaces. If interface-like capability contracts are added later, keep them separate: contracts validate required verbs/properties but do not supply behavior. Tags remain semantic metadata and object references remain world relationships; neither substitutes for parents.
 
 ## Current Shape
 
@@ -229,4 +260,9 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-Good next slices should build on the existing generic object, verb, reference, effect, and admin-editor mechanisms.
+1. Record ordered multiple-inheritance resolution and `pass()` semantics in an architecture decision.
+2. Implement and exhaustively test a side-effect-free ancestor linearization/resolution module.
+3. Resolve inherited verbs during localized command dispatch while preserving their defining object IDs.
+4. Show owned, inherited, and overridden verbs in the admin editor.
+5. Introduce typed inherited properties with explicit local, inherited, and cleared states.
+6. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
