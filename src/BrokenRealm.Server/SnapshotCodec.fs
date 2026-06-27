@@ -415,6 +415,14 @@ module SnapshotCodec =
         object["sourceRevision"] <- JsonValue.Create(behaviorModule.SourceRevision)
         object["activationRevision"] <- JsonValue.Create(behaviorModule.ActivationRevision)
         object["activatedAt"] <- JsonValue.Create(behaviorModule.ActivatedAt.ToString("o"))
+
+        object["provenance"] <-
+            JsonValue.Create(
+                match behaviorModule.Provenance with
+                | SeedSynced -> "seedSynced"
+                | AdminEdited -> "adminEdited")
+
+        object["syncedSeedHash"] <- JsonValue.Create(behaviorModule.SyncedSeedHash)
         object
 
     let private decodeBehaviorModule node =
@@ -476,6 +484,19 @@ module SnapshotCodec =
                             | false, _ -> Error "Behavior module activatedAt must be an ISO-8601 timestamp."
                         | _ -> Error "Behavior module activatedAt must be a string.")
 
+                let! provenance =
+                    match object["provenance"] with
+                    | JsonString "seedSynced" -> Ok SeedSynced
+                    | JsonString "adminEdited" -> Ok AdminEdited
+                    | null -> Ok SeedSynced
+                    | _ -> Error "Behavior module provenance must be 'seedSynced' or 'adminEdited'."
+
+                let! syncedSeedHash =
+                    match object["syncedSeedHash"] with
+                    | JsonString value -> Ok value
+                    | null -> Ok ""
+                    | _ -> Error "Behavior module syncedSeedHash must be a string when present."
+
                 return
                     { Id = id
                       RegistryName = registryName
@@ -483,7 +504,9 @@ module SnapshotCodec =
                       Source = source
                       SourceRevision = sourceRevision
                       ActivationRevision = activationRevision
-                      ActivatedAt = activatedAt }
+                      ActivatedAt = activatedAt
+                      Provenance = provenance
+                      SyncedSeedHash = syncedSeedHash }
             }
         | _ -> Error "Behavior modules must be JSON objects."
 

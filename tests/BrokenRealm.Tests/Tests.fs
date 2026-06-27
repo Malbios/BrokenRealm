@@ -218,7 +218,7 @@ module SnapshotPersistenceTests =
 
         match SnapshotMigrations.migrate legacy with
         | Ok migrated ->
-            Assert.Equal(4, migrated.FormatVersion)
+            Assert.Equal(5, migrated.FormatVersion)
             Assert.True(migrated.Accounts.ContainsKey GameSnapshots.PrototypeAccountId)
             Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeCharacterId)
             Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeScoutCharacterId)
@@ -249,7 +249,7 @@ module SnapshotPersistenceTests =
 
         match SnapshotMigrations.migrate legacy with
         | Ok migrated ->
-            Assert.Equal(4, migrated.FormatVersion)
+            Assert.Equal(5, migrated.FormatVersion)
             Assert.False(migrated.World.Objects[player.Id].Properties.ContainsKey PlayerObjects.InventoryProperty)
 
             let stackId = CarriedItems.migrationStackId player.Id "wood"
@@ -313,6 +313,114 @@ module SnapshotPersistenceTests =
                 Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "look" state
 
             Assert.NotEqual<string>("command.unknown", looked.Messages |> List.head |> fun message -> message.Key)
+        | Error error -> Assert.True(false, error)
+
+    let private staleThingBehaviorsSource =
+        let placeableIndex = BehaviorSources.thing.IndexOf("class PlaceableBehavior", StringComparison.Ordinal)
+
+        BehaviorSources.thing.Substring(0, placeableIndex).TrimEnd()
+        + "\n\nconst thingBehaviorClasses = { ThingBehavior };"
+
+    let private snapshotWithStaleThingBehaviors snapshot =
+        let thingModule = snapshot.World.BehaviorModules["thing-behaviors"]
+
+        { snapshot with
+            World =
+                { snapshot.World with
+                    BehaviorModules =
+                        Map.add
+                            "thing-behaviors"
+                            { thingModule with
+                                Source = staleThingBehaviorsSource }
+                            snapshot.World.BehaviorModules } }
+
+    let private snapshotWithStaleAdminEditedThingBehaviors snapshot =
+        let thingModule = snapshot.World.BehaviorModules["thing-behaviors"]
+        let staleHash = BehaviorSources.hashSource staleThingBehaviorsSource
+
+        { snapshot with
+            World =
+                { snapshot.World with
+                    BehaviorModules =
+                        Map.add
+                            "thing-behaviors"
+                            { thingModule with
+                                Source = staleThingBehaviorsSource
+                                Provenance = AdminEdited
+                                SyncedSeedHash = staleHash }
+                            snapshot.World.BehaviorModules } }
+
+    [<Fact>]
+    let ``Migration repairs stale seed behavior module sources when referenced classes are missing`` () =
+        let legacySnapshot = createSnapshot () |> snapshotWithStaleThingBehaviors
+
+        match SnapshotMigrations.migrate legacySnapshot with
+        | Ok repaired ->
+            let thingSource = repaired.World.BehaviorModules["thing-behaviors"].Source
+            Assert.Contains("PlaceableBehavior", thingSource)
+            Assert.Contains("dismantle", thingSource)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Migration does not auto-upgrade admin-edited behavior modules when seed drifts`` () =
+        let legacySnapshot = createSnapshot () |> snapshotWithStaleAdminEditedThingBehaviors
+
+        match SnapshotMigrations.migrate legacySnapshot with
+        | Ok repaired ->
+            let thingSource = repaired.World.BehaviorModules["thing-behaviors"].Source
+            Assert.DoesNotContain("PlaceableBehavior", thingSource)
+            Assert.Equal(AdminEdited, repaired.World.BehaviorModules["thing-behaviors"].Provenance)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Hydration fails when behavior graph references are incoherent`` () =
+        let forest = ObjectDatabase.initialState.Objects["forest"]
+        let invalidForest = { forest with BehaviorClassName = "NonExistentBehavior" }
+        let snapshot = createSnapshot ()
+
+        let invalidSnapshot =
+            { snapshot with
+                World =
+                    { snapshot.World with
+                        Objects = Map.add forest.Id invalidForest snapshot.World.Objects } }
+
+        match SnapshotHydration.hydrate mockCompile mockInspect invalidSnapshot with
+        | Ok _ -> Assert.True(false, "Expected incoherent behavior graph references to fail hydration.")
+        | Error error -> Assert.Contains("NonExistentBehavior", error)
+
+    [<Fact>]
+    let ``Hydration repairs stale thing-behaviors source required by craft recipes`` () =
+        let contentRoot =
+            Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "BrokenRealm.Server"))
+
+        let legacySnapshot = createSnapshot () |> snapshotWithStaleThingBehaviors
+
+        match
+            SnapshotHydration.hydrate
+                (ScriptCompiler.compile contentRoot)
+                Scripting.inspectBehaviorModule
+                legacySnapshot
+        with
+        | Ok(state, repairedSnapshot) ->
+            Assert.Contains("PlaceableBehavior", repairedSnapshot.World.BehaviorModules["thing-behaviors"].Source)
+            Assert.True(state.BehaviorModules["thing-behaviors"].Classes.ContainsKey "PlaceableBehavior")
+
+            let withWood = CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "wood" 2
+
+            let crafted =
+                Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft stool" withWood
+
+            Assert.Equal(
+                0,
+                PlayerObjects.inventory crafted.State GameSnapshots.PrototypeCharacterId
+                |> Map.tryFind "wood"
+                |> Option.defaultValue 0)
+
+            let stools =
+                Kernel.contentsOf crafted.State "forest"
+                |> List.filter (fun gameObject -> gameObject.Tags.Contains "stool")
+
+            Assert.Equal(1, stools.Length)
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
@@ -413,8 +521,7 @@ module KernelTests =
     let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }
 
     let private forestSource = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.location; BehaviorSources.forest ]
-    let private forestCompiled =
-        BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.locationCompiled; BehaviorSources.forestCompiled ]
+    let private forestCompiled = ObjectDatabase.initialState.BehaviorModules["forest-behaviors"].CompiledSource
 
     let private updateForestBehavior compiledSource source =
         let classes = ObjectDatabase.initialState.BehaviorModules["forest-behaviors"].Classes
@@ -484,7 +591,10 @@ module KernelTests =
 
     [<Fact>]
     let ``Admin catalog lists behavior modules and classes`` () =
-        let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
+        let timestamp = DateTimeOffset(2026, 6, 27, 12, 0, 0, TimeSpan.Zero)
+        let snapshot = (InMemoryGameStore(ObjectDatabase.initialState, fun () -> timestamp)).GetSnapshot()
+        let serverRoot = BehaviorSources.tryResolveServerRoot ()
+        let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState snapshot serverRoot
 
         Assert.Equal<string list>(
             [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
@@ -1520,8 +1630,7 @@ module ScriptCompilerTests =
 module BehaviorClassRuntimeTests =
     let private forest = ObjectDatabase.initialState.Objects["forest"]
     let private forestSource = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.location; BehaviorSources.forest ]
-    let private forestCompiled =
-        BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.locationCompiled; BehaviorSources.forestCompiled ]
+    let private forestCompiled = ObjectDatabase.initialState.BehaviorModules["forest-behaviors"].CompiledSource
 
     let rec private findRepoRoot (directory: System.IO.DirectoryInfo) =
         if System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "BrokenRealm.slnx")) then
@@ -1611,7 +1720,7 @@ module BehaviorClassRuntimeTests =
     let ``Checked-in anonymous behavior matches TypeScript source behavior`` () =
         let source = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.anonymous ]
         let compiled = compileBehavior source |> Result.defaultWith failwith
-        let checkedIn = BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.anonymousCompiled ]
+        let checkedIn = ObjectDatabase.initialState.BehaviorModules["anonymous-behaviors"].CompiledSource
         let value =
             { BehaviorModuleId = "anonymous-behaviors"
               BehaviorClassName = "TrailTokenBehavior"

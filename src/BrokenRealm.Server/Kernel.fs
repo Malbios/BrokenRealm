@@ -660,13 +660,47 @@ module Kernel =
 
         affectedModules, affectedObjects
 
-    let listAdminBehaviorModules (state: GameState) =
+    let listAdminBehaviorModules (state: GameState) (snapshot: GameSnapshot) (serverRoot: string option) =
+        let graphReferences = BehaviorGraph.collectBehaviorGraphReferences snapshot
+
         state.BehaviorModules
         |> Map.toList
         |> List.map (fun (_, behaviorModule) ->
+            let snapshotModule =
+                snapshot.World.BehaviorModules
+                |> Map.find behaviorModule.Id
+
+            let seedDrift =
+                match serverRoot with
+                | Some root -> BehaviorGraph.computeSeedDrift root snapshotModule
+                | None ->
+                    ({ SeedHashChanged = false
+                       SyncedSeedHash = snapshotModule.SyncedSeedHash
+                       CurrentSeedHash = "" }
+                     : BehaviorGraph.SeedDriftInfo)
+
+            let moduleWarnings =
+                graphReferences
+                |> Set.filter (fun (moduleId, _) -> moduleId = behaviorModule.Id)
+                |> Set.toList
+                |> List.choose (fun (moduleId, className) ->
+                    if behaviorModule.Classes.ContainsKey className then
+                        None
+                    else
+                        Some $"Missing class '{className}' in module '{moduleId}'.")
+
             { moduleId = behaviorModule.Id
               dependencies = behaviorModule.Dependencies
-              classes = behaviorModule.Classes |> Map.toList |> List.map fst })
+              classes = behaviorModule.Classes |> Map.toList |> List.map fst
+              provenance =
+                  match snapshotModule.Provenance with
+                  | SeedSynced -> "seedSynced"
+                  | AdminEdited -> "adminEdited"
+              seedDrift =
+                  { seedHashChanged = seedDrift.SeedHashChanged
+                    syncedSeedHash = seedDrift.SyncedSeedHash
+                    currentSeedHash = seedDrift.CurrentSeedHash }
+              graphWarnings = moduleWarnings })
 
     let recompileBehaviorModules
         (compile: string -> Result<string, CompilerDiagnostic list>)
@@ -704,6 +738,8 @@ module Kernel =
 
                                 Ok(activeBehaviorModules |> Map.add moduleId updatedModule)))
                 (Ok seedBehaviorModules)
+
+    let activateBehaviorGraph = recompileBehaviorModules
 
     let tryUpdateBehaviorModule
         (compile: string -> Result<string, CompilerDiagnostic list>)

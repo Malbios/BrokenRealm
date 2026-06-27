@@ -2,7 +2,6 @@ namespace BrokenRealm.Server
 
 open System
 open System.IO
-
 module SnapshotMigrations =
     let private prototypeAccount: AccountSnapshot =
         { Id = GameSnapshots.PrototypeAccountId
@@ -143,54 +142,62 @@ module SnapshotMigrations =
         else
             snapshot
 
-    let rec private valueBehaviorModuleIds value =
-        match value with
-        | AnonymousValue anonymous ->
-            anonymous.BehaviorModuleId
-            :: (anonymous.Properties |> Map.toList |> List.collect (fun (_, nested) -> valueBehaviorModuleIds nested))
-        | ListValue values -> values |> List.collect valueBehaviorModuleIds
-        | MapValue values -> values |> Map.toList |> List.collect (fun (_, nested) -> valueBehaviorModuleIds nested)
-        | _ -> []
+    let objectBehaviorModuleIds = BehaviorGraph.objectBehaviorModuleIds
 
-    let objectBehaviorModuleIds (gameObject: GameObject) =
-        gameObject.BehaviorModuleId
-        :: (gameObject.Properties |> Map.toList |> List.collect (fun (_, value) -> valueBehaviorModuleIds value))
+    let private migrateV5 snapshot =
+        match BehaviorSources.tryResolveServerRoot () with
+        | None ->
+            { snapshot with
+                FormatVersion = 5
+                World =
+                    { snapshot.World with
+                        BehaviorModules =
+                            snapshot.World.BehaviorModules
+                            |> Map.map (fun _ moduleSnapshot ->
+                                { moduleSnapshot with
+                                    Provenance =
+                                        if moduleSnapshot.Provenance = SeedSynced && String.IsNullOrWhiteSpace moduleSnapshot.SyncedSeedHash then
+                                            SeedSynced
+                                        else
+                                            moduleSnapshot.Provenance
+                                    SyncedSeedHash =
+                                        if String.IsNullOrWhiteSpace moduleSnapshot.SyncedSeedHash then
+                                            BehaviorSources.hashSource moduleSnapshot.Source
+                                        else
+                                            moduleSnapshot.SyncedSeedHash }) } }
+        | Some serverRoot ->
+            let seedHashes =
+                BehaviorSources.seedManifest serverRoot
+                |> List.map (fun entry -> entry.ModuleId, entry.Sha256)
+                |> Map.ofList
 
-    let private referencedBehaviorModuleIds (objects: Map<ObjectId, GameObject>) =
-        objects
-        |> Map.toList
-        |> List.collect (fun (_, gameObject) -> objectBehaviorModuleIds gameObject)
-        |> Set.ofList
-
-    let private seedBehaviorModuleSnapshots activatedAt =
-        ObjectDatabase.initialState.BehaviorModules
-        |> Map.map (fun _ behaviorModule ->
-            { Id = behaviorModule.Id
-              RegistryName = behaviorModule.RegistryName
-              Dependencies = behaviorModule.Dependencies
-              Source = behaviorModule.Source
-              SourceRevision = 0L
-              ActivationRevision = 0L
-              ActivatedAt = activatedAt })
-
-    let repairMissingBehaviorModules snapshot =
-        let referenced = referencedBehaviorModuleIds snapshot.World.Objects
-        let seed = seedBehaviorModuleSnapshots DateTimeOffset.UtcNow
-
-        let repairedModules =
-            referenced
-            |> Set.fold
-                (fun modules moduleId ->
-                    if Map.containsKey moduleId modules then
-                        modules
-                    elif Map.containsKey moduleId seed then
-                        Map.add moduleId seed[moduleId] modules
-                    else
-                        modules)
+            let modules =
                 snapshot.World.BehaviorModules
+                |> Map.map (fun moduleId moduleSnapshot ->
+                    let sourceHash = BehaviorSources.hashSource moduleSnapshot.Source
 
-        { snapshot with
-            World = { snapshot.World with BehaviorModules = repairedModules } }
+                    match Map.tryFind moduleId seedHashes with
+                    | Some seedHash when sourceHash = seedHash ->
+                        { moduleSnapshot with
+                            Provenance = SeedSynced
+                            SyncedSeedHash = seedHash }
+                    | Some seedHash ->
+                        { moduleSnapshot with
+                            Provenance = AdminEdited
+                            SyncedSeedHash = seedHash }
+                    | None ->
+                        { moduleSnapshot with
+                            Provenance = AdminEdited
+                            SyncedSeedHash = sourceHash })
+
+            { snapshot with
+                FormatVersion = 5
+                World = { snapshot.World with BehaviorModules = modules } }
+
+    let private reconcileSnapshot snapshot =
+        match BehaviorSources.tryResolveServerRoot () with
+        | Some serverRoot -> BehaviorGraph.reconcileBehaviorModules serverRoot snapshot
+        | None -> snapshot
 
     let migrate snapshot =
         if snapshot.FormatVersion > GameSnapshots.CurrentFormatVersion then
@@ -216,9 +223,15 @@ module SnapshotMigrations =
                 else
                     withSeed
 
-            migrateV3 afterV2
-            |> repairMissingBehaviorModules
-            |> Ok
+            let afterV4 = migrateV3 afterV2
+
+            let afterV5 =
+                if afterV4.FormatVersion < 5 then
+                    migrateV5 afterV4
+                else
+                    afterV4
+
+            afterV5 |> reconcileSnapshot |> Ok
 
 module SnapshotHydration =
     let private behaviorModulesFromSnapshot (modules: Map<string, BehaviorModuleSnapshot>) =
@@ -353,27 +366,31 @@ module SnapshotHydration =
         =
         SnapshotMigrations.migrate snapshot
         |> Result.bind (fun migrated ->
-        validateSnapshot migrated
-        |> Result.bind (fun () ->
-            let runtimeBehaviorModules =
-                behaviorModulesFromSnapshot snapshot.World.BehaviorModules
+            validateSnapshot migrated
+            |> Result.bind (fun () ->
+                let runtimeBehaviorModules =
+                    behaviorModulesFromSnapshot migrated.World.BehaviorModules
 
-            Kernel.recompileBehaviorModules compile inspect runtimeBehaviorModules
-            |> Result.mapError (fun diagnostics ->
-                diagnostics
-                |> List.map _.message
-                |> String.concat Environment.NewLine)
-            |> Result.bind (fun activeBehaviorModules ->
-                let activeBehaviorModules = mergeSeedBehaviorModules activeBehaviorModules
+                Kernel.recompileBehaviorModules compile inspect runtimeBehaviorModules
+                |> Result.mapError (fun diagnostics ->
+                    diagnostics
+                    |> List.map _.message
+                    |> String.concat Environment.NewLine)
+                |> Result.bind (fun activeBehaviorModules ->
+                    let activeBehaviorModules = mergeSeedBehaviorModules activeBehaviorModules
+                    let graphReferences = BehaviorGraph.collectBehaviorGraphReferences migrated
 
-                let state =
-                    { ItemIds = snapshot.World.ItemIds
-                      BehaviorModules = activeBehaviorModules
-                      Objects = snapshot.World.Objects
-                      Accounts = accountsFromSnapshot snapshot.Accounts }
+                    BehaviorGraph.validateBehaviorGraphReferences activeBehaviorModules graphReferences
+                    |> Result.mapError (String.concat Environment.NewLine)
+                    |> Result.bind (fun () ->
+                        let state =
+                            { ItemIds = migrated.World.ItemIds
+                              BehaviorModules = activeBehaviorModules
+                              Objects = migrated.World.Objects
+                              Accounts = accountsFromSnapshot migrated.Accounts }
 
-                Kernel.validateGameState state
-                |> Result.map (fun () -> state, migrated))))
+                        Kernel.validateGameState state
+                        |> Result.map (fun () -> state, migrated)))))
 
 type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -> DateTimeOffset, ?seedSnapshot: GameSnapshot) =
     let inner = InMemoryGameStore(initialState, ?clock = clock, ?seedSnapshot = seedSnapshot)
@@ -429,6 +446,8 @@ module GameStoreBootstrap =
         |> Result.bind (SnapshotHydration.hydrate (ScriptCompiler.compile contentRoot) Scripting.inspectBehaviorModule)
 
     let createGameStore contentRoot snapshotPath =
+        ObjectDatabase.bootstrap contentRoot |> ignore
+
         let store =
             if File.Exists snapshotPath then
                 match tryLoad contentRoot snapshotPath with

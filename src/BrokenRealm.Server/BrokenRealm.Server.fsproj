@@ -8,17 +8,18 @@
     <Compile Include="Domain.fs" />
     <Compile Include="CarriedItems.fs" />
     <Compile Include="PlayerObjects.fs" />
+    <Compile Include="BehaviorSources.fs" />
     <Compile Include="Persistence.fs" />
     <Compile Include="Localization.fs" />
     <Compile Include="Auth.fs" />
-    <Compile Include="BehaviorSources.fs" />
     <Compile Include="WorldObjects.fs" />
     <Compile Include="Scripting.fs" />
-    <Compile Include="ObjectDatabase.fs" />
     <Compile Include="CommandMatching.fs" />
     <Compile Include="ScriptCompiler.fs" />
     <Compile Include="Limbo.fs" />
+    <Compile Include="BehaviorGraph.fs" />
     <Compile Include="Kernel.fs" />
+    <Compile Include="ObjectDatabase.fs" />
     <Compile Include="Sessions.fs" />
     <Compile Include="RoomBroadcast.fs" />
     <Compile Include="GameHub.fs" />
@@ -31,6 +32,12 @@
 
   <ItemGroup>
     <PackageReference Include="Jint" Version="4.10.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="behaviors\seed\**\*.ts">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

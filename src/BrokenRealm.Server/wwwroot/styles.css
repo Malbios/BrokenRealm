@@ -222,6 +222,18 @@ select {
   text-transform: uppercase;
 }
 
+.detail-group-warning {
+  grid-column: 1 / -1;
+  border-color: rgba(214, 164, 84, 0.35);
+}
+
+.detail-warning-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #e8c98a;
+  font-size: 12px;
+}
+
 .detail-value {
   color: #cbd9ce;
   font-size: 12px;

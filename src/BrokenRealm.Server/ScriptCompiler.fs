@@ -6,7 +6,7 @@ open System.IO
 open System.Text.RegularExpressions
 
 module ScriptCompiler =
-    let private tryFindServerRoot contentRoot =
+    let tryFindServerRoot contentRoot =
         [ contentRoot
           Path.Combine(contentRoot, "src", "BrokenRealm.Server") ]
         |> List.map Path.GetFullPath

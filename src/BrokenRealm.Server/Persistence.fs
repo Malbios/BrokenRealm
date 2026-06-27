@@ -2,6 +2,10 @@ namespace BrokenRealm.Server
 
 open System
 
+type BehaviorModuleProvenance =
+    | SeedSynced
+    | AdminEdited
+
 type BehaviorModuleSnapshot =
     { Id: string
       RegistryName: string
@@ -9,7 +13,9 @@ type BehaviorModuleSnapshot =
       Source: string
       SourceRevision: int64
       ActivationRevision: int64
-      ActivatedAt: DateTimeOffset }
+      ActivatedAt: DateTimeOffset
+      Provenance: BehaviorModuleProvenance
+      SyncedSeedHash: string }
 
 type WorldSnapshot =
     { Revision: int64
@@ -49,7 +55,7 @@ type CommitConflict =
 
 module GameSnapshots =
     [<Literal>]
-    let CurrentFormatVersion = 4
+    let CurrentFormatVersion = 5
 
     [<Literal>]
     let PrototypeAccountId = "prototype-account"
@@ -60,14 +66,47 @@ module GameSnapshots =
     [<Literal>]
     let PrototypeScoutCharacterId = "prototype-scout"
 
-    let private captureBehavior now sourceRevision activationRevision (behaviorModule: BehaviorModule) =
+    let private syncedSeedHashForModule moduleId =
+        match BehaviorSources.tryResolveServerRoot () with
+        | Some serverRoot ->
+            BehaviorSources.seedManifest serverRoot
+            |> List.tryFind (fun entry -> entry.ModuleId = moduleId)
+            |> Option.map _.Sha256
+            |> Option.defaultValue (BehaviorSources.hashSource "")
+        | None -> BehaviorSources.hashSource ""
+
+    let private captureBehavior
+        now
+        sourceRevision
+        activationRevision
+        provenance
+        syncedSeedHash
+        (behaviorModule: BehaviorModule)
+        =
         { Id = behaviorModule.Id
           RegistryName = behaviorModule.RegistryName
           Dependencies = behaviorModule.Dependencies
           Source = behaviorModule.Source
           SourceRevision = sourceRevision
           ActivationRevision = activationRevision
-          ActivatedAt = now }
+          ActivatedAt = now
+          Provenance = provenance
+          SyncedSeedHash = syncedSeedHash }
+
+    let private provenanceForSourceChange moduleId (stored: BehaviorModuleSnapshot) newSource =
+        let sourceHash = BehaviorSources.hashSource newSource
+
+        match BehaviorSources.tryResolveServerRoot () with
+        | Some serverRoot ->
+            let currentSeedHash =
+                BehaviorSources.seedManifest serverRoot
+                |> List.tryFind (fun entry -> entry.ModuleId = moduleId)
+                |> Option.map _.Sha256
+
+            match currentSeedHash with
+            | Some seedHash when sourceHash = seedHash -> SeedSynced, seedHash
+            | _ -> AdminEdited, stored.SyncedSeedHash
+        | None -> AdminEdited, stored.SyncedSeedHash
 
     let private worldObjects (objects: Map<ObjectId, GameObject>) =
         objects
@@ -87,7 +126,17 @@ module GameSnapshots =
     let create now (state: GameState) =
         let behaviors =
             state.BehaviorModules
-            |> Map.map (fun _ behaviorModule -> captureBehavior now 0L 0L behaviorModule)
+            |> Map.map (fun moduleId behaviorModule ->
+                let syncedSeedHash =
+                    match BehaviorSources.tryResolveServerRoot () with
+                    | Some serverRoot ->
+                        BehaviorSources.seedManifest serverRoot
+                        |> List.tryFind (fun entry -> entry.ModuleId = moduleId)
+                        |> Option.map _.Sha256
+                        |> Option.defaultValue (BehaviorSources.hashSource behaviorModule.Source)
+                    | None -> BehaviorSources.hashSource behaviorModule.Source
+
+                captureBehavior now 0L 0L SeedSynced syncedSeedHash behaviorModule)
 
         { FormatVersion = CurrentFormatVersion
           World =
@@ -114,8 +163,17 @@ module GameSnapshots =
                      && stored.Source = behaviorModule.Source ->
                 stored
             | Some stored ->
-                captureBehavior now (stored.SourceRevision + 1L) (stored.ActivationRevision + 1L) behaviorModule
-            | None -> captureBehavior now 0L 0L behaviorModule)
+                let provenance, syncedSeedHash = provenanceForSourceChange id stored behaviorModule.Source
+
+                captureBehavior
+                    now
+                    (stored.SourceRevision + 1L)
+                    (stored.ActivationRevision + 1L)
+                    provenance
+                    syncedSeedHash
+                    behaviorModule
+            | None ->
+                captureBehavior now 0L 0L SeedSynced (syncedSeedHashForModule id) behaviorModule)
 
     let private playerChanged (previousState: GameState) (currentState: GameState) (previousPlayer: GameObject) (currentPlayer: GameObject) =
         previousPlayer.LocationId <> currentPlayer.LocationId

@@ -1,68 +1,15 @@
 namespace BrokenRealm.Server
 
+open System
+open System.IO
+
 module ObjectDatabase =
-    let private behaviorModule id registryName dependencies source compiledSource =
-        let classes =
-            match Scripting.inspectBehaviorModule registryName compiledSource with
-            | Ok classes -> classes
-            | Error diagnostic -> failwith diagnostic.message
+    let private resolveContentRoot () =
+        match BehaviorSources.tryResolveServerRoot () with
+        | Some serverRoot -> serverRoot
+        | None -> failwith "Could not resolve content root containing Scripting/game-api.d.ts."
 
-        { Id = id
-          RegistryName = registryName
-          Dependencies = dependencies
-          Source = source
-          CompiledSource = compiledSource
-          Classes = classes }
-
-    let initialState =
-        let coreCompiled = BehaviorSources.coreCompiled
-        let playerCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.playerCompiled ]
-        let locationCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.locationCompiled ]
-        let forestCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.forestCompiled ]
-        let villageCompiled = BehaviorSources.join [ locationCompiled; BehaviorSources.villageCompiled ]
-        let thingCompiled = BehaviorSources.join [ coreCompiled; BehaviorSources.thingCompiled ]
-
-        let behaviorModules =
-            [ behaviorModule "core-behaviors" "coreBehaviorClasses" [] BehaviorSources.core coreCompiled
-              behaviorModule
-                  "player-behaviors"
-                  "playerBehaviorClasses"
-                  [ "core-behaviors" ]
-                  BehaviorSources.player
-                  playerCompiled
-              behaviorModule
-                  "location-behaviors"
-                  "locationBehaviorClasses"
-                  [ "core-behaviors" ]
-                  BehaviorSources.location
-                  locationCompiled
-              behaviorModule
-                  "forest-behaviors"
-                  "forestBehaviorClasses"
-                  [ "location-behaviors" ]
-                  BehaviorSources.forest
-                  forestCompiled
-              behaviorModule
-                  "village-behaviors"
-                  "villageBehaviorClasses"
-                  [ "location-behaviors" ]
-                  BehaviorSources.village
-                  villageCompiled
-              behaviorModule
-                  "thing-behaviors"
-                  "thingBehaviorClasses"
-                  [ "core-behaviors" ]
-                  BehaviorSources.thing
-                  thingCompiled
-              behaviorModule
-                  "anonymous-behaviors"
-                  "anonymousBehaviorClasses"
-                  [ "core-behaviors" ]
-                  BehaviorSources.anonymous
-                  (BehaviorSources.join [ coreCompiled; BehaviorSources.anonymousCompiled ]) ]
-            |> List.map (fun behaviorModule -> behaviorModule.Id, behaviorModule)
-            |> Map.ofList
-
+    let private buildWorldState (behaviorModules: Map<string, BehaviorModule>) =
         let forest =
             { Id = "forest"
               Name = "forest"
@@ -165,3 +112,45 @@ module ObjectDatabase =
                   prototypePlayer.Id, prototypePlayer
                   prototypeScout.Id, prototypeScout ]
           Accounts = Map.ofList [ prototypeAccount.Id, prototypeAccount ] }
+
+    let private seedBehaviorModules (contentRoot: string) =
+        match ScriptCompiler.tryFindServerRoot contentRoot with
+        | None -> failwith "Could not find server root containing Scripting/game-api.d.ts."
+        | Some serverRoot ->
+            BehaviorSources.loadSeedModules serverRoot
+            |> List.map (fun seedModule ->
+                { Id = seedModule.Id
+                  RegistryName = seedModule.RegistryName
+                  Dependencies = seedModule.Dependencies
+                  Source = seedModule.Source
+                  CompiledSource = ""
+                  Classes = Map.empty })
+            |> List.map (fun behaviorModule -> behaviorModule.Id, behaviorModule)
+            |> Map.ofList
+
+    let private compileSeedBehaviorModules contentRoot (seedModules: Map<string, BehaviorModule>) =
+        Kernel.recompileBehaviorModules
+            (ScriptCompiler.compile contentRoot)
+            Scripting.inspectBehaviorModule
+            seedModules
+        |> Result.defaultWith (fun diagnostics ->
+            let message =
+                diagnostics
+                |> List.map _.message
+                |> String.concat Environment.NewLine
+
+            failwith $"Failed to compile seed behavior modules: {message}")
+
+    let mutable private cachedInitialState: GameState option = None
+
+    let bootstrap (contentRoot: string) =
+        let seedModules = seedBehaviorModules contentRoot
+        let compiledModules = compileSeedBehaviorModules contentRoot seedModules
+        let state = buildWorldState compiledModules
+        cachedInitialState <- Some state
+        state
+
+    let initialState =
+        match cachedInitialState with
+        | Some state -> state
+        | None -> bootstrap (resolveContentRoot())

@@ -227,6 +227,12 @@ type SelectCharacterResponse =
       characters: SessionCharacterResponse list }
 
 [<CLIMutable>]
+type BehaviorSeedDriftResponse =
+    { seedHashChanged: bool
+      syncedSeedHash: string
+      currentSeedHash: string }
+
+[<CLIMutable>]
 type BehaviorModuleResponse =
     { moduleId: string
       sourceRevision: int64
@@ -234,13 +240,19 @@ type BehaviorModuleResponse =
       classes: string list
       affectedModules: string list
       affectedObjects: string list
-      source: string }
+      source: string
+      provenance: string
+      seedDrift: BehaviorSeedDriftResponse
+      graphWarnings: string list }
 
 [<CLIMutable>]
 type AdminBehaviorModuleResponse =
     { moduleId: string
       dependencies: string list
-      classes: string list }
+      classes: string list
+      provenance: string
+      seedDrift: BehaviorSeedDriftResponse
+      graphWarnings: string list }
 
 [<CLIMutable>]
 type BehaviorModuleUpdateRequest =

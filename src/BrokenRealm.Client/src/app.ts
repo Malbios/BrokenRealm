@@ -94,6 +94,12 @@ type SelectCharacterResponse = AuthResponse;
 
 const gameFetchInit: RequestInit = { credentials: "include" };
 
+type BehaviorSeedDrift = {
+  seedHashChanged: boolean;
+  syncedSeedHash: string;
+  currentSeedHash: string;
+};
+
 type ScriptResponse = {
   moduleId: string;
   sourceRevision: number;
@@ -102,6 +108,9 @@ type ScriptResponse = {
   source: string;
   affectedModules: string[];
   affectedObjects: string[];
+  provenance?: string;
+  seedDrift?: BehaviorSeedDrift;
+  graphWarnings?: string[];
 };
 
 type ScriptErrorResponse = {
@@ -135,6 +144,9 @@ type AdminBehaviorModule = {
   moduleId: string;
   dependencies: string[];
   classes: string[];
+  provenance?: string;
+  seedDrift?: BehaviorSeedDrift;
+  graphWarnings?: string[];
 };
 
 const form = document.querySelector<HTMLFormElement>("#command-form");
@@ -158,6 +170,7 @@ const editorHost = document.querySelector<HTMLDivElement>("#script-editor");
 const scriptSource = document.querySelector<HTMLTextAreaElement>("#script-source");
 const checkScript = document.querySelector<HTMLButtonElement>("#check-script");
 const reloadScript = document.querySelector<HTMLButtonElement>("#reload-script");
+const mergeSeedScript = document.querySelector<HTMLButtonElement>("#merge-seed-script");
 const saveScript = document.querySelector<HTMLButtonElement>("#save-script");
 const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
 const behaviorModuleSelect = document.querySelector<HTMLSelectElement>("#behavior-module");
@@ -313,12 +326,33 @@ async function setDiagnostics(diagnostics: CompilerDiagnostic[]): Promise<void> 
   scriptStatus.appendChild(list);
 }
 
+function provenanceLabel(provenance: string | undefined): string {
+  if (provenance === "adminEdited") return "Admin edited";
+  if (provenance === "seedSynced") return "Seed synced";
+  return provenance ?? "Unknown";
+}
+
+function moduleDriftSummary(module: AdminBehaviorModule | ScriptResponse): string {
+  const warnings = module.graphWarnings?.length ?? 0;
+  const drift = module.seedDrift?.seedHashChanged ?? false;
+  if (warnings > 0 && drift) return "drift + warnings";
+  if (warnings > 0) return "graph warnings";
+  if (drift) return "seed drift";
+  return "";
+}
+
 function renderModuleDetails(payload: ScriptResponse): void {
   if (!moduleDetails) return;
   moduleDetails.replaceChildren();
 
-  const details = [
+  const driftText = payload.seedDrift?.seedHashChanged
+    ? "Checked-in seed changed since this module was last synced."
+    : "Matches the current checked-in seed hash.";
+
+  const details: [string, string][] = [
+    ["Provenance", provenanceLabel(payload.provenance)],
     ["Source revision", payload.sourceRevision.toString()],
+    ["Seed drift", driftText],
     ["Classes", payload.classes.join(", ") || "none"],
     ["Dependencies", payload.dependencies.join(", ") || "none"],
     ["Affected modules", payload.affectedModules.join(", ") || payload.moduleId],
@@ -337,6 +371,29 @@ function renderModuleDetails(payload: ScriptResponse): void {
     group.append(labelElement, valueElement);
     moduleDetails.appendChild(group);
   });
+
+  if (payload.graphWarnings && payload.graphWarnings.length > 0) {
+    const warningGroup = document.createElement("div");
+    warningGroup.className = "detail-group detail-group-warning";
+    const warningLabel = document.createElement("span");
+    warningLabel.className = "detail-label";
+    warningLabel.textContent = "Graph warnings";
+    const warningList = document.createElement("ul");
+    warningList.className = "detail-warning-list";
+    payload.graphWarnings.forEach((warning) => {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      warningList.appendChild(item);
+    });
+    warningGroup.append(warningLabel, warningList);
+    moduleDetails.appendChild(warningGroup);
+  }
+
+  if (mergeSeedScript) {
+    const canMerge = payload.provenance === "adminEdited" || (payload.seedDrift?.seedHashChanged ?? false);
+    mergeSeedScript.hidden = !canMerge;
+    mergeSeedScript.disabled = !canMerge;
+  }
 }
 
 function updateEditorTitle(moduleId: string): void {
@@ -556,9 +613,36 @@ async function loadBehaviorModules(): Promise<void> {
     const dependencyText = behaviorModule.dependencies.length > 0
       ? ` depends on ${behaviorModule.dependencies.join(", ")}`
       : "";
-    option.textContent = `${behaviorModule.moduleId}${dependencyText}`;
+    const driftText = moduleDriftSummary(behaviorModule);
+    const driftSuffix = driftText ? ` [${driftText}]` : "";
+    option.textContent = `${behaviorModule.moduleId}${dependencyText}${driftSuffix}`;
     behaviorModuleSelect.appendChild(option);
   });
+}
+
+async function mergeSeedFromServer(moduleId: string): Promise<void> {
+  if (!window.confirm(`Replace ${moduleId} with the checked-in seed source? Unsaved edits will be lost.`)) {
+    return;
+  }
+
+  const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}/merge-seed`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ScriptErrorResponse | null;
+    const message = payload?.diagnostics?.[0]?.message ?? `Could not merge seed for ${moduleId}.`;
+    setStatus(message, true);
+    return;
+  }
+
+  const payload = (await response.json()) as { moduleId: string; sourceRevision: number };
+  setStatus(`Merged seed into ${payload.moduleId}. Revision ${payload.sourceRevision}.`);
+  behaviorModules = [];
+  if (behaviorModuleSelect) behaviorModuleSelect.replaceChildren();
+  await loadBehaviorModules();
+  await reloadModuleFromServer(moduleId);
 }
 
 function initializeEditor(): Promise<void> {
@@ -1044,6 +1128,14 @@ reloadScript?.addEventListener("click", () => {
     return;
   }
   void reloadModuleFromServer(moduleId);
+});
+mergeSeedScript?.addEventListener("click", () => {
+  const moduleId = selectedModuleId();
+  if (!moduleId) {
+    setStatus("No editable behavior module is selected.", true);
+    return;
+  }
+  void mergeSeedFromServer(moduleId);
 });
 checkScript?.addEventListener("click", () => {
   void checkCurrentScript().finally(() => {

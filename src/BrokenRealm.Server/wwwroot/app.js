@@ -21,6 +21,7 @@ const editorHost = document.querySelector("#script-editor");
 const scriptSource = document.querySelector("#script-source");
 const checkScript = document.querySelector("#check-script");
 const reloadScript = document.querySelector("#reload-script");
+const mergeSeedScript = document.querySelector("#merge-seed-script");
 const saveScript = document.querySelector("#save-script");
 const scriptStatus = document.querySelector("#script-status");
 const behaviorModuleSelect = document.querySelector("#behavior-module");
@@ -169,12 +170,35 @@ async function setDiagnostics(diagnostics) {
     });
     scriptStatus.appendChild(list);
 }
+function provenanceLabel(provenance) {
+    if (provenance === "adminEdited")
+        return "Admin edited";
+    if (provenance === "seedSynced")
+        return "Seed synced";
+    return provenance ?? "Unknown";
+}
+function moduleDriftSummary(module) {
+    const warnings = module.graphWarnings?.length ?? 0;
+    const drift = module.seedDrift?.seedHashChanged ?? false;
+    if (warnings > 0 && drift)
+        return "drift + warnings";
+    if (warnings > 0)
+        return "graph warnings";
+    if (drift)
+        return "seed drift";
+    return "";
+}
 function renderModuleDetails(payload) {
     if (!moduleDetails)
         return;
     moduleDetails.replaceChildren();
+    const driftText = payload.seedDrift?.seedHashChanged
+        ? "Checked-in seed changed since this module was last synced."
+        : "Matches the current checked-in seed hash.";
     const details = [
+        ["Provenance", provenanceLabel(payload.provenance)],
         ["Source revision", payload.sourceRevision.toString()],
+        ["Seed drift", driftText],
         ["Classes", payload.classes.join(", ") || "none"],
         ["Dependencies", payload.dependencies.join(", ") || "none"],
         ["Affected modules", payload.affectedModules.join(", ") || payload.moduleId],
@@ -192,6 +216,27 @@ function renderModuleDetails(payload) {
         group.append(labelElement, valueElement);
         moduleDetails.appendChild(group);
     });
+    if (payload.graphWarnings && payload.graphWarnings.length > 0) {
+        const warningGroup = document.createElement("div");
+        warningGroup.className = "detail-group detail-group-warning";
+        const warningLabel = document.createElement("span");
+        warningLabel.className = "detail-label";
+        warningLabel.textContent = "Graph warnings";
+        const warningList = document.createElement("ul");
+        warningList.className = "detail-warning-list";
+        payload.graphWarnings.forEach((warning) => {
+            const item = document.createElement("li");
+            item.textContent = warning;
+            warningList.appendChild(item);
+        });
+        warningGroup.append(warningLabel, warningList);
+        moduleDetails.appendChild(warningGroup);
+    }
+    if (mergeSeedScript) {
+        const canMerge = payload.provenance === "adminEdited" || (payload.seedDrift?.seedHashChanged ?? false);
+        mergeSeedScript.hidden = !canMerge;
+        mergeSeedScript.disabled = !canMerge;
+    }
 }
 function updateEditorTitle(moduleId) {
     if (!verbTitle)
@@ -382,9 +427,33 @@ async function loadBehaviorModules() {
         const dependencyText = behaviorModule.dependencies.length > 0
             ? ` depends on ${behaviorModule.dependencies.join(", ")}`
             : "";
-        option.textContent = `${behaviorModule.moduleId}${dependencyText}`;
+        const driftText = moduleDriftSummary(behaviorModule);
+        const driftSuffix = driftText ? ` [${driftText}]` : "";
+        option.textContent = `${behaviorModule.moduleId}${dependencyText}${driftSuffix}`;
         behaviorModuleSelect.appendChild(option);
     });
+}
+async function mergeSeedFromServer(moduleId) {
+    if (!window.confirm(`Replace ${moduleId} with the checked-in seed source? Unsaved edits will be lost.`)) {
+        return;
+    }
+    const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}/merge-seed`, {
+        method: "POST",
+        credentials: "include",
+    });
+    if (!response.ok) {
+        const payload = (await response.json().catch(() => null));
+        const message = payload?.diagnostics?.[0]?.message ?? `Could not merge seed for ${moduleId}.`;
+        setStatus(message, true);
+        return;
+    }
+    const payload = (await response.json());
+    setStatus(`Merged seed into ${payload.moduleId}. Revision ${payload.sourceRevision}.`);
+    behaviorModules = [];
+    if (behaviorModuleSelect)
+        behaviorModuleSelect.replaceChildren();
+    await loadBehaviorModules();
+    await reloadModuleFromServer(moduleId);
 }
 function initializeEditor() {
     if (editorReady)
@@ -818,6 +887,14 @@ reloadScript?.addEventListener("click", () => {
         return;
     }
     void reloadModuleFromServer(moduleId);
+});
+mergeSeedScript?.addEventListener("click", () => {
+    const moduleId = selectedModuleId();
+    if (!moduleId) {
+        setStatus("No editable behavior module is selected.", true);
+        return;
+    }
+    void mergeSeedFromServer(moduleId);
 });
 checkScript?.addEventListener("click", () => {
     void checkCurrentScript().finally(() => {

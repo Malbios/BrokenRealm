@@ -108,6 +108,9 @@ Current object model:
 - The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`, plus `core-behaviors <- thing-behaviors` and `core-behaviors <- anonymous-behaviors`.
 - Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
 - Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
+- Checked-in seed behavior modules live in `src/BrokenRealm.Server/behaviors/seed/*.ts`. `BehaviorSources.fs` loads those files and builds the seed hash manifest; it does not embed game logic.
+- Persisted behavior modules record `provenance` (`seedSynced` or `adminEdited`) and `syncedSeedHash`. Startup reconciliation upgrades untouched seed-synced modules when checked-in seed changes; admin-edited modules are preserved and show drift in the admin tab.
+- `POST /admin/behaviors/{moduleId}/merge-seed` explicitly replaces a module with current seed source after admin confirmation.
 
 Current endpoints:
 
@@ -115,9 +118,9 @@ Current endpoints:
   - Body: `{ "text": "...", "culture": "en" | "de" }`
   - Player command endpoint.
 - `GET /admin/behaviors`
-  - Lists editable behavior modules and their registered classes.
+  - Lists editable behavior modules with classes, provenance, seed drift, and graph warnings.
 - `GET /admin/behaviors/{moduleId}`
-  - Loads an editable TypeScript behavior module with its current source revision.
+  - Loads an editable TypeScript behavior module with its current source revision, provenance, seed drift, and graph warnings.
 - `PUT /admin/behaviors/{moduleId}`
   - Requires `{ source, expectedSourceRevision }`, TypeScript-checks/compiles the module, reads registered class command metadata, and verifies referenced classes.
   - Returns HTTP 409 before compilation when the loaded revision is stale.
@@ -125,6 +128,8 @@ Current endpoints:
 - `POST /admin/behaviors/{moduleId}/validate`
   - Requires `{ source, expectedSourceRevision }` and runs the same dependency-graph compilation and validation as save without activating or returning candidate state.
   - Returns HTTP 409 when validation is based on stale source.
+- `POST /admin/behaviors/{moduleId}/merge-seed`
+  - Replaces the persisted module with the current checked-in seed source, recompiles the affected graph, and marks the module `seedSynced`.
 - `GET /admin/scripting/game-api.d.ts`
   - Serves the authoritative TypeScript scripting declarations used by Monaco.
 

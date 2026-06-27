@@ -97,6 +97,37 @@ module Program =
                   message = "The behavior module changed after it was loaded. Reload it before saving again." }
                 : BehaviorModuleConflictResponse)
 
+        let serverRoot = ScriptCompiler.tryFindServerRoot contentRoot
+
+        let provenanceLabel provenance =
+            match provenance with
+            | SeedSynced -> "seedSynced"
+            | AdminEdited -> "adminEdited"
+
+        let seedDriftResponse snapshotModule =
+            match serverRoot with
+            | Some root ->
+                let drift = BehaviorGraph.computeSeedDrift root snapshotModule
+
+                { seedHashChanged = drift.SeedHashChanged
+                  syncedSeedHash = drift.SyncedSeedHash
+                  currentSeedHash = drift.CurrentSeedHash }
+            | None ->
+                { seedHashChanged = false
+                  syncedSeedHash = snapshotModule.SyncedSeedHash
+                  currentSeedHash = "" }
+
+        let graphWarningsForModule (gameSnapshot: GameSnapshot) (gameState: GameState) moduleId =
+            let graphReferences = BehaviorGraph.collectBehaviorGraphReferences gameSnapshot
+
+            graphReferences
+            |> Set.filter (fun (referencedModuleId, _) -> referencedModuleId = moduleId)
+            |> Set.toList
+            |> List.choose (fun (referencedModuleId, className) ->
+                match gameState.BehaviorModules |> Map.tryFind referencedModuleId with
+                | Some moduleDefinition when moduleDefinition.Classes.ContainsKey className -> None
+                | _ -> Some $"Missing class '{className}' in module '{referencedModuleId}'.")
+
         let staticRoot = Path.Combine(contentRoot, "wwwroot")
         app.UseDefaultFiles(DefaultFilesOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
         app.UseStaticFiles(StaticFileOptions(FileProvider = new PhysicalFileProvider(staticRoot))) |> ignore
@@ -282,7 +313,10 @@ module Program =
             "/admin/behaviors",
             Func<IResult>(fun () ->
                 lock stateLock (fun () ->
-                    Kernel.listAdminBehaviorModules (gameStore.Read().State) |> Results.Json)))
+                    let snapshot = gameStore.GetSnapshot()
+
+                    Kernel.listAdminBehaviorModules (gameStore.Read().State) snapshot serverRoot
+                    |> Results.Json)))
         |> ignore
 
         app.MapGet(
@@ -297,10 +331,13 @@ module Program =
             "/admin/behaviors/{moduleId}",
             Func<string, IResult>(fun moduleId ->
                 lock stateLock (fun () ->
-                    let state = gameStore.Read().State
-                    match Kernel.tryGetBehaviorModule moduleId state with
+                    let stored = gameStore.Read()
+                    let snapshot = gameStore.GetSnapshot()
+
+                    match Kernel.tryGetBehaviorModule moduleId stored.State with
                     | Some behaviorModule ->
-                        let affectedModules, affectedObjects = Kernel.behaviorImpact moduleId state
+                        let snapshotModule = snapshot.World.BehaviorModules[moduleId]
+                        let affectedModules, affectedObjects = Kernel.behaviorImpact moduleId stored.State
 
                         Results.Json(
                             { moduleId = behaviorModule.Id
@@ -309,7 +346,10 @@ module Program =
                               classes = behaviorModule.Classes |> Map.toList |> List.map fst
                               affectedModules = affectedModules
                               affectedObjects = affectedObjects
-                              source = behaviorModule.Source }
+                              source = behaviorModule.Source
+                              provenance = provenanceLabel snapshotModule.Provenance
+                              seedDrift = seedDriftResponse snapshotModule
+                              graphWarnings = graphWarningsForModule snapshot stored.State moduleId }
                             : BehaviorModuleResponse)
                     | None -> Results.NotFound())))
         |> ignore
@@ -345,6 +385,61 @@ module Program =
                         | Ok None -> Results.NotFound()
                         | Error diagnostics ->
                             Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
+        |> ignore
+
+        app.MapPost(
+            "/admin/behaviors/{moduleId}/merge-seed",
+            Func<string, IResult>(fun moduleId ->
+                lock stateLock (fun () ->
+                    let stored = gameStore.Read()
+                    let snapshot = gameStore.GetSnapshot()
+
+                    match snapshot.World.BehaviorModules |> Map.tryFind moduleId with
+                    | None -> Results.NotFound()
+                    | Some snapshotModule ->
+                        match snapshotModule.Provenance with
+                        | SeedSynced ->
+                            Results.BadRequest(
+                                { lines = [ "Only admin-edited behavior modules can be merged from seed." ] }
+                                : CommandResponse)
+                        | AdminEdited ->
+                            match serverRoot with
+                            | None ->
+                                Results.BadRequest(
+                                    { lines = [ "Could not resolve server root for behavior seed files." ] }
+                                    : CommandResponse)
+                            | Some root ->
+                                let seedSource =
+                                    BehaviorSources.loadSeedModules root
+                                    |> List.tryFind (fun seedModule -> seedModule.Id = moduleId)
+                                    |> Option.map _.Source
+
+                                match seedSource with
+                                | None ->
+                                    Results.NotFound()
+                                | Some source ->
+                                    match
+                                        Kernel.tryUpdateBehaviorModule
+                                            (ScriptCompiler.compile contentRoot)
+                                            Scripting.inspectBehaviorModule
+                                            moduleId
+                                            source
+                                            stored.State
+                                    with
+                                    | Ok(Some updated) ->
+                                        let _ = commit stored updated.State
+
+                                        Results.Json(
+                                            { moduleId = moduleId
+                                              sourceRevision = trySourceRevision moduleId |> Option.get
+                                              source = source
+                                              affectedModules = updated.AffectedModules
+                                              affectedObjects = updated.AffectedObjects
+                                              diagnostics = [] }
+                                            : BehaviorModuleUpdateResponse)
+                                    | Ok None -> Results.NotFound()
+                                    | Error diagnostics ->
+                                        Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
         |> ignore
 
         app.MapPost(
