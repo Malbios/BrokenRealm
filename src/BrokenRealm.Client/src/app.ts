@@ -5,6 +5,7 @@ type MonacoEditor = {
   getValue(): string;
   setValue(value: string): void;
   layout(): void;
+  getModel(): unknown;
 };
 
 type MonacoApi = {
@@ -12,6 +13,7 @@ type MonacoApi = {
     create(element: HTMLElement, options: Record<string, unknown>): MonacoEditor;
     defineTheme(name: string, theme: Record<string, unknown>): void;
     setTheme(name: string): void;
+    setModelMarkers(model: unknown, owner: string, markers: MonacoMarker[]): void;
   };
   languages: {
     typescript: {
@@ -42,7 +44,22 @@ type ScriptResponse = {
 };
 
 type ScriptErrorResponse = {
-  diagnostics?: string[];
+  diagnostics?: CompilerDiagnostic[];
+};
+
+type CompilerDiagnostic = {
+  message: string;
+  line: number;
+  column: number;
+};
+
+type MonacoMarker = {
+  severity: number;
+  message: string;
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
 };
 
 type AdminObject = {
@@ -114,8 +131,28 @@ function setStatus(text: string, isError = false): void {
   scriptStatus.classList.toggle("error-line", isError);
 }
 
-function setDiagnostics(diagnostics: string[]): void {
+function setEditorMarkers(diagnostics: CompilerDiagnostic[]): void {
+  const model = editor?.getModel();
+  if (!model || !window.monaco) return;
+
+  const markers = diagnostics
+    .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
+    .map((diagnostic) => ({
+      severity: 8,
+      message: diagnostic.message,
+      startLineNumber: diagnostic.line,
+      startColumn: diagnostic.column,
+      endLineNumber: diagnostic.line,
+      endColumn: diagnostic.column + 1,
+    }));
+
+  window.monaco.editor.setModelMarkers(model, "brokenrealm", markers);
+}
+
+function setDiagnostics(diagnostics: CompilerDiagnostic[]): void {
   if (!scriptStatus) return;
+
+  setEditorMarkers(diagnostics);
 
   scriptStatus.replaceChildren();
   scriptStatus.classList.add("error-line");
@@ -125,7 +162,8 @@ function setDiagnostics(diagnostics: string[]): void {
 
   diagnostics.forEach((diagnostic) => {
     const item = document.createElement("li");
-    item.textContent = diagnostic;
+    const location = diagnostic.line > 0 ? `Line ${diagnostic.line}, column ${diagnostic.column}: ` : "";
+    item.textContent = `${location}${diagnostic.message}`;
     list.appendChild(item);
   });
 
@@ -307,6 +345,7 @@ async function loadScript(): Promise<void> {
 
   const payload = (await response.json()) as ScriptResponse;
   setScriptSource(payload.source);
+  setEditorMarkers([]);
   if (verbTitle) verbTitle.textContent = `${target.objectId}:${target.verb}`;
   setStatus("Loaded.");
 }
@@ -323,6 +362,7 @@ async function saveCurrentScript(): Promise<void> {
 
   saveScript?.setAttribute("disabled", "true");
   setStatus("Compiling...");
+  setEditorMarkers([]);
 
   const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`, {
     method: "PUT",

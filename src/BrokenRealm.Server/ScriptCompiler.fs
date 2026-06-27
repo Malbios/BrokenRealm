@@ -18,8 +18,9 @@ module ScriptCompiler =
           Path.GetFullPath(Path.Combine(contentRoot, "src", "BrokenRealm.Client")) ]
         |> List.tryFind Directory.Exists
 
-    let private compilerCommand =
-        if OperatingSystem.IsWindows() then "npx.cmd" else "npx"
+    let private compilerCommand clientRoot =
+        let executable = if OperatingSystem.IsWindows() then "tsc.cmd" else "tsc"
+        Path.Combine(clientRoot, "node_modules", ".bin", executable)
 
     let private normalizePath (path: string) =
         path.Replace("\\", "/")
@@ -35,20 +36,24 @@ module ScriptCompiler =
                 .Replace(apiPath, "game-api.d.ts")
                 .Replace(tempRoot + "/", "")
 
-        Regex.Replace(
-            normalized,
-            @"^verb\.ts\((\d+),(\d+)\):",
-            MatchEvaluator(fun matched ->
-                let line = Int32.Parse(matched.Groups[1].Value)
-                let column = matched.Groups[2].Value
-                "verb.ts(" + string (max 1 (line - 1)) + "," + column + "):"))
+        let normalized = Regex.Replace(normalized, @"^.*[/\\]verb\.ts\(", "verb.ts(")
+        let matched = Regex.Match(normalized, @"^verb\.ts\((\d+),(\d+)\):\s*(?:error\s+TS\d+:\s*)?(.*)$")
+
+        if matched.Success then
+            { message = matched.Groups[3].Value
+              line = max 1 (Int32.Parse(matched.Groups[1].Value) - 1)
+              column = Int32.Parse(matched.Groups[2].Value) }
+        else
+            { message = normalized
+              line = 0
+              column = 0 }
 
     let compile contentRoot source =
         match tryFindServerRoot contentRoot with
-        | None -> Error [ "Could not find src/BrokenRealm.Server/Scripting/game-api.d.ts." ]
+        | None -> Error [ { message = "Could not find src/BrokenRealm.Server/Scripting/game-api.d.ts."; line = 0; column = 0 } ]
         | Some serverRoot ->
             match tryFindClientRoot contentRoot serverRoot with
-            | None -> Error [ "Could not find src/BrokenRealm.Client for the TypeScript compiler." ]
+            | None -> Error [ { message = "Could not find src/BrokenRealm.Client for the TypeScript compiler."; line = 0; column = 0 } ]
             | Some clientRoot ->
                 let tempRoot = Path.Combine(Path.GetTempPath(), "BrokenRealm", "verb-compile-" + Guid.NewGuid().ToString("N"))
                 let inputPath = Path.Combine(tempRoot, "verb.ts")
@@ -61,14 +66,13 @@ module ScriptCompiler =
                         File.WriteAllText(inputPath, "/// <reference path=\"" + referencePath + "\" />" + Environment.NewLine + source)
 
                         let startInfo = ProcessStartInfo()
-                        startInfo.FileName <- compilerCommand
+                        startInfo.FileName <- compilerCommand clientRoot
                         startInfo.WorkingDirectory <- clientRoot
                         startInfo.RedirectStandardOutput <- true
                         startInfo.RedirectStandardError <- true
                         startInfo.UseShellExecute <- false
 
-                        [ "tsc"
-                          "--ignoreConfig"
+                        [ "--ignoreConfig"
                           "--pretty"
                           "false"
                           "--ignoreDeprecations"
@@ -95,23 +99,27 @@ module ScriptCompiler =
                             with _ ->
                                 ()
 
-                            Error [ "TypeScript compilation timed out." ]
+                            Error [ { message = "TypeScript compilation timed out."; line = 0; column = 0 } ]
                         elif compilerProcess.ExitCode <> 0 then
                             let diagnostics =
                                 (stdout + Environment.NewLine + stderr).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
                                 |> Array.toList
                                 |> List.map (normalizeDiagnostic tempRoot inputPath apiPath)
 
-                            Error(if List.isEmpty diagnostics then [ "TypeScript compilation failed." ] else diagnostics)
+                            Error(
+                                if List.isEmpty diagnostics then
+                                    [ { message = "TypeScript compilation failed."; line = 0; column = 0 } ]
+                                else
+                                    diagnostics)
                         else
                             let outputPath = Path.Combine(tempRoot, "verb.js")
 
                             if File.Exists(outputPath) then
                                 Ok(File.ReadAllText(outputPath))
                             else
-                                Error [ "TypeScript compiler did not produce JavaScript output." ]
+                                Error [ { message = "TypeScript compiler did not produce JavaScript output."; line = 0; column = 0 } ]
                     with ex ->
-                        Error [ ex.Message ]
+                        Error [ { message = ex.Message; line = 0; column = 0 } ]
 
                 try
                     if Directory.Exists(tempRoot) then

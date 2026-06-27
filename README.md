@@ -85,7 +85,7 @@ Admin editor transport:
 - `GET /admin/objects/forest/verbs/gather`
 - `PUT /admin/objects/forest/verbs/gather`
 
-The browser admin panel loads the object and verb catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit the selected verb source in memory. On save, the server runs TypeScript checking/compilation first. If compilation fails, diagnostics are returned and the previously running verb stays active. There is no authentication yet.
+The browser admin panel loads the object and verb catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit the selected verb source in memory. On save, the server runs TypeScript checking/compilation first. If compilation fails, structured diagnostics are shown as Monaco markers and readable messages, and the previously running verb stays active. There is no authentication yet.
 
 ## Scope
 

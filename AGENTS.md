@@ -28,7 +28,7 @@ The kernel owns:
 - effect validation
 - effect application
 - localization of output
-- diagnostics and resource limits later
+- diagnostics and script execution resource limits
 
 Game logic should not become hardcoded F# command handlers. F# should dispatch to object verbs and apply validated neutral effects.
 
@@ -162,7 +162,7 @@ The browser UI has:
 
 - player tab with output log, command input, and language selector
 - admin tab with object and verb selectors plus Monaco, with a textarea fallback when the CDN is unavailable
-- compile diagnostics displayed as individual editor messages
+- structured compile diagnostics displayed as Monaco markers and individual editor messages
 
 Admin can change the gather amount, save the verb, and later player `gather wood` / `sammle holz` commands use the changed logic.
 
@@ -218,6 +218,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 Good next slices:
 
-- add script execution time and memory limits
-- map structured compiler diagnostics to Monaco markers
 - decide durable object ID strategy before persistence

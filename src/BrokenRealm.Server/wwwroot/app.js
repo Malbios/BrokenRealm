@@ -59,16 +59,34 @@ function setStatus(text, isError = false) {
     scriptStatus.textContent = text;
     scriptStatus.classList.toggle("error-line", isError);
 }
+function setEditorMarkers(diagnostics) {
+    const model = editor?.getModel();
+    if (!model || !window.monaco)
+        return;
+    const markers = diagnostics
+        .filter((diagnostic) => diagnostic.line > 0 && diagnostic.column > 0)
+        .map((diagnostic) => ({
+        severity: 8,
+        message: diagnostic.message,
+        startLineNumber: diagnostic.line,
+        startColumn: diagnostic.column,
+        endLineNumber: diagnostic.line,
+        endColumn: diagnostic.column + 1,
+    }));
+    window.monaco.editor.setModelMarkers(model, "brokenrealm", markers);
+}
 function setDiagnostics(diagnostics) {
     if (!scriptStatus)
         return;
+    setEditorMarkers(diagnostics);
     scriptStatus.replaceChildren();
     scriptStatus.classList.add("error-line");
     const list = document.createElement("ul");
     list.className = "diagnostics";
     diagnostics.forEach((diagnostic) => {
         const item = document.createElement("li");
-        item.textContent = diagnostic;
+        const location = diagnostic.line > 0 ? `Line ${diagnostic.line}, column ${diagnostic.column}: ` : "";
+        item.textContent = `${location}${diagnostic.message}`;
         list.appendChild(item);
     });
     scriptStatus.appendChild(list);
@@ -229,6 +247,7 @@ async function loadScript() {
     }
     const payload = (await response.json());
     setScriptSource(payload.source);
+    setEditorMarkers([]);
     if (verbTitle)
         verbTitle.textContent = `${target.objectId}:${target.verb}`;
     setStatus("Loaded.");
@@ -244,6 +263,7 @@ async function saveCurrentScript() {
     }
     saveScript?.setAttribute("disabled", "true");
     setStatus("Compiling...");
+    setEditorMarkers([]);
     const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

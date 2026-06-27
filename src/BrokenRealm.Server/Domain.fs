@@ -88,5 +88,11 @@ type VerbUpdateResponse =
       diagnostics: string list }
 
 [<CLIMutable>]
+type CompilerDiagnostic =
+    { message: string
+      line: int
+      column: int }
+
+[<CLIMutable>]
 type VerbErrorResponse =
-    { diagnostics: string list }
+    { diagnostics: CompilerDiagnostic list }
