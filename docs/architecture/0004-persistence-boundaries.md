@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-BrokenRealm currently keeps one `GameState` in memory. That state combines permanent world objects, behavior source and compiled JavaScript, item definitions, and one temporary player. This is sufficient for the prototype, but persisting that record directly would couple durable world data to compiler caches, sessions, and the future account model.
+When this decision was made, BrokenRealm kept one `GameState` in memory containing permanent world objects, behavior source and compiled JavaScript, item definitions, and one temporary player. Persisting that record directly would have coupled durable world data to compiler caches, sessions, and the future account model.
 
 The persistence boundary must be defined before accounts are added. Accounts identify people; characters own durable game progress; sessions authenticate a temporary connection. These have different lifecycles and should not become fields in one serialized kernel snapshot.
 
@@ -41,7 +41,7 @@ Saving behavior is a two-phase operation: compile and validate the complete affe
 
 When accounts are introduced, persist accounts and player characters separately. Account records own identity and authorization data. Character records own world position, inventory, preferences, and other game progress. Commands act as a character, never as a browser session or account record directly.
 
-The current singleton `PlayerState` is prototype state. It must become a character-scoped record before authentication is connected to command execution.
+Game state stores character-scoped records by stable character ID. Command execution receives the acting character ID explicitly. The unauthenticated HTTP endpoint selects the seeded `prototype-player` until account ownership and session character selection are defined.
 
 ### Ephemeral state
 
@@ -85,7 +85,25 @@ The choice of PostgreSQL, another database, schema layout, session technology, p
 - Behavior source survives independently of compiler implementation changes; compiled artifacts can always be invalidated.
 - Accounts can be added without making sessions the owner of game progress.
 - Atomic effect application becomes a storage contract, not merely an in-process implementation detail.
-- Admin saves need expected source revisions so concurrent editors cannot silently overwrite each other.
+- Admin checks and saves use expected source revisions so concurrent editors cannot silently overwrite each other.
+
+## Implementation status
+
+Implemented in the in-memory runtime:
+
+- storage format version 1 separates authoritative world, behavior-source, and character snapshots
+- compiled JavaScript and extracted class metadata remain runtime-only rebuildable artifacts
+- the in-memory store applies compare-and-swap checks to the world revision and per-character revisions
+- characters have independent IDs, locations, inventories, and revisions
+- behavior modules retain source and activation revision metadata plus activation timestamps
+- admin load responses expose source revisions; stale check/save requests return HTTP 409 before compilation or activation
+
+Not yet implemented:
+
+- snapshot hydration and startup validation
+- ordered migration execution
+- a durable database adapter and backups
+- accounts, account-to-character ownership, authentication, or sessions
 
 ## Alternatives considered
 

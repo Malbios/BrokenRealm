@@ -15,7 +15,7 @@ The core idea is a TypeScript class-based game runtime backed by a MOO-like obje
 
 ## Design Reference
 
-Use ToastStunt, rather than original LambdaMOO alone, as the primary conceptual reference for the programmable object system. Preserve BrokenRealm's own technology choices: TypeScript verbs, a trusted F# kernel, browser-first interaction, neutral effects, and localized input/output.
+Use ToastStunt, rather than original LambdaMOO alone, as the primary conceptual reference for the programmable object system. Preserve BrokenRealm's own technology choices: TypeScript behavior classes, a trusted F# kernel, browser-first interaction, neutral effects, and localized input/output.
 
 Relevant ToastStunt concepts include:
 
@@ -132,8 +132,8 @@ Pipeline:
 
 1. localized player input
 2. localized command parser/pattern matcher
-3. neutral object/verb intent and neutral args
-4. neutral game logic in TypeScript verb
+3. neutral object/behavior-method intent and neutral args
+4. neutral game logic in a TypeScript behavior method
 5. neutral effects
 6. F# kernel validates/applies effects
 7. localized output
@@ -287,12 +287,12 @@ Prefer:
 - F# for server/kernel/domain/parsing/localization/tests
 - TypeScript for browser UI and admin-authored game logic
 - in-memory state for now
-- generic object/verb mechanisms over command-specific endpoints
+- generic object/behavior mechanisms over command-specific endpoints
 
 Avoid:
 
 - hardcoded F# game logic for individual commands
-- command-specific REST endpoints for player verbs
+- command-specific REST endpoints for player behavior methods
 - large empty architecture
 - mixing source responsibilities without a clear boundary
 

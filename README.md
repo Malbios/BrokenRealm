@@ -100,6 +100,17 @@ Admin editor transport:
 - `POST /admin/behaviors/{moduleId}/validate`
 - `GET /admin/scripting/game-api.d.ts`
 
+Loading a behavior module returns its `sourceRevision`. Check and save requests must include that revision:
+
+```json
+{
+  "source": "// complete TypeScript module source",
+  "expectedSourceRevision": 0
+}
+```
+
+Successful responses return the current `sourceRevision`. A stale revision returns HTTP 409 without compiling or activating the submitted source. Compiler failures return HTTP 400 with structured diagnostics; a missing module returns HTTP 404.
+
 The class library is split into `core-behaviors`, `location-behaviors`, `forest-behaviors`, `village-behaviors`, `thing-behaviors`, and `anonymous-behaviors`. Modules declare dependencies; the kernel rejects missing dependencies and cycles and compiles dependency source in deterministic topological order. Native `extends`, `override`, and `super` work across module boundaries.
 
 The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit modules in memory. It loads the server's authoritative scripting declarations and dependency sources for IntelliSense, preserves one model and undo history per module, and maps structured diagnostics to the correct module and source location. Check validates the complete affected graph without activation. Save recompiles the edited module and all transitive dependents, validates every registered class and affected object, and activates the graph atomically. Both operations send the source revision loaded with the module; stale requests receive HTTP 409 and preserve unsaved editor contents instead of overwriting newer source. Unsaved-change guards cover module and tab navigation. Any failure leaves the previous graph active. There is no authentication yet.
