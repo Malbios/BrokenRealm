@@ -77,7 +77,7 @@ class LocationBehavior extends GameBehavior {
   }
 }
 
-class ForestBehavior extends LocationBehavior {
+class ForestBehavior extends LocationBehavior implements Gatherable {
   static override commands: CommandDefinition[] = [
     ...super.commands,
     {

@@ -63,6 +63,8 @@ Deutsch:
 
 The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
+Object properties use neutral typed values: null, strings, 64-bit integers, floating-point numbers, booleans, object references, lists, and maps. They are exposed to behavior methods as ordinary JavaScript values. Object references are recursively validated before execution.
+
 ## API
 
 `POST /game/command`
@@ -87,6 +89,8 @@ Admin editor transport:
 - `PUT /admin/behaviors/core-world`
 
 The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit TypeScript class hierarchies in memory. Objects reference a module and class. Native `extends`, `override`, and `super` provide behavior inheritance. On save, the server type-checks and compiles the whole module, reads command metadata from its registered classes, verifies that every referenced class still exists, and atomically activates the new module. Failures leave the previous module active. There is no authentication yet.
+
+Capability contracts use normal TypeScript interfaces. `ForestBehavior`, for example, implements `Gatherable`, so removing its `gather` method produces a compiler diagnostic before activation.
 
 ## Script limits
 

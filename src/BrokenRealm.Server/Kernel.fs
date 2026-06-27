@@ -17,6 +17,38 @@ module Kernel =
             Error("Unknown destination object id: " + destinationId)
         | _ -> Ok()
 
+    let rec private validateValueReferences (state: GameState) path value =
+        match value with
+        | ObjectReferenceValue objectId when not (state.Objects.ContainsKey objectId) ->
+            Error $"Property {path} references unknown object id: {objectId}"
+        | ObjectReferenceValue _ -> Ok()
+        | ListValue values ->
+            values
+            |> List.mapi (fun index value -> validateValueReferences state $"{path}[{index}]" value)
+            |> List.tryPick (function Error error -> Some error | Ok() -> None)
+            |> Option.map Error
+            |> Option.defaultValue (Ok())
+        | MapValue values ->
+            values
+            |> Map.toList
+            |> List.tryPick (fun (key, value) ->
+                match validateValueReferences state $"{path}.{key}" value with
+                | Error error -> Some error
+                | Ok() -> None)
+            |> Option.map Error
+            |> Option.defaultValue (Ok())
+        | _ -> Ok()
+
+    let private validateObjectProperties state (target: GameObject) =
+        target.Properties
+        |> Map.toList
+        |> List.tryPick (fun (name, value) ->
+            match validateValueReferences state name value with
+            | Error error -> Some error
+            | Ok() -> None)
+        |> Option.map Error
+        |> Option.defaultValue (Ok())
+
     let private applyEffect (state: GameState) (messages: Message list) effect =
         match validateEffect state effect with
         | Error error -> Error error
@@ -39,15 +71,19 @@ module Kernel =
         | Some matched ->
             let target = state.Objects[matched.ObjectId]
 
-            match
-                Scripting.executeBehaviorMethod
-                    matched.BehaviorClassName
-                    matched.MethodName
-                    target
-                    matched.Args
-                    state.Player.Inventory
-                    matched.CompiledSource
-            with
+            let execution =
+                match validateObjectProperties state target with
+                | Error error -> Error error
+                | Ok() ->
+                    Scripting.executeBehaviorMethod
+                        matched.BehaviorClassName
+                        matched.MethodName
+                        target
+                        matched.Args
+                        state.Player.Inventory
+                        matched.CompiledSource
+
+            match execution with
             | Error error ->
                 { State = state
                   Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }

@@ -158,6 +158,23 @@ module KernelTests =
         Assert.Equal("Unknown destination object id: missing", message.Args["error"])
 
     [<Fact>]
+    let ``Kernel rejects unknown object references nested in properties`` () =
+        let state = ObjectDatabase.initialState
+        let forest = state.Objects["forest"]
+        let brokenProperties =
+            forest.Properties
+            |> Map.add "config" (MapValue(Map.ofList [ "targets", ListValue [ ObjectReferenceValue "missing" ] ]))
+
+        let brokenForest = { forest with Properties = brokenProperties }
+        let brokenState = { state with Objects = state.Objects |> Map.add forest.Id brokenForest }
+        let result = Kernel.submitCommand En "look" brokenState
+
+        Assert.Equal("forest", result.State.Player.LocationId)
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("script.error", message.Key)
+        Assert.Equal("Property config.targets[0] references unknown object id: missing", message.Args["error"])
+
+    [<Fact>]
     let ``German gather command matches forest gather verb with neutral item id`` () =
         let state = ObjectDatabase.initialState
 
@@ -448,6 +465,43 @@ module ScriptingTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Typed object properties become plain JavaScript values`` () =
+        let typedForest =
+            { forest with
+                Properties =
+                    Map.ofList
+                        [ "nothing", NullValue
+                          "name", StringValue "forest"
+                          "count", IntegerValue 3L
+                          "ratio", FloatValue 0.5
+                          "enabled", BooleanValue true
+                          "target", ObjectReferenceValue "village"
+                          "items", ListValue [ StringValue "wood"; IntegerValue 2L ]
+                          "nested", MapValue(Map.ofList [ "value", BooleanValue false ]) ] }
+
+        let source =
+            """function execute(context) {
+  const p = context.this.properties;
+  const valid = p.nothing === null
+    && p.name === "forest"
+    && p.count === 3
+    && p.ratio === 0.5
+    && p.enabled === true
+    && p.target === "village"
+    && Array.isArray(p.items)
+    && p.items[0] === "wood"
+    && p.items[1] === 2
+    && p.nested.value === false;
+  if (!valid) throw new Error("invalid typed properties");
+  return { effects: [{ type: "message", key: "typed.ok" }] };
+}"""
+
+        match Scripting.executeVerb typedForest Map.empty Map.empty source with
+        | Ok [ EmitMessage message ] -> Assert.Equal("typed.ok", message.Key)
+        | Ok _ -> Assert.True(false, "Expected one message effect.")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``Script context includes object references`` () =
         let source =
             """function execute(context) {
@@ -490,18 +544,16 @@ module BehaviorClassRuntimeTests =
         else
             findRepoRoot directory.Parent
 
+    let private compileCore source =
+        let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
+
+        match ScriptCompiler.compile repoRoot source with
+        | Ok compiled -> Ok compiled
+        | Error diagnostics -> Error(diagnostics |> List.map _.message |> String.concat "\n")
+
     [<Fact>]
     let ``Compiled behavior classes use native super dispatch`` () =
-        let compiled =
-            let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
-
-            match ScriptCompiler.compile repoRoot BehaviorSources.core with
-            | Ok source -> source
-            | Error diagnostics ->
-                diagnostics
-                |> List.map _.message
-                |> String.concat "\n"
-                |> failwith
+        let compiled = compileCore BehaviorSources.core |> Result.defaultWith failwith
 
         let result =
             Scripting.executeBehaviorMethod "ForestBehavior" "look" forest Map.empty Map.empty compiled
@@ -512,6 +564,34 @@ module BehaviorClassRuntimeTests =
             Assert.Equal("location.forest.atmosphere", atmosphere.Key)
         | Ok _ -> Assert.True(false, "Expected parent and child message effects.")
         | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Checked-in compiled behavior matches TypeScript source behavior`` () =
+        let compiled = compileCore BehaviorSources.core |> Result.defaultWith failwith
+        let args = Map.ofList [ "item", "wood" ]
+
+        let fromCompiler =
+            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty compiled
+
+        let checkedIn =
+            Scripting.executeBehaviorMethod "ForestBehavior" "gather" forest args Map.empty BehaviorSources.coreCompiled
+
+        Assert.Equal<Result<ScriptEffect list, string>>(fromCompiler, checkedIn)
+
+        let compiledMetadata = Scripting.inspectBehaviorModule compiled
+        let checkedInMetadata = Scripting.inspectBehaviorModule BehaviorSources.coreCompiled
+        Assert.Equal<Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>>(compiledMetadata, checkedInMetadata)
+
+    [<Fact>]
+    let ``Gatherable interface requires a gather method`` () =
+        let invalidSource =
+            BehaviorSources.core.Replace(
+                "  gather(context: VerbContext): VerbResult {",
+                "  harvest(context: VerbContext): VerbResult {")
+
+        match compileCore invalidSource with
+        | Error error -> Assert.Contains("Gatherable", error)
+        | Ok _ -> Assert.True(false, "Expected the missing Gatherable method to fail compilation.")
 
     [<Theory>]
     [<InlineData("ForestBehavior;attack", "look")>]

@@ -11,6 +11,16 @@ type ObjectId = string
 type ItemId = string
 type Quantity = int
 
+type GameValue =
+    | NullValue
+    | StringValue of string
+    | IntegerValue of int64
+    | FloatValue of double
+    | BooleanValue of bool
+    | ObjectReferenceValue of ObjectId
+    | ListValue of GameValue list
+    | MapValue of Map<string, GameValue>
+
 module ObjectIds =
     let private pattern = Regex("^[a-z][a-z0-9_-]{0,63}$", RegexOptions.CultureInvariant)
 
@@ -49,7 +59,7 @@ type GameObject =
       Name: string
       DescriptionKey: string option
       Tags: Set<string>
-      Properties: Map<string, string>
+      Properties: Map<string, GameValue>
       References: Map<string, ObjectId>
       BehaviorModuleId: string
       BehaviorClassName: string }

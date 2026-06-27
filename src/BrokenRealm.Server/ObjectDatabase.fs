@@ -18,7 +18,15 @@ module ObjectDatabase =
               Name = "forest"
               DescriptionKey = Some "location.forest.description"
               Tags = Set.ofList [ "forest"; "wood" ]
-              Properties = Map.ofList [ "biome", "forest"; "resourceItem", "wood" ]
+              Properties =
+                Map.ofList
+                    [ "biome", StringValue "forest"
+                      "resourceItem", StringValue "wood"
+                      "elevation", IntegerValue 120L
+                      "dangerous", BooleanValue false
+                      "landmarks", ListValue [ StringValue "old-oak"; StringValue "brook" ]
+                      "climate", MapValue(Map.ofList [ "humidity", FloatValue 0.72 ])
+                      "nearestSettlement", ObjectReferenceValue "village" ]
               References = Map.ofList [ "north", "village" ]
               BehaviorModuleId = coreBehavior.Id
               BehaviorClassName = "ForestBehavior" }
@@ -28,7 +36,11 @@ module ObjectDatabase =
               Name = "village"
               DescriptionKey = Some "location.village.description"
               Tags = Set.ofList [ "village" ]
-              Properties = Map.ofList [ "biome", "settlement" ]
+              Properties =
+                Map.ofList
+                    [ "biome", StringValue "settlement"
+                      "population", IntegerValue 24L
+                      "nearestForest", ObjectReferenceValue "forest" ]
               References = Map.ofList [ "south", "forest" ]
               BehaviorModuleId = coreBehavior.Id
               BehaviorClassName = "VillageBehavior" }

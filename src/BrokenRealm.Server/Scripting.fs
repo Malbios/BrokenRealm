@@ -1,6 +1,7 @@
 namespace BrokenRealm.Server
 
 open System
+open System.Collections.Generic
 open System.Text.Json
 open System.Text.RegularExpressions
 open Jint
@@ -106,16 +107,33 @@ module Scripting =
         else
             "Script execution failed."
 
+    let rec private gameValueToObject value : obj =
+        match value with
+        | NullValue -> null
+        | StringValue value -> value :> obj
+        | IntegerValue value -> value :> obj
+        | FloatValue value -> value :> obj
+        | BooleanValue value -> value :> obj
+        | ObjectReferenceValue objectId -> objectId :> obj
+        | ListValue values -> values |> List.map gameValueToObject |> List.toArray :> obj
+        | MapValue values ->
+            let output = Dictionary<string, obj>()
+            values |> Map.iter (fun key value -> output[key] <- gameValueToObject value)
+            output :> obj
+
     let private executeWithinLimits limits invocation (target: GameObject) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
         try
             let context =
+                let properties = Dictionary<string, obj>()
+                target.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
+
                 {| args = args
                    this =
                     {| id = target.Id
                        name = target.Name
                        descriptionKey = target.DescriptionKey |> Option.defaultValue ""
                        tags = target.Tags |> Set.toArray
-                       properties = target.Properties
+                       properties = properties
                        references = target.References |}
                    actor = {| inventory = actorInventory |} |}
 

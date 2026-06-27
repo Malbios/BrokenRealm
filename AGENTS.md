@@ -74,7 +74,7 @@ Current repo layout:
 
 Current server modules:
 
-- `Domain.fs`: culture, object, verb, state, message, effect, and DTO types.
+- `Domain.fs`: culture, typed game value, object, behavior, state, message, effect, and DTO types.
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
 - `BehaviorSources.fs`: active TypeScript behavior class hierarchy and localized command metadata.
@@ -89,7 +89,7 @@ Current object model:
 - Stable object ID: `forest`.
 - The current player starts at `forest`.
 - `forest` has tags including `forest` and `wood`.
-- `forest` has string properties including its biome and resource item.
+- `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `core-world:ForestBehavior`.
 - `village` references `forest` to the south and uses `core-world:VillageBehavior`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
@@ -187,6 +187,21 @@ class ForestBehavior extends LocationBehavior {
 
 Scripts must return neutral effects. Scripts should not directly mutate state.
 
+Object properties use the `GameValue` union:
+
+- null
+- string
+- signed 64-bit integer
+- floating-point number
+- boolean
+- validated object reference
+- recursive list
+- recursive string-keyed map
+
+The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists or maps are recursively validated against the object database before a behavior method executes.
+
+Capability contracts are TypeScript interfaces declared in `game-api.d.ts`. `ForestBehavior implements Gatherable`; interfaces provide compile-time requirements but no runtime behavior.
+
 Known effects:
 
 - `{ type: "addInventory", itemId: "wood", amount: number }`
@@ -267,6 +282,5 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Introduce typed object properties and capability interfaces now that the class runtime is active.
-2. Split behavior modules and add explicit dependency/impact reporting as the class library grows.
-3. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
+1. Split behavior modules and add explicit dependency/impact reporting as the class library grows.
+2. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
