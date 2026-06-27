@@ -15,30 +15,35 @@ module CommandMatching =
         |> List.map snd
         |> List.filter PlayerObjects.isPlayer
 
-    let private tryArgument culture state _locationId target name value =
-        let aliases =
-            match name with
-            | "item" -> Localizer.itemAliases culture
-            | "direction" -> Localizer.directionAliases culture
-            | "object" ->
-                target.Aliases
-                |> Map.tryFind culture
-                |> Option.defaultValue []
-                |> List.map (fun alias -> normalize alias, target.Id)
-                |> Map.ofList
-            | "player" ->
-                allPlayers state
-                |> List.collect (fun player ->
-                    (normalize player.Id, player.Id)
-                    :: (player.Aliases
-                        |> Map.tryFind culture
-                        |> Option.defaultValue []
-                        |> List.map (fun alias -> normalize alias, player.Id)))
-                |> Map.ofList
-            | "label" -> Map.ofList [ normalize value, value.Trim() ]
-            | _ -> Map.empty
+    let private isFreeTextPlaceholder name =
+        name = "label" || name = "text"
 
-        aliases |> Map.tryFind (normalize value)
+    let private tryArgument culture state _locationId target (name: string) (value: string) =
+        if isFreeTextPlaceholder name then
+            Some(value.Trim() : string)
+        else
+            let aliases =
+                match name with
+                | "item" -> Localizer.itemAliases culture
+                | "direction" -> Localizer.directionAliases culture
+                | "object" ->
+                    target.Aliases
+                    |> Map.tryFind culture
+                    |> Option.defaultValue []
+                    |> List.map (fun alias -> normalize alias, target.Id)
+                    |> Map.ofList
+                | "player" ->
+                    allPlayers state
+                    |> List.collect (fun player ->
+                        (normalize player.Id, player.Id)
+                        :: (player.Aliases
+                            |> Map.tryFind culture
+                            |> Option.defaultValue []
+                            |> List.map (fun alias -> normalize alias, player.Id)))
+                    |> Map.ofList
+                | _ -> Map.empty
+
+            aliases |> Map.tryFind (normalize value)
 
     let private matchPattern culture state locationId target rawInput pattern =
         let input = normalize rawInput
@@ -84,7 +89,11 @@ module CommandMatching =
                             if endPos < 0 then
                                 None
                             else
-                                let captured = input.Substring(afterSegment, endPos - afterSegment).Trim()
+                                let captured =
+                                    if isFreeTextPlaceholder placeholderName then
+                                        rawInput.Substring(afterSegment, endPos - afterSegment).Trim()
+                                    else
+                                        input.Substring(afterSegment, endPos - afterSegment).Trim()
 
                                 match tryArgument culture state locationId target placeholderName captured with
                                 | None -> None

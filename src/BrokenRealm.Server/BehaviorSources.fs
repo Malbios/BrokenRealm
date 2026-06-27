@@ -50,6 +50,28 @@ const coreBehaviorClasses = { GameBehavior };"""
         { culture: "de", pattern: "nimm {item}" },
         { culture: "de", pattern: "hebe {item} auf" }
       ]
+    },
+    {
+      methodName: "say",
+      patterns: [
+        { culture: "en", pattern: "say {text}" },
+        { culture: "en", pattern: "say" },
+        { culture: "de", pattern: "sag {text}" },
+        { culture: "de", pattern: "sag" },
+        { culture: "de", pattern: "sage {text}" },
+        { culture: "de", pattern: "sage" }
+      ]
+    },
+    {
+      methodName: "emote",
+      patterns: [
+        { culture: "en", pattern: "emote {text}" },
+        { culture: "en", pattern: "emote" },
+        { culture: "en", pattern: ": {text}" },
+        { culture: "de", pattern: "emote {text}" },
+        { culture: "de", pattern: "emote" },
+        { culture: "de", pattern: "* {text}" }
+      ]
     }
   ];
 
@@ -117,6 +139,22 @@ const coreBehaviorClasses = { GameBehavior };"""
         { type: "message", key: "take.success", args: { item: itemId } }
       ]
     };
+  }
+
+  say(context: VerbContext): VerbResult {
+    const text = (context.args.text ?? "").trim();
+    if (!text) {
+      return { effects: [{ type: "message", key: "say.empty", args: {} }] };
+    }
+    return { effects: [{ type: "message", key: "say.self", args: { text } }] };
+  }
+
+  emote(context: VerbContext): VerbResult {
+    const text = (context.args.text ?? "").trim();
+    if (!text) {
+      return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
+    }
+    return { effects: [{ type: "message", key: "emote.self", args: { text } }] };
   }
 }
 
@@ -310,6 +348,17 @@ const coreBehaviorClasses = { GameBehavior };"""
     { methodName: "take", patterns: [
       { culture: "en", pattern: "take {item}" }, { culture: "en", pattern: "pick up {item}" },
       { culture: "de", pattern: "nimm {item}" }, { culture: "de", pattern: "hebe {item} auf" }
+    ] },
+    { methodName: "say", patterns: [
+      { culture: "en", pattern: "say {text}" }, { culture: "en", pattern: "say" },
+      { culture: "de", pattern: "sag {text}" }, { culture: "de", pattern: "sag" },
+      { culture: "de", pattern: "sage {text}" }, { culture: "de", pattern: "sage" }
+    ] },
+    { methodName: "emote", patterns: [
+      { culture: "en", pattern: "emote {text}" }, { culture: "en", pattern: "emote" },
+      { culture: "en", pattern: ": {text}" },
+      { culture: "de", pattern: "emote {text}" }, { culture: "de", pattern: "emote" },
+      { culture: "de", pattern: "* {text}" }
     ] }
   ];
   inventory(context) {
@@ -361,6 +410,16 @@ const coreBehaviorClasses = { GameBehavior };"""
       { type: "transferItem", itemId, amount: 1, sourceId: context.actor.locationId, destinationId: context.actor.id },
       { type: "message", key: "take.success", args: { item: itemId } }
     ] };
+  }
+  say(context) {
+    const text = (context.args.text ?? "").trim();
+    if (!text) return { effects: [{ type: "message", key: "say.empty", args: {} }] };
+    return { effects: [{ type: "message", key: "say.self", args: { text } }] };
+  }
+  emote(context) {
+    const text = (context.args.text ?? "").trim();
+    if (!text) return { effects: [{ type: "message", key: "emote.empty", args: {} }] };
+    return { effects: [{ type: "message", key: "emote.self", args: { text } }] };
   }
 }
 const playerBehaviorClasses = { PlayerBehavior };"""

@@ -964,6 +964,68 @@ module KernelTests =
         Assert.Equal("wood", message.Args["item"])
 
     [<Fact>]
+    let ``Say command returns localized speech with preserved text`` () =
+        let result = Kernel.submitCommand En "say Hello there" ObjectDatabase.initialState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("You say, \"Hello there\".", line)
+
+    [<Fact>]
+    let ``German say command matches sag pattern`` () =
+        let result = Kernel.submitCommand De "sag Guten Tag" ObjectDatabase.initialState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State De
+
+        Assert.Equal("Du sagst: \"Guten Tag\".", line)
+
+    [<Fact>]
+    let ``Say with no text reports say empty`` () =
+        let result = Kernel.submitCommand En "say" ObjectDatabase.initialState
+
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("say.empty", message.Key)
+
+    [<Fact>]
+    let ``Emote command returns localized action text`` () =
+        let result = Kernel.submitCommand En "emote waves happily" ObjectDatabase.initialState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("You waves happily.", line)
+
+    [<Fact>]
+    let ``Colon emote alias matches actor emote`` () =
+        let matched = CommandMatching.tryMatch En ": smiles" ObjectDatabase.initialState
+
+        match matched with
+        | Some value ->
+            Assert.Equal("emote", value.MethodName)
+            Assert.Equal("smiles", value.Args["text"])
+        | None -> Assert.True(false, "Expected colon emote to match.")
+
+    [<Fact>]
+    let ``German star emote alias matches actor emote`` () =
+        let result = Kernel.submitCommand De "* winkt" ObjectDatabase.initialState
+        let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State De
+
+        Assert.Equal("Du winkt.", line)
+
+    [<Fact>]
+    let ``Look lists other players in the same room`` () =
+        let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
+        let scoutInForest = PlayerObjects.withLocation scout "forest"
+
+        let state =
+            { ObjectDatabase.initialState with
+                Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
+
+        let result = Kernel.submitCommand En "look" state
+        let contents = result.Messages |> List.find (fun message -> message.Key = "location.contents")
+
+        Assert.Contains("prototype-scout", contents.Args["objects"])
+
+        let line = ResponseFormatting.localizeMessage result.State En contents
+        Assert.Contains("prototype scout", line)
+
+    [<Fact>]
     let ``Drop take round trip restores inventory without duplicating stacks`` () =
         let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
         Assert.Equal(2, gathered.State.Player.Inventory["wood"])
