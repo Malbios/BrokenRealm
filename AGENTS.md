@@ -113,12 +113,14 @@ Current endpoints:
 - `GET /admin/behaviors`
   - Lists editable behavior modules and their registered classes.
 - `GET /admin/behaviors/{moduleId}`
-  - Loads an editable TypeScript behavior module.
+  - Loads an editable TypeScript behavior module with its current source revision.
 - `PUT /admin/behaviors/{moduleId}`
-  - TypeScript-checks/compiles the module, reads registered class command metadata, and verifies referenced classes.
+  - Requires `{ source, expectedSourceRevision }`, TypeScript-checks/compiles the module, reads registered class command metadata, and verifies referenced classes.
+  - Returns HTTP 409 before compilation when the loaded revision is stale.
   - On failure, returns diagnostics and keeps the previous compiled module active.
 - `POST /admin/behaviors/{moduleId}/validate`
-  - Runs the same dependency-graph compilation and validation as save without activating or returning candidate state.
+  - Requires `{ source, expectedSourceRevision }` and runs the same dependency-graph compilation and validation as save without activating or returning candidate state.
+  - Returns HTTP 409 when validation is based on stale source.
 - `GET /admin/scripting/game-api.d.ts`
   - Serves the authoritative TypeScript scripting declarations used by Monaco.
 
@@ -260,6 +262,7 @@ The browser UI has:
 - structured class, dependency, affected-module, and affected-object metadata visible before save
 - compiler diagnostics mapped to behavior module IDs and module-local locations; Monaco marks the corresponding cached model and diagnostic entries open that module
 - a Check action that compiles the full affected graph without activation
+- optimistic concurrency using loaded source revisions; stale checks and saves preserve editor contents and require a reload rather than overwriting newer source
 - unsaved-change guards for module switches, leaving the admin tab, and page unload; per-module Monaco models retain edits during in-page navigation
 
 Admin can change behavior methods or command metadata, save the module, and later player commands use the atomically activated class hierarchy.
@@ -314,6 +317,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Expose expected source revisions through behavior validation and activation before supporting concurrent admin sessions.
-2. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
-3. Define account-to-character ownership and session selection before adding authentication.
+1. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
+2. Define account-to-character ownership and session selection before adding authentication.
+3. Add an explicit editor reload/merge workflow for stale source conflicts before collaborative admin use.

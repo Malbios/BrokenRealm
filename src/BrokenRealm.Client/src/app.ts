@@ -56,6 +56,7 @@ type CommandResponse = {
 
 type ScriptResponse = {
   moduleId: string;
+  sourceRevision: number;
   dependencies: string[];
   classes: string[];
   source: string;
@@ -65,6 +66,13 @@ type ScriptResponse = {
 
 type ScriptErrorResponse = {
   diagnostics?: CompilerDiagnostic[];
+};
+
+type ScriptConflictResponse = {
+  moduleId: string;
+  expectedSourceRevision: number;
+  currentSourceRevision: number;
+  message: string;
 };
 
 type CompilerDiagnostic = {
@@ -222,6 +230,7 @@ function renderModuleDetails(payload: ScriptResponse): void {
   moduleDetails.replaceChildren();
 
   const details = [
+    ["Source revision", payload.sourceRevision.toString()],
     ["Classes", payload.classes.join(", ") || "none"],
     ["Dependencies", payload.dependencies.join(", ") || "none"],
     ["Affected modules", payload.affectedModules.join(", ") || payload.moduleId],
@@ -504,16 +513,25 @@ async function checkCurrentScript(): Promise<void> {
   saveScript?.setAttribute("disabled", "true");
   setStatus("Checking without activation...");
   setEditorMarkers([]);
+  const expectedSourceRevision = modulePayloads.get(moduleId)?.sourceRevision;
+  if (expectedSourceRevision === undefined) {
+    setStatus("The selected behavior module has not finished loading.", true);
+    return;
+  }
 
   const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: getScriptSource() }),
+    body: JSON.stringify({ source: getScriptSource(), expectedSourceRevision }),
   });
 
   if (!response.ok) {
     try {
-      const payload = (await response.json()) as ScriptErrorResponse;
+      const payload = (await response.json()) as ScriptErrorResponse & Partial<ScriptConflictResponse>;
+      if (response.status === 409 && payload.message) {
+        setStatus(`${payload.message} Your unsaved editor contents were preserved.`, true);
+        return;
+      }
       if (payload.diagnostics && payload.diagnostics.length > 0) {
         await setDiagnostics(payload.diagnostics);
         return;
@@ -546,18 +564,27 @@ async function saveCurrentScript(): Promise<void> {
   checkScript?.setAttribute("disabled", "true");
   setStatus("Compiling...");
   setEditorMarkers([]);
+  const expectedSourceRevision = modulePayloads.get(moduleId)?.sourceRevision;
+  if (expectedSourceRevision === undefined) {
+    setStatus("The selected behavior module has not finished loading.", true);
+    return;
+  }
 
   const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: getScriptSource() }),
+    body: JSON.stringify({ source: getScriptSource(), expectedSourceRevision }),
   });
 
   if (!response.ok) {
     let message = "Could not save script.";
 
     try {
-      const payload = (await response.json()) as ScriptErrorResponse;
+      const payload = (await response.json()) as ScriptErrorResponse & Partial<ScriptConflictResponse>;
+      if (response.status === 409 && payload.message) {
+        setStatus(`${payload.message} Your unsaved editor contents were preserved.`, true);
+        return;
+      }
       if (payload.diagnostics && payload.diagnostics.length > 0) {
         await setDiagnostics(payload.diagnostics);
         return;
@@ -578,6 +605,7 @@ async function saveCurrentScript(): Promise<void> {
     const updatedPayload = {
       ...existingPayload,
       source,
+      sourceRevision: payload.sourceRevision,
       affectedModules: payload.affectedModules,
       affectedObjects: payload.affectedObjects,
     };

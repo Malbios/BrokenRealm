@@ -17,6 +17,19 @@ module Program =
             | Ok committed -> committed
             | Error _ -> failwith "The process-local game state changed while its exclusive lock was held."
 
+        let trySourceRevision moduleId =
+            gameStore.GetSnapshot().World.BehaviorModules
+            |> Map.tryFind moduleId
+            |> Option.map _.SourceRevision
+
+        let conflict moduleId expected current =
+            Results.Conflict(
+                { moduleId = moduleId
+                  expectedSourceRevision = expected
+                  currentSourceRevision = current
+                  message = "The behavior module changed after it was loaded. Reload it before saving again." }
+                : BehaviorModuleConflictResponse)
+
         let builder = WebApplication.CreateBuilder(args)
         let app = builder.Build()
 
@@ -67,6 +80,7 @@ module Program =
 
                         Results.Json(
                             { moduleId = behaviorModule.Id
+                              sourceRevision = trySourceRevision moduleId |> Option.get
                               dependencies = behaviorModule.Dependencies
                               classes = behaviorModule.Classes |> Map.toList |> List.map fst
                               affectedModules = affectedModules
@@ -81,26 +95,32 @@ module Program =
             Func<string, BehaviorModuleUpdateRequest, IResult>(fun moduleId request ->
                 lock stateLock (fun () ->
                     let stored = gameStore.Read()
-                    match
-                        Kernel.tryUpdateBehaviorModule
-                            (ScriptCompiler.compile app.Environment.ContentRootPath)
-                            Scripting.inspectBehaviorModule
-                            moduleId
-                            request.source
-                            stored.State
-                    with
-                    | Ok(Some updated) ->
-                        let _ = commit stored updated.State
-                        Results.Json(
-                            { moduleId = moduleId
-                              source = request.source
-                              affectedModules = updated.AffectedModules
-                              affectedObjects = updated.AffectedObjects
-                              diagnostics = [] }
-                            : BehaviorModuleUpdateResponse)
-                    | Ok None -> Results.NotFound()
-                    | Error diagnostics ->
-                        Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
+                    match trySourceRevision moduleId with
+                    | None -> Results.NotFound()
+                    | Some currentRevision when request.expectedSourceRevision <> currentRevision ->
+                        conflict moduleId request.expectedSourceRevision currentRevision
+                    | Some _ ->
+                        match
+                            Kernel.tryUpdateBehaviorModule
+                                (ScriptCompiler.compile app.Environment.ContentRootPath)
+                                Scripting.inspectBehaviorModule
+                                moduleId
+                                request.source
+                                stored.State
+                        with
+                        | Ok(Some updated) ->
+                            let _ = commit stored updated.State
+                            Results.Json(
+                                { moduleId = moduleId
+                                  sourceRevision = trySourceRevision moduleId |> Option.get
+                                  source = request.source
+                                  affectedModules = updated.AffectedModules
+                                  affectedObjects = updated.AffectedObjects
+                                  diagnostics = [] }
+                                : BehaviorModuleUpdateResponse)
+                        | Ok None -> Results.NotFound()
+                        | Error diagnostics ->
+                            Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
         |> ignore
 
         app.MapPost(
@@ -108,25 +128,31 @@ module Program =
             Func<string, BehaviorModuleUpdateRequest, IResult>(fun moduleId request ->
                 lock stateLock (fun () ->
                     let state = gameStore.Read().State
-                    match
-                        Kernel.tryValidateBehaviorModule
-                            (ScriptCompiler.compile app.Environment.ContentRootPath)
-                            Scripting.inspectBehaviorModule
-                            moduleId
-                            request.source
-                            state
-                    with
-                    | Ok(Some validated) ->
-                        Results.Json(
-                            { moduleId = moduleId
-                              source = request.source
-                              affectedModules = validated.AffectedModules
-                              affectedObjects = validated.AffectedObjects
-                              diagnostics = [] }
-                            : BehaviorModuleUpdateResponse)
-                    | Ok None -> Results.NotFound()
-                    | Error diagnostics ->
-                        Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
+                    match trySourceRevision moduleId with
+                    | None -> Results.NotFound()
+                    | Some currentRevision when request.expectedSourceRevision <> currentRevision ->
+                        conflict moduleId request.expectedSourceRevision currentRevision
+                    | Some currentRevision ->
+                        match
+                            Kernel.tryValidateBehaviorModule
+                                (ScriptCompiler.compile app.Environment.ContentRootPath)
+                                Scripting.inspectBehaviorModule
+                                moduleId
+                                request.source
+                                state
+                        with
+                        | Ok(Some validated) ->
+                            Results.Json(
+                                { moduleId = moduleId
+                                  sourceRevision = currentRevision
+                                  source = request.source
+                                  affectedModules = validated.AffectedModules
+                                  affectedObjects = validated.AffectedObjects
+                                  diagnostics = [] }
+                                : BehaviorModuleUpdateResponse)
+                        | Ok None -> Results.NotFound()
+                        | Error diagnostics ->
+                            Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
         |> ignore
 
         app.Run()

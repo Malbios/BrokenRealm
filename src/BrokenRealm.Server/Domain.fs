@@ -135,6 +135,7 @@ type CommandResponse =
 [<CLIMutable>]
 type BehaviorModuleResponse =
     { moduleId: string
+      sourceRevision: int64
       dependencies: string list
       classes: string list
       affectedModules: string list
@@ -149,11 +150,13 @@ type AdminBehaviorModuleResponse =
 
 [<CLIMutable>]
 type BehaviorModuleUpdateRequest =
-    { source: string }
+    { source: string
+      expectedSourceRevision: int64 }
 
 [<CLIMutable>]
 type BehaviorModuleUpdateResponse =
     { moduleId: string
+      sourceRevision: int64
       source: string
       affectedModules: string list
       affectedObjects: string list
@@ -169,3 +172,10 @@ type CompilerDiagnostic =
 [<CLIMutable>]
 type BehaviorModuleErrorResponse =
     { diagnostics: CompilerDiagnostic list }
+
+[<CLIMutable>]
+type BehaviorModuleConflictResponse =
+    { moduleId: string
+      expectedSourceRevision: int64
+      currentSourceRevision: int64
+      message: string }
