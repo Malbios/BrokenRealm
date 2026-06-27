@@ -57,7 +57,7 @@ module KernelTests =
         let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules |> List.map _.moduleId)
 
         let forest = modules |> List.find (fun behaviorModule -> behaviorModule.moduleId = "forest-behaviors")
@@ -69,7 +69,7 @@ module KernelTests =
         let modules, objects = Kernel.behaviorImpact "core-behaviors" ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
         Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], objects)
 
@@ -97,7 +97,7 @@ module KernelTests =
         match result with
         | Ok(Some update) ->
             Assert.Equal<string list>(
-                [ "core-behaviors"; "location-behaviors"; "forest-behaviors"; "thing-behaviors"; "village-behaviors" ],
+                [ "core-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
             Assert.Equal<string list>([ "fallen-log"; "forest"; "village" ], update.AffectedObjects)
             Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
@@ -799,6 +799,24 @@ module BehaviorClassRuntimeTests =
         | Error error -> Assert.Contains("Gatherable", error)
         | Ok _ -> Assert.True(false, "Expected the missing Gatherable method to fail compilation.")
 
+    [<Fact>]
+    let ``Checked-in anonymous behavior matches TypeScript source behavior`` () =
+        let source = BehaviorSources.join [ BehaviorSources.core; BehaviorSources.anonymous ]
+        let compiled = compileBehavior source |> Result.defaultWith failwith
+        let checkedIn = BehaviorSources.join [ BehaviorSources.coreCompiled; BehaviorSources.anonymousCompiled ]
+        let value =
+            { BehaviorModuleId = "anonymous-behaviors"
+              BehaviorClassName = "TrailTokenBehavior"
+              Properties = Map.ofList [ "label", StringValue "test token" ] }
+
+        let fromCompiler =
+            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty Map.empty compiled
+
+        let fromCheckedIn =
+            Scripting.executeAnonymousBehaviorMethod "TrailTokenBehavior" "describe" value Map.empty Map.empty checkedIn
+
+        Assert.Equal<Result<ScriptEffect list, string>>(fromCompiler, fromCheckedIn)
+
     [<Theory>]
     [<InlineData("ForestBehavior;attack", "look")>]
     [<InlineData("ForestBehavior", "look()")>]
@@ -809,3 +827,63 @@ module BehaviorClassRuntimeTests =
         match result with
         | Error error -> Assert.Equal("Behavior class and method names must be valid JavaScript identifiers.", error)
         | Ok _ -> Assert.True(false, "Expected invalid identifiers to be rejected.")
+
+module AnonymousBehaviorValueTests =
+    [<Fact>]
+    let ``Anonymous values are stored in permanent object properties and execute behavior`` () =
+        let state = ObjectDatabase.initialState
+
+        match state.Objects["forest"].Properties["trailToken"] with
+        | AnonymousValue value ->
+            Assert.Equal("anonymous-behaviors", value.BehaviorModuleId)
+            Assert.Equal("TrailTokenBehavior", value.BehaviorClassName)
+            Assert.Equal<GameValue>(StringValue "old forest trail", value.Properties["label"])
+
+            match Kernel.executeAnonymousValueMethod "describe" Map.empty value state with
+            | Ok [ EmitMessage message ] ->
+                Assert.Equal("token.describe", message.Key)
+                Assert.Equal("old forest trail", message.Args["label"])
+            | Ok _ -> Assert.True(false, "Expected one message effect.")
+            | Error error -> Assert.True(false, error)
+        | _ -> Assert.True(false, "Expected an anonymous trail token.")
+
+    [<Fact>]
+    let ``Anonymous values recursively validate permanent object references`` () =
+        let state = ObjectDatabase.initialState
+        let value =
+            { BehaviorModuleId = "anonymous-behaviors"
+              BehaviorClassName = "TrailTokenBehavior"
+              Properties = Map.ofList [ "target", ObjectReferenceValue "missing" ] }
+
+        match Kernel.executeAnonymousValueMethod "describe" Map.empty value state with
+        | Error error -> Assert.Equal("Property anonymous.target references unknown object id: missing", error)
+        | Ok _ -> Assert.True(false, "Expected an invalid nested object reference to be rejected.")
+
+    [<Fact>]
+    let ``Anonymous values require a registered behavior class`` () =
+        let value =
+            { BehaviorModuleId = "anonymous-behaviors"
+              BehaviorClassName = "MissingBehavior"
+              Properties = Map.empty }
+
+        match Kernel.executeAnonymousValueMethod "describe" Map.empty value ObjectDatabase.initialState with
+        | Error error -> Assert.Equal("Anonymous value anonymous references unknown behavior class: MissingBehavior", error)
+        | Ok _ -> Assert.True(false, "Expected an unknown behavior class to be rejected.")
+
+    [<Fact>]
+    let ``Behavior updates cannot remove classes referenced by anonymous values`` () =
+        let state = ObjectDatabase.initialState
+
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                Ok
+                (fun _ _ -> Ok Map.empty)
+                "anonymous-behaviors"
+                BehaviorSources.anonymous
+                state
+
+        match result with
+        | Error [ diagnostic ] ->
+            Assert.Equal("Anonymous value trailToken references unknown behavior class: TrailTokenBehavior", diagnostic.message)
+        | Error _ -> Assert.True(false, "Expected one missing-class diagnostic.")
+        | Ok _ -> Assert.True(false, "Expected the referenced anonymous behavior class removal to be rejected.")

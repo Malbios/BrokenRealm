@@ -20,6 +20,12 @@ type GameValue =
     | ObjectReferenceValue of ObjectId
     | ListValue of GameValue list
     | MapValue of Map<string, GameValue>
+    | AnonymousValue of AnonymousBehaviorValue
+
+and AnonymousBehaviorValue =
+    { BehaviorModuleId: string
+      BehaviorClassName: string
+      Properties: Map<string, GameValue> }
 
 module ObjectIds =
     let private pattern = Regex("^[a-z][a-z0-9_-]{0,63}$", RegexOptions.CultureInvariant)

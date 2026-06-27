@@ -120,31 +120,13 @@ module Scripting =
             let output = Dictionary<string, obj>()
             values |> Map.iter (fun key value -> output[key] <- gameValueToObject value)
             output :> obj
+        | AnonymousValue anonymous ->
+            let properties = Dictionary<string, obj>()
+            anonymous.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
+            properties :> obj
 
-    let private executeWithinLimits limits invocation (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) (source: string) =
+    let private executeContextWithinLimits limits invocation context (source: string) =
         try
-            let context =
-                let properties = Dictionary<string, obj>()
-                target.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
-
-                {| args = args
-                   this =
-                    {| id = target.Id
-                       name = target.Name
-                       descriptionKey = target.DescriptionKey |> Option.defaultValue ""
-                       tags = target.Tags |> Set.toArray
-                       properties = properties
-                       references = target.References
-                       contents =
-                        contents
-                        |> List.map (fun object ->
-                            {| id = object.Id
-                               name = object.Name
-                               descriptionKey = object.DescriptionKey |> Option.defaultValue ""
-                               tags = object.Tags |> Set.toArray |})
-                        |> List.toArray |}
-                   actor = {| inventory = actorInventory |} |}
-
             let contextJson = JsonSerializer.Serialize(context, jsonOptions)
             let script = source + "\nJSON.stringify(" + invocation contextJson + ");"
             let json =
@@ -185,6 +167,31 @@ module Scripting =
         with ex ->
             Error(sanitizeException ex)
 
+    let private executeWithinLimits limits invocation (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actorInventory: Map<ItemId, Quantity>) source =
+        let properties = Dictionary<string, obj>()
+        target.Properties |> Map.iter (fun key value -> properties[key] <- gameValueToObject value)
+
+        let context =
+            {| args = args
+               this =
+                {| id = target.Id
+                   name = target.Name
+                   descriptionKey = target.DescriptionKey |> Option.defaultValue ""
+                   tags = target.Tags |> Set.toArray
+                   properties = properties
+                   references = target.References
+                   contents =
+                    contents
+                    |> List.map (fun object ->
+                        {| id = object.Id
+                           name = object.Name
+                           descriptionKey = object.DescriptionKey |> Option.defaultValue ""
+                           tags = object.Tags |> Set.toArray |})
+                    |> List.toArray |}
+               actor = {| inventory = actorInventory |} |}
+
+        executeContextWithinLimits limits invocation context source
+
     let executeVerbWithLimits limits target args actorInventory (source: string) =
         if source.Length > limits.MaxSourceCharacters then
             Error $"Script source may contain at most {limits.MaxSourceCharacters} characters."
@@ -216,6 +223,18 @@ module Scripting =
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
             executeWithinLimits defaultLimits invocation target contents args actorInventory source
+
+    let executeAnonymousBehaviorMethod (className: string) (methodName: string) (value: AnonymousBehaviorValue) args actorInventory (source: string) =
+        if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
+            Error "Behavior class and method names must be valid JavaScript identifiers."
+        elif source.Length > defaultLimits.MaxSourceCharacters then
+            Error $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters."
+        else
+            let properties = Dictionary<string, obj>()
+            value.Properties |> Map.iter (fun key property -> properties[key] <- gameValueToObject property)
+            let context = {| args = args; this = {| properties = properties |}; actor = {| inventory = actorInventory |} |}
+            let invocation contextJson = $"(new {className}()).{methodName}({contextJson})"
+            executeContextWithinLimits defaultLimits invocation context source
 
     let inspectBehaviorModule (registryName: string) (source: string) =
         let diagnostic message = { message = message; line = 0; column = 0 }

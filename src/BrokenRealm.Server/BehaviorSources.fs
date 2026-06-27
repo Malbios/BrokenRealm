@@ -156,6 +156,19 @@ const thingBehaviorClasses = { ThingBehavior };"""
 
 const villageBehaviorClasses = { VillageBehavior };"""
 
+    let anonymous =
+        """class TrailTokenBehavior {
+  static commands: CommandDefinition[] = [];
+
+  describe(context: AnonymousBehaviorContext): VerbResult {
+    return {
+      effects: [{ type: "message", key: "token.describe", args: { label: context.this.properties.label } }]
+    };
+  }
+}
+
+const anonymousBehaviorClasses = { TrailTokenBehavior };"""
+
     let coreCompiled =
         """class GameBehavior {
   static commands = [
@@ -255,6 +268,15 @@ const thingBehaviorClasses = { ThingBehavior };"""
     let villageCompiled =
         """class VillageBehavior extends LocationBehavior {}
 const villageBehaviorClasses = { VillageBehavior };"""
+
+    let anonymousCompiled =
+        """class TrailTokenBehavior {
+  static commands = [];
+  describe(context) {
+    return { effects: [{ type: "message", key: "token.describe", args: { label: context.this.properties.label } }] };
+  }
+}
+const anonymousBehaviorClasses = { TrailTokenBehavior };"""
 
     let join (sources: string list) =
         System.String.Join(System.Environment.NewLine + System.Environment.NewLine, sources)

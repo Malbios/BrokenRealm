@@ -46,7 +46,13 @@ module ObjectDatabase =
                   "thingBehaviorClasses"
                   [ "core-behaviors" ]
                   BehaviorSources.thing
-                  thingCompiled ]
+                  thingCompiled
+              behaviorModule
+                  "anonymous-behaviors"
+                  "anonymousBehaviorClasses"
+                  [ "core-behaviors" ]
+                  BehaviorSources.anonymous
+                  (BehaviorSources.join [ coreCompiled; BehaviorSources.anonymousCompiled ]) ]
             |> List.map (fun behaviorModule -> behaviorModule.Id, behaviorModule)
             |> Map.ofList
 
@@ -66,7 +72,12 @@ module ObjectDatabase =
                       "dangerous", BooleanValue false
                       "landmarks", ListValue [ StringValue "old-oak"; StringValue "brook" ]
                       "climate", MapValue(Map.ofList [ "humidity", FloatValue 0.72 ])
-                      "nearestSettlement", ObjectReferenceValue "village" ]
+                      "nearestSettlement", ObjectReferenceValue "village"
+                      "trailToken",
+                      AnonymousValue
+                          { BehaviorModuleId = "anonymous-behaviors"
+                            BehaviorClassName = "TrailTokenBehavior"
+                            Properties = Map.ofList [ "label", StringValue "old forest trail" ] } ]
               References = Map.ofList [ "north", "village" ]
               BehaviorModuleId = "forest-behaviors"
               BehaviorClassName = "ForestBehavior" }

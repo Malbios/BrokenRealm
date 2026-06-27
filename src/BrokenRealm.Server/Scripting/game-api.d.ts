@@ -31,6 +31,16 @@ declare interface VerbResult {
   effects: ScriptEffect[];
 }
 
+declare interface AnonymousBehaviorContext {
+  args: Record<string, string>;
+  this: {
+    properties: Record<string, GameValue>;
+  };
+  actor: {
+    inventory: Record<string, number>;
+  };
+}
+
 declare interface Gatherable {
   gather(context: VerbContext): VerbResult;
 }

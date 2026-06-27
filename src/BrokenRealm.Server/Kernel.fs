@@ -37,6 +37,20 @@ module Kernel =
                 | Ok() -> None)
             |> Option.map Error
             |> Option.defaultValue (Ok())
+        | AnonymousValue anonymous ->
+            match state.BehaviorModules |> Map.tryFind anonymous.BehaviorModuleId with
+            | None -> Error $"Anonymous value {path} references unknown behavior module: {anonymous.BehaviorModuleId}"
+            | Some behaviorModule when not (behaviorModule.Classes.ContainsKey anonymous.BehaviorClassName) ->
+                Error $"Anonymous value {path} references unknown behavior class: {anonymous.BehaviorClassName}"
+            | Some _ ->
+                anonymous.Properties
+                |> Map.toList
+                |> List.tryPick (fun (key, value) ->
+                    match validateValueReferences state $"{path}.{key}" value with
+                    | Error error -> Some error
+                    | Ok() -> None)
+                |> Option.map Error
+                |> Option.defaultValue (Ok())
         | _ -> Ok()
 
     let private validateObjectProperties state (target: GameObject) =
@@ -48,6 +62,19 @@ module Kernel =
             | Ok() -> None)
         |> Option.map Error
         |> Option.defaultValue (Ok())
+
+    let rec private valueUsesBehaviorModule moduleIds value =
+        match value with
+        | AnonymousValue anonymous ->
+            Set.contains anonymous.BehaviorModuleId moduleIds
+            || (anonymous.Properties |> Map.exists (fun _ nested -> valueUsesBehaviorModule moduleIds nested))
+        | ListValue values -> values |> List.exists (valueUsesBehaviorModule moduleIds)
+        | MapValue values -> values |> Map.exists (fun _ nested -> valueUsesBehaviorModule moduleIds nested)
+        | _ -> false
+
+    let private objectUsesBehaviorModules moduleIds (object: GameObject) =
+        Set.contains object.BehaviorModuleId moduleIds
+        || (object.Properties |> Map.exists (fun _ value -> valueUsesBehaviorModule moduleIds value))
 
     let contentsOf (state: GameState) containerId =
         state.Objects
@@ -146,6 +173,19 @@ module Kernel =
               Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
         | Ok() -> submitValidCommand culture text state
 
+    let executeAnonymousValueMethod methodName args (value: AnonymousBehaviorValue) (state: GameState) =
+        match validateValueReferences state "anonymous" (AnonymousValue value) with
+        | Error error -> Error error
+        | Ok() ->
+            let behaviorModule = state.BehaviorModules[value.BehaviorModuleId]
+            Scripting.executeAnonymousBehaviorMethod
+                value.BehaviorClassName
+                methodName
+                value
+                args
+                state.Player.Inventory
+                behaviorModule.CompiledSource
+
     let tryGetBehaviorModule moduleId (state: GameState) =
         state.BehaviorModules |> Map.tryFind moduleId
 
@@ -212,7 +252,7 @@ module Kernel =
             state.Objects
             |> Map.toList
             |> List.map snd
-            |> List.filter (fun object -> affectedModules |> List.contains object.BehaviorModuleId)
+            |> List.filter (objectUsesBehaviorModules (Set.ofList affectedModules))
             |> List.map _.Id
             |> List.sort
 
@@ -301,16 +341,29 @@ module Kernel =
                         Error
                             [ graphError $"Behavior module is missing class {object.BehaviorClassName}, used by object {object.Id}." ]
                     | None ->
+                        let updatedState = { state with BehaviorModules = updatedModules }
+                        let invalidProperties =
+                            updatedState.Objects
+                            |> Map.toList
+                            |> List.map snd
+                            |> List.tryPick (fun object ->
+                                match validateObjectProperties updatedState object with
+                                | Error error -> Some error
+                                | Ok() -> None)
+
+                        match invalidProperties with
+                        | Some error -> Error [ graphError error ]
+                        | None ->
                         let affectedObjects =
                             state.Objects
                             |> Map.toList
                             |> List.map snd
-                            |> List.filter (fun object -> Set.contains object.BehaviorModuleId affectedSet)
+                            |> List.filter (objectUsesBehaviorModules affectedSet)
                             |> List.map _.Id
                             |> List.sort
 
                         Ok(
                             Some
-                                { State = { state with BehaviorModules = updatedModules }
+                                { State = updatedState
                                   AffectedModules = affectedModules
                                   AffectedObjects = affectedObjects })

@@ -93,6 +93,8 @@ Current object model:
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
 - `village` references `forest` to the south and uses `village-behaviors:VillageBehavior`.
 - `fallen-log` is a permanent object located in `forest` and uses `thing-behaviors:ThingBehavior`.
+- `forest.properties.trailToken` is an identity-free anonymous behavior value using `anonymous-behaviors:TrailTokenBehavior`.
+- Anonymous behavior values embed recursive typed properties, live by reachability from permanent state, and have no ID, location, contents, aliases, tags, or direct command matching. The decision is recorded in `docs/architecture/0003-anonymous-behavior-values.md`.
 - Permanent object contents are derived from each object's optional `LocationId`; no second mutable contents list is stored.
 - Missing locations, self-containment, and containment cycles are rejected before command dispatch.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
@@ -208,7 +210,7 @@ Object properties use the `GameValue` union:
 - recursive string-keyed map
 - anonymous behavior value with a behavior-class reference and recursive properties
 
-The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists or maps are recursively validated against the object database before a behavior method executes.
+The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists, maps, or anonymous values are recursively validated against the object database before a behavior method executes. Anonymous behavior module and class references are also validated. Anonymous methods receive `AnonymousBehaviorContext`, which exposes only properties, arguments, and actor inventory rather than fabricating a permanent-object context.
 
 `VerbContext.this.contents` contains neutral summaries of directly contained permanent objects. Location `look` methods use those IDs to emit neutral content-list messages; the F# response formatter resolves localized object names. Localized object aliases are used only for input matching and resolve to stable object IDs before behavior dispatch.
 
@@ -294,4 +296,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Implement the minimal anonymous behavior value slice described in `docs/architecture/0003-anonymous-behavior-values.md`: embed one in permanent object properties, retrieve it, and execute its TypeScript behavior.
+1. Design an atomic, path-addressed effect for replacing an anonymous value nested under permanent state; do not introduce identity or in-place mutation.
