@@ -6,11 +6,11 @@ These notes are repo memory for future Codex sessions. Keep them focused on proj
 
 BrokenRealm is a browser-playable, ToastStunt-inspired, mechanics-first text empire/sandbox game.
 
-The core idea is a MOO-like object system with TypeScript instead of MOOcode:
+The core idea is a TypeScript class-based game runtime backed by a MOO-like object database:
 
 - Players interact through localized text commands in the browser.
-- Admins edit object verbs in-browser with Monaco, syntax highlighting, IntelliSense, and diagnostics.
-- Most mutable game behavior should live in admin-authored TypeScript verbs attached to game objects.
+- Admins edit behavior classes in-browser with Monaco, syntax highlighting, IntelliSense, and diagnostics.
+- Most mutable game behavior should live in admin-authored TypeScript classes referenced by game objects.
 - The trusted F# runtime should stay small and act as a kernel.
 
 ## Design Reference
@@ -19,8 +19,8 @@ Use ToastStunt, rather than original LambdaMOO alone, as the primary conceptual 
 
 Relevant ToastStunt concepts include:
 
-- ordered multiple parents
-- inherited verbs and properties
+- programmable database-backed objects
+- reusable behavior and property conventions
 - permanent objects and lightweight anonymous/waif-like values
 - typed collection values
 - object lifecycle and containment
@@ -48,20 +48,20 @@ The kernel owns:
 
 Game logic should not become hardcoded F# command handlers. F# should dispatch to object verbs and apply validated neutral effects.
 
-## Planned Object Model Direction
+## Planned Behavior Model Direction
 
-The next object-model foundation is ordered multiple inheritance, not a single-parent prototype chain.
+BrokenRealm uses real TypeScript class semantics rather than recreating MOO inheritance inside the F# kernel. The decision is recorded in `docs/architecture/0002-typescript-behavior-classes.md`.
 
-- Objects will have an ordered list of parent object IDs.
-- Locally defined verbs and properties override inherited definitions.
-- Parent order must produce deterministic resolution.
-- Shared ancestors should be resolved once.
-- Missing parents, duplicate direct parents, cycles, and inconsistent graphs must be rejected.
-- Resolution must preserve the defining object ID for diagnostics and admin tooling.
-- Overridden verbs need a controlled equivalent of MOO's `pass()` to invoke the next resolved implementation.
-- The exact linearization and `pass()` semantics must be recorded in an architecture decision before dispatch is changed.
+- Game objects store mutable state and reference a behavior class ID.
+- TypeScript behavior classes contain command definitions and methods.
+- Native `extends`, `override`, and `super` provide single inheritance.
+- TypeScript interfaces describe capability contracts but do not provide runtime behavior.
+- Shared behavior outside the class hierarchy uses explicit composition or mixins.
+- The kernel compiles a behavior class together with its dependencies, instantiates it in the sandbox, invokes the selected method, validates its neutral effects, and applies them atomically.
+- Admin editing targets behavior classes/modules rather than isolated object-attached functions.
+- Object IDs, tags, properties, and references remain database concepts independent of the class hierarchy.
 
-Multiple parents provide concrete behavior and property defaults. They are not TypeScript interfaces. If interface-like capability contracts are added later, keep them separate: contracts validate required verbs/properties but do not supply behavior. Tags remain semantic metadata and object references remain world relationships; neither substitutes for parents.
+Do not add a parallel kernel-level multiple-inheritance or `pass()` mechanism. If a behavior needs its parent implementation, use native TypeScript `super`.
 
 ## Current Shape
 
@@ -260,9 +260,9 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Record ordered multiple-inheritance resolution and `pass()` semantics in an architecture decision.
-2. Implement and exhaustively test a side-effect-free ancestor linearization/resolution module.
-3. Resolve inherited verbs during localized command dispatch while preserving their defining object IDs.
-4. Show owned, inherited, and overridden verbs in the admin editor.
-5. Introduce typed inherited properties with explicit local, inherited, and cleared states.
+1. Prove `GameBehavior -> LocationBehavior -> ForestBehavior` compilation and native `super` dispatch through Jint.
+2. Add behavior class IDs and a compiled behavior registry to the in-memory state.
+3. Migrate command dispatch from object-attached verb functions to behavior-class methods.
+4. Migrate the admin editor from object/verb selection to behavior-class editing.
+5. Introduce typed object properties and capability interfaces after the class runtime is stable.
 6. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
