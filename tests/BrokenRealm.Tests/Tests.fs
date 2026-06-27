@@ -1,7 +1,103 @@
 namespace BrokenRealm.Tests
 
+open System
 open BrokenRealm.Server
 open Xunit
+
+module PersistenceTests =
+    let private timestamp = DateTimeOffset(2026, 6, 27, 12, 0, 0, TimeSpan.Zero)
+    let private createStore () = InMemoryGameStore(ObjectDatabase.initialState, fun () -> timestamp)
+
+    [<Fact>]
+    let ``Snapshot contains authoritative source and version metadata`` () =
+        let snapshot = (createStore ()).GetSnapshot()
+        let forest = snapshot.World.BehaviorModules["forest-behaviors"]
+
+        Assert.Equal(GameSnapshots.CurrentFormatVersion, snapshot.FormatVersion)
+        Assert.Equal(GameSnapshots.PrototypeCharacterId, snapshot.Character.Id)
+        Assert.Equal(BehaviorSources.forest, forest.Source)
+        Assert.Equal(0L, forest.SourceRevision)
+        Assert.Equal(0L, forest.ActivationRevision)
+        Assert.Equal(timestamp, forest.ActivatedAt)
+        Assert.Equal<GameValue>(
+            ObjectDatabase.initialState.Objects["forest"].Properties["trailToken"],
+            snapshot.World.Objects["forest"].Properties["trailToken"])
+
+    [<Fact>]
+    let ``Character-only commit advances only character revision`` () =
+        let store = createStore ()
+        let stored = store.Read()
+        let result = Kernel.submitCommand En "gather wood" stored.State
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, result.State) with
+        | Ok committed ->
+            Assert.Equal(0L, committed.WorldRevision)
+            Assert.Equal(1L, committed.CharacterRevision)
+            Assert.Equal(2, committed.State.Player.Inventory["wood"])
+        | Error _ -> Assert.True(false, "Expected the character commit to succeed.")
+
+    [<Fact>]
+    let ``World commit advances world revision and preserves character revision`` () =
+        let store = createStore ()
+        let stored = store.Read()
+        let result = Kernel.submitCommand En "name trail green way" stored.State
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, result.State) with
+        | Ok committed ->
+            Assert.Equal(1L, committed.WorldRevision)
+            Assert.Equal(0L, committed.CharacterRevision)
+        | Error _ -> Assert.True(false, "Expected the world commit to succeed.")
+
+    [<Fact>]
+    let ``Behavior source commit advances source and activation revisions`` () =
+        let store = createStore ()
+        let stored = store.Read()
+        let behavior = stored.State.BehaviorModules["forest-behaviors"]
+        let changedBehavior = { behavior with Source = behavior.Source + "\n// persisted edit" }
+        let changedState =
+            { stored.State with
+                BehaviorModules = Map.add behavior.Id changedBehavior stored.State.BehaviorModules }
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, changedState) with
+        | Ok committed ->
+            let persisted = store.GetSnapshot().World.BehaviorModules[behavior.Id]
+            Assert.Equal(1L, committed.WorldRevision)
+            Assert.Equal(1L, persisted.SourceRevision)
+            Assert.Equal(1L, persisted.ActivationRevision)
+            Assert.EndsWith("// persisted edit", persisted.Source)
+        | Error _ -> Assert.True(false, "Expected the behavior commit to succeed.")
+
+    [<Fact>]
+    let ``Compiled artifact changes are not durable world changes`` () =
+        let store = createStore ()
+        let stored = store.Read()
+        let behavior = stored.State.BehaviorModules["forest-behaviors"]
+        let changedBehavior = { behavior with CompiledSource = behavior.CompiledSource + "\n// cache only" }
+        let changedState =
+            { stored.State with
+                BehaviorModules = Map.add behavior.Id changedBehavior stored.State.BehaviorModules }
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevision, changedState) with
+        | Ok committed ->
+            Assert.Equal(0L, committed.WorldRevision)
+            Assert.Equal(BehaviorSources.forest, store.GetSnapshot().World.BehaviorModules[behavior.Id].Source)
+        | Error _ -> Assert.True(false, "Expected the cache-only commit to succeed.")
+
+    [<Fact>]
+    let ``Stale revisions reject the complete commit`` () =
+        let store = createStore ()
+        let first = store.Read()
+        let gathered = Kernel.submitCommand En "gather wood" first.State
+        store.TryCommit(first.WorldRevision, first.CharacterRevision, gathered.State) |> Result.defaultWith (fun _ -> failwith "commit") |> ignore
+
+        let moved = Kernel.submitCommand En "go north" first.State
+
+        match store.TryCommit(first.WorldRevision, first.CharacterRevision, moved.State) with
+        | Error conflict ->
+            Assert.Equal(0L, conflict.ExpectedCharacterRevision)
+            Assert.Equal(1L, conflict.ActualCharacterRevision)
+            Assert.Equal("forest", store.Read().State.Player.LocationId)
+        | Ok _ -> Assert.True(false, "Expected the stale commit to be rejected.")
 
 module KernelTests =
     let private diagnostic message = { message = message; file = ""; line = 0; column = 0 }

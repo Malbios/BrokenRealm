@@ -25,6 +25,7 @@ Run the TypeScript check from `src/BrokenRealm.Client`.
 ## Structure
 
 - `src/BrokenRealm.Server/Domain.fs`: typed value, object, behavior, state, message, effect, and transport types.
+- `src/BrokenRealm.Server/Persistence.fs`: versioned authoritative snapshots and the revision-checked in-memory store.
 - `src/BrokenRealm.Server/Kernel.fs`: generic command submission, behavior-method dispatch, and effect application.
 - `src/BrokenRealm.Server/BehaviorSources.fs`: editable TypeScript behavior modules and checked-in compiled fragments.
 - `src/BrokenRealm.Server/Scripting.fs`: Jint execution and script effect decoding.
@@ -111,7 +112,7 @@ Admin-authored behavior methods run with centralized limits: 4 MB tracked memory
 
 ## Scope
 
-There is no durable database, Docker setup, authentication, or SignalR. World state and edited behavior source are held in memory and reset when the server restarts. The planned durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
+There is no durable database, Docker setup, authentication, or SignalR. The process uses a revision-checked in-memory storage adapter whose versioned snapshots retain authoritative world state, character progress, and TypeScript source while excluding compiled behavior artifacts. Everything still resets when the server restarts. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
 
 ## Object IDs
 

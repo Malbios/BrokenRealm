@@ -75,6 +75,7 @@ Current repo layout:
 Current server modules:
 
 - `Domain.fs`: culture, typed game value, object, behavior, state, message, effect, and DTO types.
+- `Persistence.fs`: versioned authoritative snapshots and the revision-checked in-memory storage adapter.
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
 - `BehaviorSources.fs`: active TypeScript behavior modules, localized command metadata, and checked-in compiled fragments.
@@ -311,6 +312,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Implement the persistence boundary from `docs/architecture/0004-persistence-boundaries.md` with versioned snapshot DTOs and an in-memory storage adapter; do not select a database yet.
-2. Split the singleton `PlayerState` into character-scoped durable state before adding accounts or authentication.
-3. Add expected source revisions to behavior validation and activation before supporting concurrent admin sessions.
+1. Split the singleton `PlayerState` into character-scoped durable state before adding accounts or authentication.
+2. Expose expected source revisions through behavior validation and activation before supporting concurrent admin sessions.
+3. Add snapshot hydration and migration orchestration before selecting a durable database adapter.
