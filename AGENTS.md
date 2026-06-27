@@ -58,7 +58,8 @@ Current object model:
 - The current player starts at `forest`.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has string properties including its biome and resource item.
-- `forest` has verbs: `look`, `gather`, `inventory`.
+- `forest` references `village` to the north and has verbs: `look`, `gather`, `inventory`, `move`.
+- `village` references `forest` to the south and has verbs: `look`, `inventory`, `move`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 
 Current endpoints:
@@ -101,6 +102,8 @@ English:
 - `collect wood`
 - `inventory`
 - `inv`
+- `go north`
+- `walk north`
 
 German:
 
@@ -111,6 +114,8 @@ German:
 - `holz sammeln`
 - `inventar`
 - `inv`
+- `gehe nach norden`
+- `geh nach süden`
 
 Neutral item IDs:
 
@@ -144,6 +149,7 @@ Scripts must return neutral effects. Scripts should not directly mutate state.
 Known effects:
 
 - `{ type: "addInventory", itemId: "wood", amount: number }`
+- `{ type: "movePlayer", destinationId: string }`
 - `{ type: "message", key: string, args?: Record<string, unknown> }`
 
 The kernel validates effects before applying them.
@@ -210,7 +216,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 Good next slices:
 
-- add a second location and generic movement through object references
 - let the admin editor select objects and verbs instead of hardcoding `forest:gather`
 - add script execution time and memory limits
 - map structured compiler diagnostics to Monaco markers

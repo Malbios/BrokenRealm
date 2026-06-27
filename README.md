@@ -45,6 +45,8 @@ English:
 - `collect wood`
 - `inventory`
 - `inv`
+- `go north`
+- `walk north`
 
 Deutsch:
 
@@ -55,8 +57,10 @@ Deutsch:
 - `holz sammeln`
 - `inventar`
 - `inv`
+- `gehe nach norden`
+- `geh nach süden`
 
-The kernel matches localized input against verb patterns on the current object. The current location object is `forest`, and its editable `gather` verb returns neutral effects that the F# kernel validates and applies.
+The kernel matches localized input against verb patterns on the current object. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Movement verbs return a neutral `movePlayer` effect that the F# kernel validates and applies. The forest's editable `gather` verb follows the same effect-based model.
 
 ## API
 

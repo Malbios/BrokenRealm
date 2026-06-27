@@ -7,17 +7,40 @@ module ObjectDatabase =
           Source = source
           CompiledSource = compiledSource }
 
+    let private lookVerb =
+        verb
+            "look"
+            [ { Culture = En; Pattern = "look" }
+              { Culture = En; Pattern = "l" }
+              { Culture = De; Pattern = "schau" }
+              { Culture = De; Pattern = "umsehen" }
+              { Culture = De; Pattern = "sieh dich um" } ]
+            ScriptSources.look
+            ScriptSources.lookCompiled
+
+    let private inventoryVerb =
+        verb
+            "inventory"
+            [ { Culture = En; Pattern = "inventory" }
+              { Culture = En; Pattern = "inv" }
+              { Culture = De; Pattern = "inventar" }
+              { Culture = De; Pattern = "inv" } ]
+            ScriptSources.inventory
+            ScriptSources.inventoryCompiled
+
+    let private moveVerb =
+        verb
+            "move"
+            [ { Culture = En; Pattern = "go {direction}" }
+              { Culture = En; Pattern = "walk {direction}" }
+              { Culture = De; Pattern = "gehe nach {direction}" }
+              { Culture = De; Pattern = "geh nach {direction}" } ]
+            ScriptSources.move
+            ScriptSources.moveCompiled
+
     let initialState =
         let forestVerbs =
-            [ verb
-                  "look"
-                  [ { Culture = En; Pattern = "look" }
-                    { Culture = En; Pattern = "l" }
-                    { Culture = De; Pattern = "schau" }
-                    { Culture = De; Pattern = "umsehen" }
-                    { Culture = De; Pattern = "sieh dich um" } ]
-                  ScriptSources.look
-                  ScriptSources.lookCompiled
+            [ lookVerb
               verb
                   "gather"
                   [ { Culture = En; Pattern = "gather {item}" }
@@ -26,14 +49,13 @@ module ObjectDatabase =
                     { Culture = De; Pattern = "{item} sammeln" } ]
                   ScriptSources.gather
                   ScriptSources.gatherCompiled
-              verb
-                  "inventory"
-                  [ { Culture = En; Pattern = "inventory" }
-                    { Culture = En; Pattern = "inv" }
-                    { Culture = De; Pattern = "inventar" }
-                    { Culture = De; Pattern = "inv" } ]
-                  ScriptSources.inventory
-                  ScriptSources.inventoryCompiled ]
+              inventoryVerb
+              moveVerb ]
+            |> List.map (fun verb -> verb.Name, verb)
+            |> Map.ofList
+
+        let villageVerbs =
+            [ lookVerb; inventoryVerb; moveVerb ]
             |> List.map (fun verb -> verb.Name, verb)
             |> Map.ofList
 
@@ -46,10 +68,20 @@ module ObjectDatabase =
                 Map.ofList
                     [ "biome", "forest"
                       "resourceItem", "wood" ]
+              References = Map.ofList [ "north", "village" ]
               Verbs = forestVerbs }
+
+        let village =
+            { Id = "village"
+              Name = "village"
+              DescriptionKey = Some "location.village.description"
+              Tags = Set.ofList [ "village" ]
+              Properties = Map.ofList [ "biome", "settlement" ]
+              References = Map.ofList [ "south", "forest" ]
+              Verbs = villageVerbs }
 
         { Player =
             { LocationId = forest.Id
               Inventory = Map.empty }
           ItemIds = Set.ofList [ "wood" ]
-          Objects = Map.ofList [ forest.Id, forest ] }
+          Objects = Map.ofList [ forest.Id, forest; village.Id, village ] }

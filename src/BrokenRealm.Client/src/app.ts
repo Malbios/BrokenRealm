@@ -62,6 +62,7 @@ let editorReady: Promise<void> | null = null;
 
 const gameApiTypes = `declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
+  | { type: "movePlayer"; destinationId: string }
   | { type: "message"; key: string; args?: Record<string, unknown> };
 
 declare interface VerbContext {
@@ -72,6 +73,7 @@ declare interface VerbContext {
     descriptionKey: string;
     tags: string[];
     properties: Record<string, string>;
+    references: Record<string, string>;
   };
   actor: {
     inventory: Record<string, number>;

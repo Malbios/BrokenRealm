@@ -18,10 +18,29 @@ module Localizer =
         | _, "wood" -> "wood"
         | _, unknown -> unknown
 
+    let directionAliases culture =
+        match culture with
+        | En -> Map.ofList [ "north", "north"; "south", "south" ]
+        | De -> Map.ofList [ "norden", "north"; "nord", "north"; "süden", "south"; "süd", "south" ]
+
+    let directionName culture directionId =
+        match culture, directionId with
+        | De, "north" -> "Norden"
+        | De, "south" -> "Süden"
+        | _, "north" -> "north"
+        | _, "south" -> "south"
+        | _, unknown -> unknown
+
     let private template culture key =
         match culture, key with
         | En, "location.forest.description" -> "You are standing in a quiet forest."
         | De, "location.forest.description" -> "Du stehst in einem stillen Wald."
+        | En, "location.village.description" -> "You are standing in a small village."
+        | De, "location.village.description" -> "Du stehst in einem kleinen Dorf."
+        | En, "move.success" -> "You travel {direction}."
+        | De, "move.success" -> "Du gehst nach {direction}."
+        | En, "move.no_exit" -> "You cannot go that way."
+        | De, "move.no_exit" -> "Dorthin kannst du nicht gehen."
         | En, "gather.wood.success" -> "You gather {amount} {item}."
         | De, "gather.wood.success" -> "Du sammelst {amount} {item}."
         | En, "gather.no_wood_here" -> "There is no useful wood here."
@@ -56,6 +75,7 @@ module ResponseFormatting =
                 match key with
                 | "item" -> Localizer.itemName culture value
                 | "items" -> formatInventoryItems culture value
+                | "direction" -> Localizer.directionName culture value
                 | _ -> value)
 
         Localizer.text culture { message with Args = args }

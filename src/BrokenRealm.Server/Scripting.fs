@@ -55,6 +55,10 @@ module Scripting =
             match readString "itemId" effect, readInt "amount" effect with
             | Some itemId, Some amount when amount > 0 && amount <= 100 -> Ok(AddInventory(itemId, amount))
             | _ -> Error "addInventory effects require itemId and an amount from 1 to 100."
+        | Some "movePlayer" ->
+            match readString "destinationId" effect with
+            | Some destinationId -> Ok(MovePlayer destinationId)
+            | None -> Error "movePlayer effects require a destinationId."
         | Some "message" ->
             match readString "key" effect with
             | Some key -> Ok(EmitMessage(message key (readArgs effect)))
@@ -71,7 +75,8 @@ module Scripting =
                        name = target.Name
                        descriptionKey = target.DescriptionKey |> Option.defaultValue ""
                        tags = target.Tags |> Set.toArray
-                       properties = target.Properties |}
+                       properties = target.Properties
+                       references = target.References |}
                    actor = {| inventory = actorInventory |} |}
 
             let contextJson = JsonSerializer.Serialize(context, jsonOptions)

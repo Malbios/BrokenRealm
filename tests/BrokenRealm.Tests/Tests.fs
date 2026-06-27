@@ -5,6 +5,48 @@ open Xunit
 
 module KernelTests =
     [<Fact>]
+    let ``German movement command resolves a neutral direction`` () =
+        let matched = CommandMatching.tryMatch De "gehe nach norden" ObjectDatabase.initialState
+
+        match matched with
+        | Some value ->
+            Assert.Equal("move", value.Verb.Name)
+            Assert.Equal("north", value.Args["direction"])
+        | None -> Assert.True(false, "Expected command to match the movement verb.")
+
+    [<Fact>]
+    let ``Movement follows object references between locations`` () =
+        let villageResult = Kernel.submitCommand En "go north" ObjectDatabase.initialState
+
+        Assert.Equal("village", villageResult.State.Player.LocationId)
+        Assert.Equal("You travel north.", villageResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En)
+
+        let forestResult = Kernel.submitCommand De "gehe nach süden" villageResult.State
+        Assert.Equal("forest", forestResult.State.Player.LocationId)
+        Assert.Equal("Du gehst nach Süden.", forestResult.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage De)
+
+    [<Fact>]
+    let ``Movement without an exit leaves the player in place`` () =
+        let result = Kernel.submitCommand En "go south" ObjectDatabase.initialState
+
+        Assert.Equal("forest", result.State.Player.LocationId)
+        Assert.Equal("You cannot go that way.", result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage En)
+
+    [<Fact>]
+    let ``Kernel rejects movement to an unknown object`` () =
+        let state = ObjectDatabase.initialState
+        let forest = state.Objects["forest"]
+        let brokenForest = { forest with References = Map.ofList [ "north", "missing" ] }
+        let brokenState = { state with Objects = state.Objects |> Map.add forest.Id brokenForest }
+
+        let result = Kernel.submitCommand En "go north" brokenState
+
+        Assert.Equal("forest", result.State.Player.LocationId)
+        let message = result.Messages |> List.exactlyOne
+        Assert.Equal("script.error", message.Key)
+        Assert.Equal("Unknown destination object id: missing", message.Args["error"])
+
+    [<Fact>]
     let ``German gather command matches forest gather verb with neutral item id`` () =
         let state = ObjectDatabase.initialState
 
@@ -173,4 +215,22 @@ module ScriptingTests =
             Assert.Equal("property.value", message.Key)
             Assert.Equal("wood", message.Args["value"])
         | Ok _ -> Assert.True(false, "Expected one message effect.")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Script context includes object references`` () =
+        let source =
+            """function execute(context) {
+  return {
+    effects: [
+      { type: "movePlayer", destinationId: context.this.references.north }
+    ]
+  };
+}"""
+
+        let result = Scripting.executeVerb forest Map.empty Map.empty source
+
+        match result with
+        | Ok [ MovePlayer destinationId ] -> Assert.Equal("village", destinationId)
+        | Ok _ -> Assert.True(false, "Expected one movement effect.")
         | Error error -> Assert.True(false, error)

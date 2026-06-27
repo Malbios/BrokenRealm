@@ -13,6 +13,8 @@ module Kernel =
             Error("Unknown item id: " + itemId)
         | AddInventory(_, amount) when amount <= 0 || amount > 100 ->
             Error "addInventory effects require an amount from 1 to 100."
+        | MovePlayer destinationId when not (state.Objects.ContainsKey destinationId) ->
+            Error("Unknown destination object id: " + destinationId)
         | _ -> Ok()
 
     let private applyEffect (state: GameState) (messages: Message list) effect =
@@ -23,6 +25,9 @@ module Kernel =
             | AddInventory(itemId, amount) ->
                 let inventory = state.Player.Inventory |> addInventory itemId amount
                 let player = { state.Player with Inventory = inventory }
+                Ok({ state with Player = player }, messages)
+            | MovePlayer destinationId ->
+                let player = { state.Player with LocationId = destinationId }
                 Ok({ state with Player = player }, messages)
             | EmitMessage message -> Ok(state, messages @ [ message ])
 

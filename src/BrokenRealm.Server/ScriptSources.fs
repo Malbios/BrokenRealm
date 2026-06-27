@@ -106,3 +106,45 @@ module ScriptSources =
     ]
   };
 }"""
+
+    let move =
+        """function execute(context: VerbContext): VerbResult {
+  const direction = context.args.direction;
+  const destinationId = context.this.references[direction];
+
+  if (!destinationId) {
+    return {
+      effects: [
+        { type: "message", key: "move.no_exit", args: {} }
+      ]
+    };
+  }
+
+  return {
+    effects: [
+      { type: "movePlayer", destinationId },
+      { type: "message", key: "move.success", args: { direction } }
+    ]
+  };
+}"""
+
+    let moveCompiled =
+        """function execute(context) {
+  const direction = context.args.direction;
+  const destinationId = context.this.references[direction];
+
+  if (!destinationId) {
+    return {
+      effects: [
+        { type: "message", key: "move.no_exit", args: {} }
+      ]
+    };
+  }
+
+  return {
+    effects: [
+      { type: "movePlayer", destinationId },
+      { type: "message", key: "move.success", args: { direction } }
+    ]
+  };
+}"""

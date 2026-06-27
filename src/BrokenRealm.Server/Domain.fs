@@ -25,6 +25,7 @@ type GameObject =
       DescriptionKey: string option
       Tags: Set<string>
       Properties: Map<string, string>
+      References: Map<string, ObjectId>
       Verbs: Map<VerbName, Verb> }
 
 type PlayerState =
@@ -51,6 +52,7 @@ type MatchedVerb =
 
 type ScriptEffect =
     | AddInventory of itemId: ItemId * amount: int
+    | MovePlayer of destinationId: ObjectId
     | EmitMessage of Message
 
 [<CLIMutable>]
