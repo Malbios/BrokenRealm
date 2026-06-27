@@ -161,7 +161,7 @@ module Scripting =
 
     let executeVerbWithLimits limits target args actorInventory (source: string) =
         if source.Length > limits.MaxSourceCharacters then
-            Error $"Verb source may contain at most {limits.MaxSourceCharacters} characters."
+            Error $"Script source may contain at most {limits.MaxSourceCharacters} characters."
         else
             executeWithinLimits limits (fun context -> "execute(" + context + ")") target args actorInventory source
 
@@ -174,10 +174,91 @@ module Scripting =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then
             Error "Behavior class and method names must be valid JavaScript identifiers."
         elif source.Length > limits.MaxSourceCharacters then
-            Error $"Verb source may contain at most {limits.MaxSourceCharacters} characters."
+            Error $"Behavior source may contain at most {limits.MaxSourceCharacters} characters."
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
             executeWithinLimits limits invocation target args actorInventory source
 
     let executeBehaviorMethod className methodName target args actorInventory source =
         executeBehaviorMethodWithLimits defaultLimits className methodName target args actorInventory source
+
+    let inspectBehaviorModule (source: string) =
+        let diagnostic message = { message = message; line = 0; column = 0 }
+
+        if source.Length > defaultLimits.MaxSourceCharacters then
+            Error(diagnostic $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters.")
+        else
+            try
+                let script =
+                    source
+                    + "\nJSON.stringify(Object.fromEntries(Object.entries(behaviorClasses).map(([name, behavior]) => [name, { commands: behavior.commands, methodsValid: Array.isArray(behavior.commands) && behavior.commands.every(command => typeof behavior.prototype[command.methodName] === 'function') }])));"
+
+                let json =
+                    (new Engine(fun options ->
+                        options.LimitMemory(defaultLimits.MemoryBytes).TimeoutInterval(defaultLimits.Timeout) |> ignore))
+                        .Evaluate(script)
+                        .AsString()
+
+                use document = JsonDocument.Parse(json)
+
+                if document.RootElement.ValueKind <> JsonValueKind.Object then
+                    Error(diagnostic "Behavior modules must define a behaviorClasses registry object.")
+                else
+                    document.RootElement.EnumerateObject()
+                    |> Seq.map (fun classProperty ->
+                        if not (identifierPattern.IsMatch classProperty.Name) then
+                            Error $"Invalid behavior class name: {classProperty.Name}."
+                        else
+                            let hasCommands, commandsElement = classProperty.Value.TryGetProperty("commands")
+                            let hasMethodsValid, methodsValidElement = classProperty.Value.TryGetProperty("methodsValid")
+
+                            if not hasCommands || commandsElement.ValueKind <> JsonValueKind.Array then
+                                Error $"Behavior class {classProperty.Name} must define a commands array."
+                            elif not hasMethodsValid || methodsValidElement.ValueKind <> JsonValueKind.True then
+                                Error $"Behavior class {classProperty.Name} registers a command without a matching method."
+                            else
+                                let commands =
+                                    commandsElement.EnumerateArray()
+                                    |> Seq.map (fun command ->
+                                        match readString "methodName" command, command.TryGetProperty("patterns") with
+                                        | Some methodName, (true, patterns) when identifierPattern.IsMatch methodName && patterns.ValueKind = JsonValueKind.Array ->
+                                            let decodedPatterns =
+                                                patterns.EnumerateArray()
+                                                |> Seq.map (fun pattern ->
+                                                    match readString "culture" pattern, readString "pattern" pattern with
+                                                    | Some culture, Some text
+                                                        when (culture = "en" || culture = "de")
+                                                             && not (String.IsNullOrWhiteSpace text) ->
+                                                        Ok
+                                                            { Culture = (if culture = "de" then De else En)
+                                                              Pattern = text }
+                                                    | _ -> Error $"Behavior command {methodName} has an invalid pattern.")
+                                                |> Seq.toList
+
+                                            match decodedPatterns |> List.tryPick (function Error error -> Some error | _ -> None) with
+                                            | Some error -> Error error
+                                            | None ->
+                                                Ok
+                                                    { MethodName = methodName
+                                                      Patterns = decodedPatterns |> List.choose (function Ok value -> Some value | _ -> None) }
+                                        | _ -> Error $"Behavior class {classProperty.Name} has an invalid command definition.")
+                                    |> Seq.toList
+
+                                match commands |> List.tryPick (function Error error -> Some error | _ -> None) with
+                                | Some error -> Error error
+                                | None ->
+                                    Ok
+                                        (classProperty.Name,
+                                         { ClassName = classProperty.Name
+                                           Commands = commands |> List.choose (function Ok value -> Some value | _ -> None) }))
+                    |> Seq.toList
+                    |> fun classes ->
+                        match classes |> List.tryPick (function Error error -> Some error | _ -> None) with
+                        | Some error -> Error(diagnostic error)
+                        | None ->
+                            classes
+                            |> List.choose (function Ok value -> Some value | _ -> None)
+                            |> Map.ofList
+                            |> Ok
+            with ex ->
+                Error(diagnostic (sanitizeException ex))

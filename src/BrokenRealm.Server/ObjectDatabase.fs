@@ -1,75 +1,27 @@
 namespace BrokenRealm.Server
 
 module ObjectDatabase =
-    let private verb name patterns source compiledSource =
-        { Name = name
-          Patterns = patterns
-          Source = source
-          CompiledSource = compiledSource }
-
-    let private lookVerb =
-        verb
-            "look"
-            [ { Culture = En; Pattern = "look" }
-              { Culture = En; Pattern = "l" }
-              { Culture = De; Pattern = "schau" }
-              { Culture = De; Pattern = "umsehen" }
-              { Culture = De; Pattern = "sieh dich um" } ]
-            ScriptSources.look
-            ScriptSources.lookCompiled
-
-    let private inventoryVerb =
-        verb
-            "inventory"
-            [ { Culture = En; Pattern = "inventory" }
-              { Culture = En; Pattern = "inv" }
-              { Culture = De; Pattern = "inventar" }
-              { Culture = De; Pattern = "inv" } ]
-            ScriptSources.inventory
-            ScriptSources.inventoryCompiled
-
-    let private moveVerb =
-        verb
-            "move"
-            [ { Culture = En; Pattern = "go {direction}" }
-              { Culture = En; Pattern = "walk {direction}" }
-              { Culture = De; Pattern = "gehe nach {direction}" }
-              { Culture = De; Pattern = "geh nach {direction}" } ]
-            ScriptSources.move
-            ScriptSources.moveCompiled
-
     let initialState =
-        let forestVerbs =
-            [ lookVerb
-              verb
-                  "gather"
-                  [ { Culture = En; Pattern = "gather {item}" }
-                    { Culture = En; Pattern = "collect {item}" }
-                    { Culture = De; Pattern = "sammle {item}" }
-                    { Culture = De; Pattern = "{item} sammeln" } ]
-                  ScriptSources.gather
-                  ScriptSources.gatherCompiled
-              inventoryVerb
-              moveVerb ]
-            |> List.map (fun verb -> verb.Name, verb)
-            |> Map.ofList
+        let coreBehavior =
+            let classes =
+                match Scripting.inspectBehaviorModule BehaviorSources.coreCompiled with
+                | Ok classes -> classes
+                | Error diagnostic -> failwith diagnostic.message
 
-        let villageVerbs =
-            [ lookVerb; inventoryVerb; moveVerb ]
-            |> List.map (fun verb -> verb.Name, verb)
-            |> Map.ofList
+            { Id = "core-world"
+              Source = BehaviorSources.core
+              CompiledSource = BehaviorSources.coreCompiled
+              Classes = classes }
 
         let forest =
             { Id = "forest"
               Name = "forest"
               DescriptionKey = Some "location.forest.description"
               Tags = Set.ofList [ "forest"; "wood" ]
-              Properties =
-                Map.ofList
-                    [ "biome", "forest"
-                      "resourceItem", "wood" ]
+              Properties = Map.ofList [ "biome", "forest"; "resourceItem", "wood" ]
               References = Map.ofList [ "north", "village" ]
-              Verbs = forestVerbs }
+              BehaviorModuleId = coreBehavior.Id
+              BehaviorClassName = "ForestBehavior" }
 
         let village =
             { Id = "village"
@@ -78,10 +30,10 @@ module ObjectDatabase =
               Tags = Set.ofList [ "village" ]
               Properties = Map.ofList [ "biome", "settlement" ]
               References = Map.ofList [ "south", "forest" ]
-              Verbs = villageVerbs }
+              BehaviorModuleId = coreBehavior.Id
+              BehaviorClassName = "VillageBehavior" }
 
-        { Player =
-            { LocationId = forest.Id
-              Inventory = Map.empty }
+        { Player = { LocationId = forest.Id; Inventory = Map.empty }
           ItemIds = Set.ofList [ "wood" ]
+          BehaviorModules = Map.ofList [ coreBehavior.Id, coreBehavior ]
           Objects = Map.ofList [ forest.Id, forest; village.Id, village ] }

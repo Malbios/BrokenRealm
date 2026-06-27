@@ -35,31 +35,46 @@ module Program =
         |> ignore
 
         app.MapGet(
-            "/admin/objects",
+            "/admin/behaviors",
             Func<IResult>(fun () ->
                 lock stateLock (fun () ->
-                    Kernel.listAdminObjects gameState |> Results.Json)))
+                    Kernel.listAdminBehaviorModules gameState |> Results.Json)))
         |> ignore
 
         app.MapGet(
-            "/admin/objects/{objectId}/verbs/{verbName}",
-            Func<string, string, IResult>(fun objectId verbName ->
+            "/admin/behaviors/{moduleId}",
+            Func<string, IResult>(fun moduleId ->
                 lock stateLock (fun () ->
-                    match Kernel.tryGetVerb objectId verbName gameState with
-                    | Some verb -> Results.Json({ objectId = objectId; verb = verb.Name; source = verb.Source } : VerbResponse)
+                    match Kernel.tryGetBehaviorModule moduleId gameState with
+                    | Some behaviorModule ->
+                        Results.Json(
+                            { moduleId = behaviorModule.Id
+                              classes = behaviorModule.Classes |> Map.toList |> List.map fst
+                              source = behaviorModule.Source }
+                            : BehaviorModuleResponse)
                     | None -> Results.NotFound())))
         |> ignore
 
         app.MapPut(
-            "/admin/objects/{objectId}/verbs/{verbName}",
-            Func<string, string, VerbUpdateRequest, IResult>(fun objectId verbName request ->
+            "/admin/behaviors/{moduleId}",
+            Func<string, BehaviorModuleUpdateRequest, IResult>(fun moduleId request ->
                 lock stateLock (fun () ->
-                    match Kernel.tryUpdateVerbSource (ScriptCompiler.compile app.Environment.ContentRootPath) objectId verbName request.source gameState with
+                    match
+                        Kernel.tryUpdateBehaviorModule
+                            (ScriptCompiler.compile app.Environment.ContentRootPath)
+                            Scripting.inspectBehaviorModule
+                            moduleId
+                            request.source
+                            gameState
+                    with
                     | Ok(Some updated) ->
                         gameState <- updated
-                        Results.Json({ objectId = objectId; verb = verbName; source = request.source; diagnostics = [] } : VerbUpdateResponse)
+                        Results.Json(
+                            { moduleId = moduleId; source = request.source; diagnostics = [] }
+                            : BehaviorModuleUpdateResponse)
                     | Ok None -> Results.NotFound()
-                    | Error diagnostics -> Results.BadRequest({ diagnostics = diagnostics } : VerbErrorResponse))))
+                    | Error diagnostics ->
+                        Results.BadRequest({ diagnostics = diagnostics } : BehaviorModuleErrorResponse))))
         |> ignore
 
         app.Run()

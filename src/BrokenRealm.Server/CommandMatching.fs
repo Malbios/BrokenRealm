@@ -42,17 +42,21 @@ module CommandMatching =
 
     let tryMatch culture rawInput (state: GameState) =
         let location = state.Objects[state.Player.LocationId]
+        let behaviorModule = state.BehaviorModules[location.BehaviorModuleId]
+        let behaviorClass = behaviorModule.Classes[location.BehaviorClassName]
 
-        location.Verbs
-        |> Map.toList
-        |> List.tryPick (fun (_, verb) ->
-            verb.Patterns
+        behaviorClass.Commands
+        |> List.tryPick (fun command ->
+            command.Patterns
             |> List.filter (fun pattern -> pattern.Culture = culture)
             |> List.tryPick (fun pattern ->
                 match matchPattern culture rawInput pattern.Pattern with
                 | Some args ->
                     Some
                         { ObjectId = location.Id
-                          Verb = verb
+                          BehaviorModuleId = behaviorModule.Id
+                          BehaviorClassName = behaviorClass.ClassName
+                          MethodName = command.MethodName
+                          CompiledSource = behaviorModule.CompiledSource
                           Args = args }
                 | None -> None))

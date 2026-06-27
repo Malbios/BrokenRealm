@@ -62,10 +62,9 @@ type MonacoMarker = {
   endColumn: number;
 };
 
-type AdminObject = {
-  objectId: string;
-  name: string;
-  verbs: string[];
+type AdminBehaviorModule = {
+  moduleId: string;
+  classes: string[];
 };
 
 const form = document.querySelector<HTMLFormElement>("#command-form");
@@ -80,12 +79,11 @@ const editorHost = document.querySelector<HTMLDivElement>("#script-editor");
 const scriptSource = document.querySelector<HTMLTextAreaElement>("#script-source");
 const saveScript = document.querySelector<HTMLButtonElement>("#save-script");
 const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
-const objectSelect = document.querySelector<HTMLSelectElement>("#admin-object");
-const verbSelect = document.querySelector<HTMLSelectElement>("#admin-verb");
+const behaviorModuleSelect = document.querySelector<HTMLSelectElement>("#behavior-module");
 const verbTitle = document.querySelector<HTMLHeadingElement>("#verb-title");
 let editor: MonacoEditor | null = null;
 let editorReady: Promise<void> | null = null;
-let adminObjects: AdminObject[] = [];
+let behaviorModules: AdminBehaviorModule[] = [];
 
 const gameApiTypes = `declare type ScriptEffect =
   | { type: "addInventory"; itemId: "wood"; amount: number }
@@ -200,45 +198,25 @@ function setScriptSource(value: string): void {
   }
 }
 
-function selectedTarget(): { objectId: string; verb: string } | null {
-  const objectId = objectSelect?.value;
-  const verb = verbSelect?.value;
-  return objectId && verb ? { objectId, verb } : null;
+function selectedModuleId(): string | null {
+  return behaviorModuleSelect?.value || null;
 }
 
-function populateVerbSelect(): void {
-  if (!objectSelect || !verbSelect) return;
+async function loadBehaviorModules(): Promise<void> {
+  if (!behaviorModuleSelect || behaviorModules.length > 0) return;
 
-  const selectedObject = adminObjects.find((object) => object.objectId === objectSelect.value);
-  verbSelect.replaceChildren();
+  const response = await fetch("/admin/behaviors");
+  if (!response.ok) throw new Error("Could not load behavior modules.");
 
-  selectedObject?.verbs.forEach((verb) => {
+  behaviorModules = (await response.json()) as AdminBehaviorModule[];
+  behaviorModuleSelect.replaceChildren();
+
+  behaviorModules.forEach((behaviorModule) => {
     const option = document.createElement("option");
-    option.value = verb;
-    option.textContent = verb;
-    verbSelect.appendChild(option);
+    option.value = behaviorModule.moduleId;
+    option.textContent = `${behaviorModule.moduleId} (${behaviorModule.classes.join(", ")})`;
+    behaviorModuleSelect.appendChild(option);
   });
-}
-
-async function loadAdminObjects(): Promise<void> {
-  if (!objectSelect || !verbSelect || adminObjects.length > 0) return;
-
-  const response = await fetch("/admin/objects");
-  if (!response.ok) throw new Error("Could not load admin objects.");
-
-  adminObjects = (await response.json()) as AdminObject[];
-  objectSelect.replaceChildren();
-
-  adminObjects.forEach((object) => {
-    const option = document.createElement("option");
-    option.value = object.objectId;
-    option.textContent = `${object.name} (${object.objectId})`;
-    option.selected = object.objectId === "forest";
-    objectSelect.appendChild(option);
-  });
-
-  populateVerbSelect();
-  if (verbSelect.querySelector('option[value="gather"]')) verbSelect.value = "gather";
 }
 
 function initializeEditor(): Promise<void> {
@@ -325,19 +303,19 @@ async function loadScript(): Promise<void> {
   await initializeEditor();
 
   try {
-    await loadAdminObjects();
+    await loadBehaviorModules();
   } catch {
-    setStatus("Could not load admin objects.", true);
+    setStatus("Could not load behavior modules.", true);
     return;
   }
 
-  const target = selectedTarget();
-  if (!target) {
-    setStatus("No editable verb is available.", true);
+  const moduleId = selectedModuleId();
+  if (!moduleId) {
+    setStatus("No editable behavior module is available.", true);
     return;
   }
 
-  const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`);
+  const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`);
   if (!response.ok) {
     setStatus("Could not load script.", true);
     return;
@@ -346,7 +324,7 @@ async function loadScript(): Promise<void> {
   const payload = (await response.json()) as ScriptResponse;
   setScriptSource(payload.source);
   setEditorMarkers([]);
-  if (verbTitle) verbTitle.textContent = `${target.objectId}:${target.verb}`;
+  if (verbTitle) verbTitle.textContent = moduleId;
   setStatus("Loaded.");
 }
 
@@ -354,9 +332,9 @@ async function saveCurrentScript(): Promise<void> {
   if (!scriptSource) return;
   await initializeEditor();
 
-  const target = selectedTarget();
-  if (!target) {
-    setStatus("No editable verb is selected.", true);
+  const moduleId = selectedModuleId();
+  if (!moduleId) {
+    setStatus("No editable behavior module is selected.", true);
     return;
   }
 
@@ -364,7 +342,7 @@ async function saveCurrentScript(): Promise<void> {
   setStatus("Compiling...");
   setEditorMarkers([]);
 
-  const response = await fetch(`/admin/objects/${encodeURIComponent(target.objectId)}/verbs/${encodeURIComponent(target.verb)}`, {
+  const response = await fetch(`/admin/behaviors/${encodeURIComponent(moduleId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: getScriptSource() }),
@@ -414,10 +392,6 @@ adminTab?.addEventListener("click", () => showPanel("admin"));
 saveScript?.addEventListener("click", () => {
   void saveCurrentScript().finally(() => saveScript?.removeAttribute("disabled"));
 });
-objectSelect?.addEventListener("change", () => {
-  populateVerbSelect();
-  void loadScript();
-});
-verbSelect?.addEventListener("change", () => void loadScript());
+behaviorModuleSelect?.addEventListener("change", () => void loadScript());
 
 appendLine("BrokenRealm awaits.");

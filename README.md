@@ -25,10 +25,11 @@ Run the TypeScript check from `src/BrokenRealm.Client`.
 ## Structure
 
 - `src/BrokenRealm.Server/Domain.fs`: object, verb, state, message, and effect types.
-- `src/BrokenRealm.Server/Kernel.fs`: generic command submission, verb dispatch, and effect application.
+- `src/BrokenRealm.Server/Kernel.fs`: generic command submission, behavior-method dispatch, and effect application.
+- `src/BrokenRealm.Server/BehaviorSources.fs`: editable TypeScript behavior class module.
 - `src/BrokenRealm.Server/Scripting.fs`: Jint execution and script effect decoding.
-- `src/BrokenRealm.Server/ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited verb source.
-- `src/BrokenRealm.Server/Scripting/game-api.d.ts`: typed script API available to verb source.
+- `src/BrokenRealm.Server/ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
+- `src/BrokenRealm.Server/Scripting/game-api.d.ts`: typed API available to behavior modules.
 - `src/BrokenRealm.Server/ObjectDatabase.fs`: in-memory starting object database.
 - `src/BrokenRealm.Server/CommandMatching.fs`: localized verb pattern matching.
 - `src/BrokenRealm.Server/Localization.fs`: culture parsing and message/item localization.
@@ -60,7 +61,7 @@ Deutsch:
 - `gehe nach norden`
 - `geh nach süden`
 
-The kernel matches localized input against verb patterns on the current object. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Movement verbs return a neutral `movePlayer` effect that the F# kernel validates and applies. The forest's editable `gather` verb follows the same effect-based model.
+The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. The player starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
 ## API
 
@@ -81,11 +82,11 @@ The kernel matches localized input against verb patterns on the current object. 
 
 Admin editor transport:
 
-- `GET /admin/objects`
-- `GET /admin/objects/forest/verbs/gather`
-- `PUT /admin/objects/forest/verbs/gather`
+- `GET /admin/behaviors`
+- `GET /admin/behaviors/core-world`
+- `PUT /admin/behaviors/core-world`
 
-The browser admin panel loads the object and verb catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit the selected verb source in memory. On save, the server runs TypeScript checking/compilation first. If compilation fails, structured diagnostics are shown as Monaco markers and readable messages, and the previously running verb stays active. There is no authentication yet.
+The browser admin panel loads the behavior-module catalog and uses Monaco, loaded from a pinned CDN version with a textarea fallback, to edit TypeScript class hierarchies in memory. Objects reference a module and class. Native `extends`, `override`, and `super` provide behavior inheritance. On save, the server type-checks and compiles the whole module, reads command metadata from its registered classes, verifies that every referenced class still exists, and atomically activates the new module. Failures leave the previous module active. There is no authentication yet.
 
 ## Script limits
 

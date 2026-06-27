@@ -39,7 +39,15 @@ module Kernel =
         | Some matched ->
             let target = state.Objects[matched.ObjectId]
 
-            match Scripting.executeVerb target matched.Args state.Player.Inventory matched.Verb.CompiledSource with
+            match
+                Scripting.executeBehaviorMethod
+                    matched.BehaviorClassName
+                    matched.MethodName
+                    target
+                    matched.Args
+                    state.Player.Inventory
+                    matched.CompiledSource
+            with
             | Error error ->
                 { State = state
                   Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
@@ -60,33 +68,47 @@ module Kernel =
                     { State = state
                       Messages = messages }
 
-    let tryGetVerb objectId verbName (state: GameState) =
-        state.Objects
-        |> Map.tryFind objectId
-        |> Option.bind (fun object -> object.Verbs |> Map.tryFind verbName)
+    let tryGetBehaviorModule moduleId (state: GameState) =
+        state.BehaviorModules |> Map.tryFind moduleId
 
-    let listAdminObjects (state: GameState) =
-        state.Objects
+    let listAdminBehaviorModules (state: GameState) =
+        state.BehaviorModules
         |> Map.toList
-        |> List.map (fun (_, object) ->
-            { objectId = object.Id
-              name = object.Name
-              verbs = object.Verbs |> Map.toList |> List.map fst })
+        |> List.map (fun (_, behaviorModule) ->
+            { moduleId = behaviorModule.Id
+              classes = behaviorModule.Classes |> Map.toList |> List.map fst })
 
-    let tryUpdateVerbSource compile objectId verbName source (state: GameState) =
-        match state.Objects |> Map.tryFind objectId with
+    let tryUpdateBehaviorModule compile (inspect: string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>) moduleId source (state: GameState) =
+        match state.BehaviorModules |> Map.tryFind moduleId with
         | None -> Ok None
-        | Some object ->
-            match object.Verbs |> Map.tryFind verbName with
-            | None -> Ok None
-            | Some verb ->
-                match compile source with
-                | Error diagnostics -> Error diagnostics
-                | Ok compiledSource ->
-                    let updatedVerb =
-                        { verb with
-                            Source = source
-                            CompiledSource = compiledSource }
+        | Some behaviorModule ->
+            match compile source with
+            | Error diagnostics -> Error diagnostics
+            | Ok compiledSource ->
+                match inspect compiledSource with
+                | Error diagnostic -> Error [ diagnostic ]
+                | Ok classes ->
+                    let missingClass =
+                        state.Objects
+                        |> Map.toList
+                        |> List.map snd
+                        |> List.filter (fun object -> object.BehaviorModuleId = moduleId)
+                        |> List.tryFind (fun object -> not (classes.ContainsKey object.BehaviorClassName))
 
-                    let updatedObject = { object with Verbs = object.Verbs |> Map.add verbName updatedVerb }
-                    Ok(Some { state with Objects = state.Objects |> Map.add objectId updatedObject })
+                    match missingClass with
+                    | Some object ->
+                        Error
+                            [ { message = $"Behavior module is missing class {object.BehaviorClassName}, used by object {object.Id}."
+                                line = 0
+                                column = 0 } ]
+                    | None ->
+                        let updatedModule =
+                            { behaviorModule with
+                                Source = source
+                                CompiledSource = compiledSource
+                                Classes = classes }
+
+                        Ok(
+                            Some
+                                { state with
+                                    BehaviorModules = state.BehaviorModules |> Map.add moduleId updatedModule })

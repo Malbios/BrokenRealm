@@ -77,11 +77,11 @@ Current server modules:
 - `Domain.fs`: culture, object, verb, state, message, effect, and DTO types.
 - `Localization.fs`: culture parsing, message localization, item names and aliases.
 - `ObjectDatabase.fs`: in-memory starting object database.
-- `BehaviorSources.fs`: TypeScript class-runtime spike proving native `extends`, `override`, and `super` execution.
+- `BehaviorSources.fs`: active TypeScript behavior class hierarchy and localized command metadata.
 - `CommandMatching.fs`: localized command text to object verb match.
 - `Scripting.fs`: Jint execution and script effect decoding.
-- `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited verb source.
-- `Kernel.fs`: command submission, verb dispatch, effect application, verb update.
+- `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
+- `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update.
 - `Program.fs`: minimal HTTP/static host.
 
 Current object model:
@@ -90,24 +90,24 @@ Current object model:
 - The current player starts at `forest`.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has string properties including its biome and resource item.
-- `forest` references `village` to the north and has verbs: `look`, `gather`, `inventory`, `move`.
-- `village` references `forest` to the south and has verbs: `look`, `inventory`, `move`.
+- `forest` references `village` to the north and uses `core-world:ForestBehavior`.
+- `village` references `forest` to the south and uses `core-world:VillageBehavior`.
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
-- Live command dispatch still uses standalone object-attached verbs during migration. A tested class-runtime spike compiles and executes `GameBehavior -> LocationBehavior -> ForestBehavior`; it is not yet wired into player commands.
+- Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`.
 
 Current endpoints:
 
 - `POST /game/command`
   - Body: `{ "text": "...", "culture": "en" | "de" }`
   - Player command endpoint.
-- `GET /admin/objects`
-  - Lists objects and their editable verbs for the admin editor.
-- `GET /admin/objects/{objectId}/verbs/{verbName}`
-  - Loads editable verb source.
-- `PUT /admin/objects/{objectId}/verbs/{verbName}`
-  - TypeScript-checks/compiles editable verb source.
-  - On failure, returns diagnostics and keeps the previous compiled verb active.
+- `GET /admin/behaviors`
+  - Lists editable behavior modules and their registered classes.
+- `GET /admin/behaviors/{moduleId}`
+  - Loads an editable TypeScript behavior module.
+- `PUT /admin/behaviors/{moduleId}`
+  - TypeScript-checks/compiles the module, reads registered class command metadata, and verifies referenced classes.
+  - On failure, returns diagnostics and keeps the previous compiled module active.
 
 ## Localization Rules
 
@@ -164,7 +164,7 @@ Localized item display:
 
 ## Scripting Rules
 
-Admin-edited verb source is TypeScript.
+Admin-edited behavior modules are TypeScript.
 
 Runtime execution is JavaScript through Jint.
 
@@ -172,11 +172,16 @@ The script API is declared in:
 
 - `src/BrokenRealm.Server/Scripting/game-api.d.ts`
 
-Verb scripts define:
+Behavior classes define methods returning `VerbResult` and register localized command patterns in static `commands` metadata.
+
+For example:
 
 ```ts
-function execute(context: VerbContext): VerbResult {
-  return { effects: [] };
+class ForestBehavior extends LocationBehavior {
+  override look(context: VerbContext): VerbResult {
+    const parent = super.look(context);
+    return { effects: [...parent.effects] };
+  }
 }
 ```
 
@@ -207,10 +212,10 @@ Limit failures use stable sanitized diagnostics. Effects are decoded and validat
 The browser UI has:
 
 - player tab with output log, command input, and language selector
-- admin tab with object and verb selectors plus Monaco, with a textarea fallback when the CDN is unavailable
+- admin tab with behavior-module selection plus Monaco, with a textarea fallback when the CDN is unavailable
 - structured compile diagnostics displayed as Monaco markers and individual editor messages
 
-Admin can change the gather amount, save the verb, and later player `gather wood` / `sammle holz` commands use the changed logic.
+Admin can change behavior methods or command metadata, save the module, and later player commands use the atomically activated class hierarchy.
 
 ## Constraints
 
@@ -262,8 +267,6 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Add behavior class IDs and a compiled behavior registry to the in-memory state.
-2. Migrate command dispatch from object-attached verb functions to behavior-class methods.
-3. Migrate the admin editor from object/verb selection to behavior-class editing.
-4. Introduce typed object properties and capability interfaces after the class runtime is stable.
-5. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.
+1. Introduce typed object properties and capability interfaces now that the class runtime is active.
+2. Split behavior modules and add explicit dependency/impact reporting as the class library grows.
+3. Add permanent-object containment and lightweight anonymous/waif-like values in later vertical slices.

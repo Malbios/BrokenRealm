@@ -8,7 +8,6 @@ type Culture =
     | De
 
 type ObjectId = string
-type VerbName = string
 type ItemId = string
 type Quantity = int
 
@@ -31,11 +30,19 @@ type VerbPattern =
     { Culture: Culture
       Pattern: string }
 
-type Verb =
-    { Name: VerbName
-      Patterns: VerbPattern list
+type BehaviorCommand =
+    { MethodName: string
+      Patterns: VerbPattern list }
+
+type BehaviorClassDefinition =
+    { ClassName: string
+      Commands: BehaviorCommand list }
+
+type BehaviorModule =
+    { Id: string
       Source: string
-      CompiledSource: string }
+      CompiledSource: string
+      Classes: Map<string, BehaviorClassDefinition> }
 
 type GameObject =
     { Id: ObjectId
@@ -44,7 +51,8 @@ type GameObject =
       Tags: Set<string>
       Properties: Map<string, string>
       References: Map<string, ObjectId>
-      Verbs: Map<VerbName, Verb> }
+      BehaviorModuleId: string
+      BehaviorClassName: string }
 
 type PlayerState =
     { LocationId: ObjectId
@@ -53,6 +61,7 @@ type PlayerState =
 type GameState =
     { Player: PlayerState
       ItemIds: Set<ItemId>
+      BehaviorModules: Map<string, BehaviorModule>
       Objects: Map<ObjectId, GameObject> }
 
 type Message =
@@ -63,9 +72,12 @@ type CommandResult =
     { State: GameState
       Messages: Message list }
 
-type MatchedVerb =
+type MatchedBehaviorMethod =
     { ObjectId: ObjectId
-      Verb: Verb
+      BehaviorModuleId: string
+      BehaviorClassName: string
+      MethodName: string
+      CompiledSource: string
       Args: Map<string, string> }
 
 type ScriptEffect =
@@ -83,25 +95,23 @@ type CommandResponse =
     { lines: string list }
 
 [<CLIMutable>]
-type VerbResponse =
-    { objectId: string
-      verb: string
+type BehaviorModuleResponse =
+    { moduleId: string
+      classes: string list
       source: string }
 
 [<CLIMutable>]
-type AdminObjectResponse =
-    { objectId: string
-      name: string
-      verbs: string list }
+type AdminBehaviorModuleResponse =
+    { moduleId: string
+      classes: string list }
 
 [<CLIMutable>]
-type VerbUpdateRequest =
+type BehaviorModuleUpdateRequest =
     { source: string }
 
 [<CLIMutable>]
-type VerbUpdateResponse =
-    { objectId: string
-      verb: string
+type BehaviorModuleUpdateResponse =
+    { moduleId: string
       source: string
       diagnostics: string list }
 
@@ -112,5 +122,5 @@ type CompilerDiagnostic =
       column: int }
 
 [<CLIMutable>]
-type VerbErrorResponse =
+type BehaviorModuleErrorResponse =
     { diagnostics: CompilerDiagnostic list }

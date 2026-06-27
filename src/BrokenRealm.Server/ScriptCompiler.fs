@@ -132,7 +132,7 @@ module ScriptCompiler =
     let compile contentRoot (source: string) =
         if source.Length > Scripting.defaultLimits.MaxSourceCharacters then
             Error
-                [ { message = $"Verb source may contain at most {Scripting.defaultLimits.MaxSourceCharacters} characters."
+                [ { message = $"Behavior source may contain at most {Scripting.defaultLimits.MaxSourceCharacters} characters."
                     line = 0
                     column = 0 } ]
         else

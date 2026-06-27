@@ -36,22 +36,18 @@
       <div id="admin-panel" class="panel admin-panel">
         <div class="editor-head">
           <div>
-            <h2 id="verb-title">Verb editor</h2>
-            <p>Edit TypeScript source stored on a game object.</p>
+            <h2 id="verb-title">Behavior class editor</h2>
+            <p>Edit a TypeScript behavior module and its class hierarchy.</p>
           </div>
           <div class="verb-controls">
             <label>
-              <span>Object</span>
-              <select id="admin-object"></select>
-            </label>
-            <label>
-              <span>Verb</span>
-              <select id="admin-verb"></select>
+              <span>Module</span>
+              <select id="behavior-module"></select>
             </label>
             <button id="save-script" type="button">Save</button>
           </div>
         </div>
-        <div id="script-editor" class="script-editor" aria-label="Verb source editor"></div>
+        <div id="script-editor" class="script-editor" aria-label="Behavior source editor"></div>
         <textarea id="script-source" class="fallback-editor" spellcheck="false" hidden></textarea>
         <div id="script-status" class="status" aria-live="polite"></div>
       </div>

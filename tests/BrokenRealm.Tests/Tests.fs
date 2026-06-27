@@ -4,6 +4,18 @@ open BrokenRealm.Server
 open Xunit
 
 module KernelTests =
+    let private diagnostic message = { message = message; line = 0; column = 0 }
+
+    let private updateCoreBehavior compiledSource source =
+        let classes = ObjectDatabase.initialState.BehaviorModules["core-world"].Classes
+
+        Kernel.tryUpdateBehaviorModule
+            (fun _ -> Ok compiledSource)
+            (fun _ -> Ok classes)
+            "core-world"
+            source
+            ObjectDatabase.initialState
+
     [<Fact>]
     let ``Initial object IDs and references satisfy the durable ID contract`` () =
         let state = ObjectDatabase.initialState
@@ -37,12 +49,71 @@ module KernelTests =
         Assert.False(ObjectIds.isValid value)
 
     [<Fact>]
-    let ``Admin object catalog lists every editable verb`` () =
-        let objects = Kernel.listAdminObjects ObjectDatabase.initialState
+    let ``Admin catalog lists behavior modules and classes`` () =
+        let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState
 
-        Assert.Equal<string list>([ "forest"; "village" ], objects |> List.map _.objectId)
-        let forest = objects |> List.find (fun object -> object.objectId = "forest")
-        Assert.Equal<string list>([ "gather"; "inventory"; "look"; "move" ], forest.verbs)
+        let core = modules |> List.exactlyOne
+        Assert.Equal("core-world", core.moduleId)
+        Assert.Equal<string list>([ "ForestBehavior"; "GameBehavior"; "LocationBehavior"; "VillageBehavior" ], core.classes)
+
+    [<Fact>]
+    let ``Behavior command metadata is read from compiled TypeScript classes`` () =
+        let classes =
+            match Scripting.inspectBehaviorModule BehaviorSources.coreCompiled with
+            | Ok classes -> classes
+            | Error diagnostic -> failwith diagnostic.message
+
+        let forestCommands = classes["ForestBehavior"].Commands |> List.map _.MethodName
+        Assert.Equal<string list>([ "inventory"; "look"; "move"; "gather" ], forestCommands)
+
+    [<Fact>]
+    let ``Updating class command metadata changes localized dispatch`` () =
+        let compiled = BehaviorSources.coreCompiled.Replace("gather {item}", "harvest {item}")
+
+        let state =
+            match
+                Kernel.tryUpdateBehaviorModule
+                    (fun _ -> Ok compiled)
+                    Scripting.inspectBehaviorModule
+                    "core-world"
+                    BehaviorSources.core
+                    ObjectDatabase.initialState
+            with
+            | Ok(Some state) -> state
+            | Ok None -> failwith "Expected behavior module to update."
+            | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
+
+        let matched = CommandMatching.tryMatch En "harvest wood" state
+        Assert.Equal("gather", (matched |> Option.get).MethodName)
+
+    [<Fact>]
+    let ``Behavior updates cannot remove a class used by an object`` () =
+        let compiled =
+            BehaviorSources.coreCompiled.Replace(
+                "const behaviorClasses = { GameBehavior, LocationBehavior, ForestBehavior, VillageBehavior };",
+                "const behaviorClasses = { GameBehavior, LocationBehavior, VillageBehavior };")
+
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                (fun _ -> Ok compiled)
+                Scripting.inspectBehaviorModule
+                "core-world"
+                BehaviorSources.core
+                ObjectDatabase.initialState
+
+        match result with
+        | Error [ diagnostic ] ->
+            Assert.Equal("Behavior module is missing class ForestBehavior, used by object forest.", diagnostic.message)
+        | _ -> Assert.True(false, "Expected the behavior update to be rejected.")
+
+    [<Fact>]
+    let ``Behavior command metadata must reference an implemented method`` () =
+        let compiled = BehaviorSources.coreCompiled.Replace("methodName: \"gather\"", "methodName: \"missing\"")
+
+        match Scripting.inspectBehaviorModule compiled with
+        | Error diagnostic ->
+            Assert.Equal("Behavior class ForestBehavior registers a command without a matching method.", diagnostic.message)
+        | Ok _ -> Assert.True(false, "Expected invalid command metadata to be rejected.")
 
     [<Fact>]
     let ``German movement command resolves a neutral direction`` () =
@@ -50,7 +121,7 @@ module KernelTests =
 
         match matched with
         | Some value ->
-            Assert.Equal("move", value.Verb.Name)
+            Assert.Equal("move", value.MethodName)
             Assert.Equal("north", value.Args["direction"])
         | None -> Assert.True(false, "Expected command to match the movement verb.")
 
@@ -95,7 +166,7 @@ module KernelTests =
         match matched with
         | Some value ->
             Assert.Equal("forest", value.ObjectId)
-            Assert.Equal("gather", value.Verb.Name)
+            Assert.Equal("gather", value.MethodName)
             Assert.Equal("wood", value.Args["item"])
         | None -> Assert.True(false, "Expected command to match a verb.")
 
@@ -124,12 +195,13 @@ module KernelTests =
 
     [<Fact>]
     let ``Updating forest gather source changes later gather behavior`` () =
-        let updatedSource = ScriptSources.gather.Replace("const amount = 2;", "const amount = 5;")
+        let updatedSource = BehaviorSources.core.Replace("const amount = 2;", "const amount = 5;")
+        let updatedCompiled = BehaviorSources.coreCompiled.Replace("const amount = 2;", "const amount = 5;")
         let state =
-            match Kernel.tryUpdateVerbSource (fun _ -> Ok(ScriptSources.gatherCompiled.Replace("const amount = 2;", "const amount = 5;"))) "forest" "gather" updatedSource ObjectDatabase.initialState with
+            match updateCoreBehavior updatedCompiled updatedSource with
             | Ok(Some state) -> state
-            | Ok None -> failwith "Expected gather verb to update."
-            | Error diagnostics -> failwith (String.concat "\n" diagnostics)
+            | Ok None -> failwith "Expected behavior module to update."
+            | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
         let result = Kernel.submitCommand En "gather wood" state
 
@@ -138,11 +210,17 @@ module KernelTests =
         Assert.Equal("You gather 5 wood.", line)
 
     [<Fact>]
-    let ``Invalid verb source is rejected and previous source remains active`` () =
-        let result = Kernel.tryUpdateVerbSource (fun _ -> Error [ "bad script" ]) "forest" "gather" "broken" ObjectDatabase.initialState
+    let ``Invalid behavior source is rejected and previous source remains active`` () =
+        let result =
+            Kernel.tryUpdateBehaviorModule
+                (fun _ -> Error [ diagnostic "bad script" ])
+                (fun _ -> Ok Map.empty)
+                "core-world"
+                "broken"
+                ObjectDatabase.initialState
 
         match result with
-        | Error diagnostics -> Assert.Equal("bad script", diagnostics |> List.exactlyOne)
+        | Error diagnostics -> Assert.Equal("bad script", (diagnostics |> List.exactlyOne).message)
         | Ok _ -> Assert.True(false, "Expected update to be rejected.")
 
         let gatherResult = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
@@ -158,20 +236,22 @@ module KernelTests =
 
     [<Fact>]
     let ``Kernel rejects unknown inventory item effects without mutating state`` () =
-        let source =
-            """function execute(context) {
+        let overrideSource =
+            """ForestBehavior.prototype.gather = function(context) {
   return {
     effects: [
       { type: "addInventory", itemId: "stone", amount: 1 }
     ]
   };
-}"""
+};"""
+
+        let compiledSource = BehaviorSources.coreCompiled + "\n" + overrideSource
 
         let state =
-            match Kernel.tryUpdateVerbSource (fun _ -> Ok source) "forest" "gather" source ObjectDatabase.initialState with
+            match updateCoreBehavior compiledSource BehaviorSources.core with
             | Ok(Some state) -> state
-            | Ok None -> failwith "Expected gather verb to update."
-            | Error diagnostics -> failwith (String.concat "\n" diagnostics)
+            | Ok None -> failwith "Expected behavior module to update."
+            | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
         let result = Kernel.submitCommand En "gather wood" state
 
@@ -186,14 +266,16 @@ module KernelTests =
             List.replicate Scripting.defaultLimits.MaxEffects "{ type: 'message', key: 'test' }"
             |> String.concat ","
 
-        let source =
-            $"function execute(context) {{ return {{ effects: [{{ type: 'addInventory', itemId: 'wood', amount: 1 }},{messages}] }}; }}"
+        let overrideSource =
+            $"ForestBehavior.prototype.gather = function(context) {{ return {{ effects: [{{ type: 'addInventory', itemId: 'wood', amount: 1 }},{messages}] }}; }};"
+
+        let compiledSource = BehaviorSources.coreCompiled + "\n" + overrideSource
 
         let state =
-            match Kernel.tryUpdateVerbSource (fun _ -> Ok source) "forest" "gather" source ObjectDatabase.initialState with
+            match updateCoreBehavior compiledSource BehaviorSources.core with
             | Ok(Some state) -> state
-            | Ok None -> failwith "Expected gather verb to update."
-            | Error diagnostics -> failwith (String.concat "\n" diagnostics)
+            | Ok None -> failwith "Expected behavior module to update."
+            | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
         let result = Kernel.submitCommand En "gather wood" state
 
@@ -333,12 +415,12 @@ module ScriptingTests =
         | Ok _ -> Assert.True(false, "Expected excessive message arguments to be rejected.")
 
     [<Fact>]
-    let ``Verb source length is bounded before execution`` () =
+    let ``Script source length is bounded before execution`` () =
         let limits = { Scripting.defaultLimits with MaxSourceCharacters = 10 }
         let result = Scripting.executeVerbWithLimits limits forest Map.empty Map.empty "function execute() {}"
 
         match result with
-        | Error error -> Assert.Equal("Verb source may contain at most 10 characters.", error)
+        | Error error -> Assert.Equal("Script source may contain at most 10 characters.", error)
         | Ok _ -> Assert.True(false, "Expected oversized source to be rejected.")
 
     [<Fact>]
@@ -391,7 +473,7 @@ module ScriptCompilerTests =
 
         match result with
         | Error [ diagnostic ] ->
-            Assert.Equal("Verb source may contain at most 64000 characters.", diagnostic.message)
+            Assert.Equal("Behavior source may contain at most 64000 characters.", diagnostic.message)
             Assert.Equal(0, diagnostic.line)
             Assert.Equal(0, diagnostic.column)
         | Error _ -> Assert.True(false, "Expected one source-length diagnostic.")
@@ -413,7 +495,7 @@ module BehaviorClassRuntimeTests =
         let compiled =
             let repoRoot = findRepoRoot (System.IO.DirectoryInfo(System.AppContext.BaseDirectory))
 
-            match ScriptCompiler.compile repoRoot BehaviorSources.inheritanceSpike with
+            match ScriptCompiler.compile repoRoot BehaviorSources.core with
             | Ok source -> source
             | Error diagnostics ->
                 diagnostics
