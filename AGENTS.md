@@ -206,6 +206,7 @@ Object properties use the `GameValue` union:
 - validated object reference
 - recursive list
 - recursive string-keyed map
+- anonymous behavior value with a behavior-class reference and recursive properties
 
 The scripting boundary converts these to ordinary JavaScript values. Object references nested in lists or maps are recursively validated against the object database before a behavior method executes.
 
@@ -293,4 +294,4 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Design lightweight anonymous/waif-like values separately from permanent contained world objects.
+1. Implement the minimal anonymous behavior value slice described in `docs/architecture/0003-anonymous-behavior-values.md`: embed one in permanent object properties, retrieve it, and execute its TypeScript behavior.
