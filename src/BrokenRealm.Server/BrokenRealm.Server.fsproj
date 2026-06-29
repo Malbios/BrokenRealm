@@ -12,6 +12,7 @@
     <Compile Include="Persistence.fs" />
     <Compile Include="Localization.fs" />
     <Compile Include="Auth.fs" />
+    <Compile Include="RoomMap.fs" />
     <Compile Include="WorldObjects.fs" />
     <Compile Include="Scripting.fs" />
     <Compile Include="CommandMatching.fs" />

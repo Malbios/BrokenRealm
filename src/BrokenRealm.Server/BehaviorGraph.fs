@@ -148,8 +148,8 @@ module BehaviorGraph =
         (referenced: Set<string * string>)
         =
         let forceReseed = forceReseedEnabled ()
-        let seedHashOnDisk = lookupCurrentSeedHash serverRoot moduleSnapshot.Id
         let sourceHash = hashSource moduleSnapshot.Source
+        let seedSourceHash = hashSource seedSource
         let seedDeclared = classNamesDeclaredInSource seedSource
         let declared = classNamesDeclaredInSource moduleSnapshot.Source
         let missing = missingReferencedClasses moduleSnapshot.Id referenced declared
@@ -159,7 +159,7 @@ module BehaviorGraph =
         | AdminEdited, true -> true
         | SeedSynced, true -> true
         | SeedSynced, false ->
-            if sourceHash = moduleSnapshot.SyncedSeedHash && moduleSnapshot.SyncedSeedHash <> seedHashOnDisk then
+            if sourceHash <> seedSourceHash then
                 true
             elif not missing.IsEmpty && missing |> Set.forall (fun className -> seedDeclared.Contains className) then
                 true

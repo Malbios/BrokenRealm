@@ -48,7 +48,10 @@ module Limbo =
                     Error $"Unknown re-entry location: {destinationId}"
                 else
                     let updated = PlayerObjects.withLocation player destinationId
-                    let newState = { state with Objects = Map.add characterId updated state.Objects }
+
+                    let newState =
+                        { state with Objects = Map.add characterId updated state.Objects }
+                        |> fun current -> PlayerObjects.recordRoomVisit current characterId destinationId
 
                     let messages =
                         [ { Key = "enter.success"; Args = Map.ofList [ "location", destinationId ] }

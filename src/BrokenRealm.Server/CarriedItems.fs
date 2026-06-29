@@ -28,8 +28,6 @@ module CarriedItems =
         | Some(IntegerValue quantity) when quantity > 0L -> Some(int quantity)
         | _ -> None
 
-    let migrationStackId (playerId: ObjectId) (itemId: ItemId) = $"carried-{playerId}-{itemId}"
-
     let createStack (stackId: ObjectId) (playerId: ObjectId) (itemId: ItemId) (quantity: Quantity) =
         { Id = stackId
           Name = itemId
@@ -121,6 +119,17 @@ module CarriedItems =
         removeQuantity state fromContainerId itemId amount
         |> Result.map (fun stateAfterRemoval -> addToContainer stateAfterRemoval destinationId itemId amount)
 
+    let private isItemContainer (gameObject: GameObject) =
+        gameObject.Tags.Contains "container"
+        && not (gameObject.Tags.Contains "player")
+        && not (isCarriedStack gameObject)
+        && gameObject.LocationId.IsSome
+
+    let private isValidStackContainer (_state: GameState) (container: GameObject) =
+        container.Tags.Contains "player"
+        || (container.LocationId.IsNone && not (container.Tags.Contains "player"))
+        || isItemContainer container
+
     let validateCarriedStack (state: GameState) (gameObject: GameObject) =
         if not (isCarriedStack gameObject) then
             Ok()
@@ -132,6 +141,8 @@ module CarriedItems =
                   | None -> Some $"Carried stack {gameObject.Id} references unknown container id: {containerId}"
                   | Some container when isCarriedStack container ->
                       Some $"Carried stack {gameObject.Id} cannot be contained in another carried stack."
+                  | Some container when not (isValidStackContainer state container) ->
+                      Some $"Carried stack {gameObject.Id} must be in a player, room, or item container."
                   | Some _ -> None
               match stackItemId gameObject with
               | None -> Some $"Carried stack {gameObject.Id} is missing itemId."

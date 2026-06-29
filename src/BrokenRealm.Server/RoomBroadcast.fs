@@ -47,4 +47,10 @@ module RoomBroadcast =
 
     let actorResponseLines (state: GameState) (culture: Culture) (messages: Message list) : string list =
         actorMessages messages
-        |> List.map (ResponseFormatting.localizeMessage state culture)
+        |> List.map (fun message ->
+            if message.Key = "map.display" then
+                match message.Args |> Map.tryFind "actor" with
+                | Some characterId -> RoomMap.formatDisplayMessage state culture characterId
+                | None -> Localizer.text culture { Key = "map.unavailable"; Args = Map.empty }
+            else
+                ResponseFormatting.localizeMessage state culture message)
