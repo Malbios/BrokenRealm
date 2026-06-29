@@ -643,6 +643,17 @@ function renderMinimap(map: GameMapResponse, culture: Culture): void {
   minimapGrid.textContent = rows.join("\n");
 }
 
+async function reloadSession(): Promise<GameSessionResponse | null> {
+  const response = await fetch(sessionUrl(), gameFetchInit);
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as GameSessionResponse;
+  renderCharacterSelector(payload);
+  return payload;
+}
+
 async function refreshMinimap(selectedCulture: Culture = (culture?.value === "de" ? "de" : "en") as Culture): Promise<void> {
   if (!currentSession) {
     if (minimap) minimap.hidden = true;
@@ -1000,6 +1011,7 @@ async function enterPlay(): Promise<void> {
 
   const payload = (await response.json()) as CommandResponse;
   payload.lines.forEach((line) => appendLine(line));
+  await reloadSession();
   await refreshMinimap();
 }
 
@@ -1008,11 +1020,6 @@ async function ensureInPlay(session: GameSessionResponse): Promise<void> {
   if (!selected || selected.inPlay) return;
 
   await enterPlay();
-
-  const response = await fetch(sessionUrl(), gameFetchInit);
-  if (response.ok) {
-    renderCharacterSelector((await response.json()) as GameSessionResponse);
-  }
 }
 
 async function loadSession(): Promise<void> {
@@ -1025,10 +1032,6 @@ async function loadSession(): Promise<void> {
   const payload = (await response.json()) as GameSessionResponse;
   renderCharacterSelector(payload);
   await connectRoomHub();
-  if (!payload.authenticated) {
-    return;
-  }
-
   await ensureInPlay(payload);
   await refreshMinimap();
 }
@@ -1118,9 +1121,8 @@ async function selectCharacter(characterId: string): Promise<void> {
     await connectRoomHub();
   }
 
-  await refreshMinimap();
-
   await ensureInPlay(payload);
+  await refreshMinimap();
 }
 
 async function sendCommand(command: string, selectedCulture: Culture): Promise<void> {

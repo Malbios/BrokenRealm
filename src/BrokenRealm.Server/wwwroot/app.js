@@ -430,6 +430,15 @@ function renderMinimap(map, culture) {
     }
     minimapGrid.textContent = rows.join("\n");
 }
+async function reloadSession() {
+    const response = await fetch(sessionUrl(), gameFetchInit);
+    if (!response.ok) {
+        return null;
+    }
+    const payload = (await response.json());
+    renderCharacterSelector(payload);
+    return payload;
+}
 async function refreshMinimap(selectedCulture = (culture?.value === "de" ? "de" : "en")) {
     if (!currentSession) {
         if (minimap)
@@ -747,6 +756,7 @@ async function enterPlay() {
     }
     const payload = (await response.json());
     payload.lines.forEach((line) => appendLine(line));
+    await reloadSession();
     await refreshMinimap();
 }
 async function ensureInPlay(session) {
@@ -754,10 +764,6 @@ async function ensureInPlay(session) {
     if (!selected || selected.inPlay)
         return;
     await enterPlay();
-    const response = await fetch(sessionUrl(), gameFetchInit);
-    if (response.ok) {
-        renderCharacterSelector((await response.json()));
-    }
 }
 async function loadSession() {
     const response = await fetch(sessionUrl(), gameFetchInit);
@@ -768,9 +774,6 @@ async function loadSession() {
     const payload = (await response.json());
     renderCharacterSelector(payload);
     await connectRoomHub();
-    if (!payload.authenticated) {
-        return;
-    }
     await ensureInPlay(payload);
     await refreshMinimap();
 }
@@ -849,8 +852,8 @@ async function selectCharacter(characterId) {
     else {
         await connectRoomHub();
     }
-    await refreshMinimap();
     await ensureInPlay(payload);
+    await refreshMinimap();
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");
