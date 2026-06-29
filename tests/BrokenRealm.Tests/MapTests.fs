@@ -4,6 +4,33 @@ open BrokenRealm.Server
 open Xunit
 
 module MapTests =
+    let private timestamp = System.DateTimeOffset(2026, 6, 29, 12, 0, 0, System.TimeSpan.Zero)
+
+    let private createSnapshot () =
+        (InMemoryGameStore(ObjectDatabase.initialState, fun () -> timestamp)).GetSnapshot()
+
+    let private mockCompile (source: string) =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.filter (fun (moduleId, _) -> source.Contains(BehaviorSources.moduleMarkerPrefix + moduleId))
+        |> List.sortByDescending (fun (_, behaviorModule) -> behaviorModule.Dependencies.Length)
+        |> List.tryHead
+        |> function
+        | Some(_, behaviorModule) -> Ok behaviorModule.CompiledSource
+        | None -> Error [ { message = "Unknown compilation unit."; file = ""; line = 0; column = 0 } ]
+
+    let private mockInspect registryName _compiled =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.tryPick (fun (_, behaviorModule) ->
+            if behaviorModule.RegistryName = registryName then
+                Some behaviorModule.Classes
+            else
+                None)
+        |> function
+        | Some classes -> Ok classes
+        | None -> Error { message = "Unknown registry."; file = ""; line = 0; column = 0 }
+
     let private enterPlay state =
         Kernel.tryEnterPlayForCharacter GameSnapshots.PrototypeCharacterId state
         |> function
@@ -15,6 +42,39 @@ module MapTests =
         |> fun result ->
             RoomBroadcast.actorResponseLines result.State En result.Messages
             |> List.exactlyOne
+
+    [<Fact>]
+    let ``Hydration restores missing map layout properties on seeded rooms`` () =
+        let forest = ObjectDatabase.initialState.Objects["forest"]
+        let village = ObjectDatabase.initialState.Objects["village"]
+
+        let withoutMapProperties properties =
+            properties
+            |> Map.remove RoomMap.MapCodeProperty
+            |> Map.remove RoomMap.MapRegionProperty
+            |> Map.remove RoomMap.MapXProperty
+            |> Map.remove RoomMap.MapYProperty
+
+        let baseSnapshot = createSnapshot ()
+
+        let snapshot =
+            { baseSnapshot with
+                World =
+                    { baseSnapshot.World with
+                        Objects =
+                            baseSnapshot.World.Objects
+                            |> Map.add "forest" { forest with Properties = withoutMapProperties forest.Properties }
+                            |> Map.add "village" { village with Properties = withoutMapProperties village.Properties } } }
+
+        match SnapshotHydration.hydrate mockCompile mockInspect snapshot with
+        | Ok(state, _) ->
+            let hydratedForest = state.Objects["forest"]
+            let hydratedVillage = state.Objects["village"]
+
+            Assert.Equal(Some "FO", hydratedForest.Properties |> Map.tryFind RoomMap.MapCodeProperty |> Option.bind (function StringValue value -> Some value | _ -> None))
+            Assert.Equal(Some "VI", hydratedVillage.Properties |> Map.tryFind RoomMap.MapCodeProperty |> Option.bind (function StringValue value -> Some value | _ -> None))
+            Assert.Equal(Some -1, hydratedVillage.Properties |> Map.tryFind RoomMap.MapYProperty |> Option.bind (function IntegerValue value -> Some(int value) | _ -> None))
+        | Error error -> Assert.True(false, error)
 
     [<Fact>]
     let ``Seed rooms expose map layout properties`` () =

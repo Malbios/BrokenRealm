@@ -96,6 +96,38 @@ module SnapshotHydration =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
+    let private mapLayoutPropertyKeys =
+        [ RoomMap.MapCodeProperty
+          RoomMap.MapRegionProperty
+          RoomMap.MapXProperty
+          RoomMap.MapYProperty ]
+
+    let private reconcileSeedMapLayout (objects: Map<ObjectId, GameObject>) =
+        ObjectDatabase.initialState.Objects
+        |> Map.fold
+            (fun merged objectId seedObject ->
+                match Map.tryFind objectId merged with
+                | None -> merged
+                | Some hydrated ->
+                    let missing =
+                        mapLayoutPropertyKeys
+                        |> List.choose (fun key ->
+                            if Map.containsKey key hydrated.Properties then
+                                None
+                            else
+                                Map.tryFind key seedObject.Properties |> Option.map (fun value -> key, value))
+                        |> Map.ofList
+
+                    if Map.isEmpty missing then
+                        merged
+                    else
+                        let properties =
+                            missing
+                            |> Map.fold (fun properties key value -> Map.add key value properties) hydrated.Properties
+
+                        Map.add objectId { hydrated with Properties = properties } merged)
+            objects
+
     let private validateObjectBehaviorModuleReferences (objects: Map<ObjectId, GameObject>) (modules: Map<string, BehaviorModuleSnapshot>) =
         objects
         |> Map.toList
@@ -146,7 +178,7 @@ module SnapshotHydration =
                         let state =
                             { ItemIds = prepared.World.ItemIds
                               BehaviorModules = activeBehaviorModules
-                              Objects = prepared.World.Objects
+                              Objects = reconcileSeedMapLayout prepared.World.Objects
                               Accounts = accountsFromSnapshot prepared.Accounts }
 
                         Kernel.validateGameState state
