@@ -358,7 +358,6 @@ module CommandMatching =
                                         match ambiguous, pendingAll with
                                         | Some _, _ | _, Some _ -> ambiguous
                                         | None, None -> Some(placeholderName, candidates)
-                                        | _ -> ambiguous
 
                                     let nextPos =
                                         if nextPlaceholderName = "direction" && nextSegment = " " then
@@ -367,18 +366,20 @@ module CommandMatching =
                                             endPos
 
                                     consume (partIndex + 1) nextPos args nextAmbiguous pendingAll
-                                | AllTargets targetIds when isTargetPlaceholder placeholderName ->
-                                    match ambiguous, pendingAll with
-                                    | Some _, _ | _, Some _ -> None
-                                    | None, None ->
-                                        let directionEndPos =
-                                            if nextPlaceholderName = "direction" && nextSegment = " " then
-                                                afterSegment + captured.Length
-                                            else
-                                                endPos
+                                | AllTargets targetIds ->
+                                    if not (isTargetPlaceholder placeholderName) then
+                                        None
+                                    else
+                                        match ambiguous, pendingAll with
+                                        | Some _, _ | _, Some _ -> None
+                                        | None, None ->
+                                            let directionEndPos =
+                                                if nextPlaceholderName = "direction" && nextSegment = " " then
+                                                    afterSegment + captured.Length
+                                                else
+                                                    endPos
 
-                                        consume (partIndex + 1) directionEndPos args ambiguous (Some(placeholderName, targetIds))
-                                    | _ -> None
+                                            consume (partIndex + 1) directionEndPos args ambiguous (Some(placeholderName, targetIds))
 
             consume 0 0 Map.empty None None
 
@@ -427,9 +428,9 @@ module CommandMatching =
                                           Args = Map.add placeholder selectedId partialArgs })
 
                             match matches with
+                            | [] -> None
                             | [ single ] -> Some(TargetMatched single)
                             | multiple -> Some(TargetMatchedSequence multiple)
-                            | [] -> None
                         | Some(PatternAmbiguous(placeholder, candidates, partialArgs)) ->
                             Some(
                                 TargetAmbiguous
@@ -478,8 +479,8 @@ module CommandMatching =
             | Some ambiguous, [ single ] -> Matched single
             | Some ambiguous, _ -> Ambiguous ambiguous
             | None, [ single ] -> Matched single
-            | None, multiple when not (List.isEmpty multiple) -> MatchedSequence multiple
             | None, [] -> NoMatch
+            | None, multiple -> MatchedSequence multiple
 
     let tryMatch culture rawInput state =
         tryMatchForCharacter GameSnapshots.PrototypeCharacterId culture rawInput state
