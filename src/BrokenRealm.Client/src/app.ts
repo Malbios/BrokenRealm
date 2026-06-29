@@ -1035,7 +1035,7 @@ async function connectRoomHub(): Promise<void> {
     roomConnection = connection;
 
     const session = await reloadSession();
-    if (session) {
+    if (session?.authenticated) {
       await ensureInPlay(session);
       await refreshMinimap();
     }
@@ -1064,6 +1064,8 @@ async function enterPlay(): Promise<void> {
 }
 
 async function ensureInPlay(session: GameSessionResponse): Promise<void> {
+  if (!session.authenticated) return;
+
   const selected = session.characters.find((character) => character.id === session.selectedCharacterId);
   if (!selected || selected.inPlay) return;
 
@@ -1079,8 +1081,11 @@ async function loadSession(): Promise<void> {
 
   const payload = (await response.json()) as GameSessionResponse;
   renderCharacterSelector(payload);
-  await ensureInPlay(payload);
-  await connectRoomHub();
+
+  if (payload.authenticated) {
+    await ensureInPlay(payload);
+    await connectRoomHub();
+  }
 }
 
 async function login(accountId: string, password: string): Promise<void> {
