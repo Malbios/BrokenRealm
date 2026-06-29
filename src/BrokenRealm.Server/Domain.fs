@@ -93,17 +93,34 @@ type GameState =
       Objects: Map<ObjectId, GameObject>
       Accounts: Map<AccountId, AccountState> }
 
+type PendingDisambiguation =
+    { CharacterId: CharacterId
+      ObjectId: ObjectId
+      BehaviorModuleId: string
+      BehaviorClassName: string
+      MethodName: string
+      CompiledSource: string
+      ResolvedArgs: Map<string, string>
+      Placeholder: string
+      Candidates: ObjectId list }
+
 type GameSession =
     { Id: SessionId
       AccountId: AccountId
       SelectedCharacterId: CharacterId
       Authenticated: bool
       CreatedAt: DateTimeOffset
-      LastSeenAt: DateTimeOffset }
+      LastSeenAt: DateTimeOffset
+      PendingDisambiguation: PendingDisambiguation option }
 
 type Message =
     { Key: string
       Args: Map<string, string> }
+
+type CommandDispatchResult =
+    { State: GameState
+      Messages: Message list
+      PendingDisambiguation: PendingDisambiguation option }
 
 type CommandResult =
     { State: GameState
@@ -140,6 +157,16 @@ type ScriptEffect =
         tags: string list *
         aliases: Map<Culture, string list> *
         properties: Map<string, GameValue>
+    | GrowRoomExit of
+        direction: string *
+        reverseDirection: string *
+        nameKey: string *
+        descriptionKey: string option *
+        behaviorModuleId: string *
+        behaviorClassName: string *
+        tags: string list *
+        aliases: Map<Culture, string list> *
+        properties: Map<string, GameValue>
     | DestroyObject of objectId: ObjectId option
     | ReplaceValue of path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
@@ -153,6 +180,25 @@ type GameCommandRequest =
 [<CLIMutable>]
 type CommandResponse =
     { lines: string list }
+
+[<CLIMutable>]
+type MapCellResponse =
+    { x: int
+      y: int
+      roomId: string
+      label: string
+      visited: bool
+      current: bool }
+
+[<CLIMutable>]
+type GameMapResponse =
+    { region: string
+      minX: int
+      maxX: int
+      minY: int
+      maxY: int
+      currentRoomId: string
+      cells: MapCellResponse list }
 
 [<CLIMutable>]
 type SessionCharacterResponse =

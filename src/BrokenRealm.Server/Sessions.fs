@@ -60,7 +60,8 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                   SelectedCharacterId = GameSnapshots.PrototypeCharacterId
                   Authenticated = false
                   CreatedAt = now
-                  LastSeenAt = now }
+                  LastSeenAt = now
+                  PendingDisambiguation = None }
 
             sessions[sessionId] <- session
             session)
@@ -138,7 +139,18 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                     let updated =
                         { session with
                             SelectedCharacterId = selectedCharacterId
-                            LastSeenAt = clock () }
+                            LastSeenAt = clock ()
+                            PendingDisambiguation = None }
 
                     sessions[sessionId] <- updated
                     Ok updated)
+
+    member _.SetPendingDisambiguation(sessionId: SessionId, pending: PendingDisambiguation option) =
+        lock gate (fun () ->
+            match sessions.TryGetValue sessionId with
+            | false, _ -> ()
+            | true, session ->
+                sessions[sessionId] <-
+                    { session with
+                        PendingDisambiguation = pending
+                        LastSeenAt = clock () })

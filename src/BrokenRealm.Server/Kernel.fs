@@ -59,15 +59,64 @@ module Kernel =
         | None -> Error $"Unknown mobile object id: {resolvedId}"
         | Some gameObject when PlayerObjects.isPlayer gameObject -> Ok(PlayerObjects.get state resolvedId)
         | Some gameObject when WorldObjects.isPermanentThing gameObject ->
-            let actingPlayer = PlayerObjects.get state actingCharacterId
-            let actingLocationId = PlayerObjects.locationId actingPlayer
+            if resolvedId = actingCharacterId then
+                Ok gameObject
+            else
+                let actingPlayer = PlayerObjects.get state actingCharacterId
+                let actingLocationId = PlayerObjects.locationId actingPlayer
 
-            match gameObject.LocationId with
-            | None -> Error $"Permanent object {resolvedId} is not in a container."
-            | Some locationId when locationId <> actingLocationId ->
-                Error "That object is not here."
-            | Some _ -> Ok gameObject
+                match gameObject.LocationId with
+                | None -> Error $"Permanent object {resolvedId} is not in a container."
+                | Some locationId when locationId <> actingLocationId ->
+                    Error "That object is not here."
+                | Some _ -> Ok gameObject
         | Some _ -> Error $"Object {resolvedId} cannot be moved."
+
+    let private validateTransferItemRouting (state: GameState) actingCharacterId sourceId destinationId =
+        let actingPlayer = PlayerObjects.get state actingCharacterId
+        let actingLocationId = PlayerObjects.locationId actingPlayer
+
+        let sourceContainerId =
+            match sourceId with
+            | Some id -> id
+            | None -> actingCharacterId
+
+        if not (state.Objects.ContainsKey sourceContainerId) then
+            Error($"Unknown source container id: {sourceContainerId}")
+        elif CarriedItems.isCarriedStack state.Objects[sourceContainerId] then
+            Error "Source container cannot be a carried stack object."
+        else
+            if
+                WorldObjects.isItemContainerId state sourceContainerId
+                && destinationId = actingCharacterId
+                && WorldObjects.isAccessibleItemContainer state actingCharacterId sourceContainerId
+            then
+                Ok()
+            elif
+                sourceContainerId = actingCharacterId
+                && WorldObjects.isItemContainerId state destinationId
+                && WorldObjects.isAccessibleItemContainer state actingCharacterId destinationId
+            then
+                Ok()
+            else
+                match PlayerObjects.tryGet state destinationId with
+                | Some destinationPlayer when sourceContainerId = actingCharacterId ->
+                    if destinationPlayer.Id = actingCharacterId then
+                        Error "You cannot give an item to yourself."
+                    elif PlayerObjects.locationId destinationPlayer <> actingLocationId then
+                        Error "That player is not here."
+                    else
+                        Ok()
+                | Some destinationPlayer when sourceContainerId = actingLocationId && destinationPlayer.Id = actingCharacterId ->
+                    Ok()
+                | Some _ -> Error "Invalid item transfer."
+                | None ->
+                    if sourceContainerId <> actingCharacterId then
+                        Error "Invalid item transfer."
+                    elif destinationId <> actingLocationId then
+                        Error "Invalid drop destination."
+                    else
+                        Ok()
 
     let rec private validateEffect (state: GameState) actingCharacterId targetId effect =
         match effect with
@@ -117,6 +166,40 @@ module Kernel =
                                 | Ok() -> None)
                             |> Option.map Error
                             |> Option.defaultValue (Ok())
+        | GrowRoomExit(direction, reverseDirection, nameKey, descriptionKey, behaviorModuleId, behaviorClassName, tags, _, properties) ->
+            if System.String.IsNullOrWhiteSpace nameKey then
+                Error "growRoomExit effects require a nameKey."
+            elif List.isEmpty tags then
+                Error "growRoomExit effects require at least one tag."
+            elif not (WorldObjects.isValidDirection direction) then
+                Error $"Invalid exit direction: {direction}"
+            elif not (WorldObjects.isValidDirection reverseDirection) then
+                Error $"Invalid reverse exit direction: {reverseDirection}"
+            else
+                match state.Objects |> Map.tryFind targetId with
+                | None -> Error $"Unknown source room id: {targetId}"
+                | Some source when not (WorldObjects.isRoom source) ->
+                    Error "growRoomExit requires a room object as the source."
+                | Some source when Map.containsKey direction source.References ->
+                    Error $"Room {targetId} already has an exit to the {direction}."
+                | Some _ ->
+                    match state.BehaviorModules |> Map.tryFind behaviorModuleId with
+                    | None -> Error $"Unknown behavior module id: {behaviorModuleId}"
+                    | Some behaviorModule when not (behaviorModule.Classes.ContainsKey behaviorClassName) ->
+                        Error $"Unknown behavior class name: {behaviorClassName}"
+                    | Some _ ->
+                        match descriptionKey with
+                        | Some key when System.String.IsNullOrWhiteSpace key ->
+                            Error "growRoomExit descriptionKey must not be empty."
+                        | _ ->
+                            properties
+                            |> Map.toList
+                            |> List.tryPick (fun (name, value) ->
+                                match validateValueReferences state name value with
+                                | Error error -> Some error
+                                | Ok() -> None)
+                            |> Option.map Error
+                            |> Option.defaultValue (Ok())
         | DestroyObject objectId ->
             let resolvedId = objectId |> Option.defaultValue targetId
 
@@ -137,40 +220,17 @@ module Kernel =
             Error("Unknown item id: " + itemId)
         | TransferItem(sourceId, _, amount, _) when amount <= 0 || amount > 100 ->
             Error "transferItem effects require an amount from 1 to 100."
-        | TransferItem(sourceId, _, _, destinationId) when not (state.Objects.ContainsKey destinationId) ->
+        | TransferItem(sourceId, _, amount, destinationId) when not (state.Objects.ContainsKey destinationId) ->
             Error("Unknown destination object id: " + destinationId)
-        | TransferItem(sourceId, _, _, destinationId) ->
-            let actingPlayer = PlayerObjects.get state actingCharacterId
-            let actingLocationId = PlayerObjects.locationId actingPlayer
-
-            let sourceContainerId =
-                match sourceId with
-                | Some id -> id
-                | None -> actingCharacterId
-
-            if not (state.Objects.ContainsKey sourceContainerId) then
-                Error($"Unknown source container id: {sourceContainerId}")
-            elif CarriedItems.isCarriedStack state.Objects[sourceContainerId] then
-                Error "Source container cannot be a carried stack object."
-            else
-                match PlayerObjects.tryGet state destinationId with
-                | Some destinationPlayer when sourceContainerId = actingCharacterId ->
-                    if destinationPlayer.Id = actingCharacterId then
-                        Error "You cannot give an item to yourself."
-                    elif PlayerObjects.locationId destinationPlayer <> actingLocationId then
-                        Error "That player is not here."
-                    else
-                        Ok()
-                | Some destinationPlayer when sourceContainerId = actingLocationId && destinationPlayer.Id = actingCharacterId ->
+        | TransferItem(sourceId, _, amount, destinationId) ->
+            match
+                if WorldObjects.isItemContainerId state destinationId then
+                    WorldObjects.validateContainerCapacity state destinationId amount
+                else
                     Ok()
-                | Some _ -> Error "Invalid item transfer."
-                | None ->
-                    if sourceContainerId <> actingCharacterId then
-                        Error "Invalid item transfer."
-                    elif destinationId <> actingLocationId then
-                        Error "Invalid drop destination."
-                    else
-                        Ok()
+            with
+            | Error error -> Error error
+            | Ok() -> validateTransferItemRouting state actingCharacterId sourceId destinationId
         | ReplaceValue(path, replacement) ->
             match validateValueReferences state "replacement" replacement with
             | Error error -> Error error
@@ -359,6 +419,20 @@ module Kernel =
                         properties
 
                 Ok(updatedState, messages, remainingInvocations)
+            | GrowRoomExit(direction, reverseDirection, nameKey, descriptionKey, behaviorModuleId, behaviorClassName, tags, aliases, properties) ->
+                WorldObjects.growRoomExit
+                    state
+                    targetId
+                    direction
+                    reverseDirection
+                    nameKey
+                    descriptionKey
+                    behaviorModuleId
+                    behaviorClassName
+                    tags
+                    aliases
+                    properties
+                |> Result.map (fun (_, updatedState) -> updatedState, messages, remainingInvocations)
             | DestroyObject objectId ->
                 let resolvedId = objectId |> Option.defaultValue targetId
 
@@ -370,7 +444,12 @@ module Kernel =
                 | Ok gameObject ->
                     if PlayerObjects.isPlayer gameObject then
                         let updated = PlayerObjects.withLocation gameObject destinationId
-                        Ok({ state with Objects = Map.add gameObject.Id updated state.Objects }, messages, remainingInvocations)
+
+                        let movedState =
+                            { state with
+                                Objects = Map.add gameObject.Id updated state.Objects }
+
+                        Ok(PlayerObjects.recordRoomVisit movedState gameObject.Id destinationId, messages, remainingInvocations)
                     else
                         WorldObjects.movePermanent state gameObject.Id destinationId
                         |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
@@ -431,88 +510,182 @@ module Kernel =
         applyEffects characterId targetId 0 effects state [] maxAnonymousInvocations
         |> Result.map (fun (state, _, _) -> state)
 
-    let tickWorld (state: GameState) (isCharacterConnected: CharacterId -> bool) =
-        let locations =
+    let private connectedPlayersInRoom (state: GameState) (roomId: ObjectId) (isCharacterConnected: CharacterId -> bool) =
+        contentsOf state roomId
+        |> List.filter (fun gameObject ->
+            PlayerObjects.isPlayer gameObject
+            && not (PlayerObjects.isInLimbo gameObject)
+            && isCharacterConnected gameObject.Id)
+
+    let private tickTarget
+        (state: GameState)
+        (target: GameObject)
+        (roomId: ObjectId)
+        (tickIndex: int)
+        (tickSeconds: int)
+        (isCharacterConnected: CharacterId -> bool)
+        =
+        match state.BehaviorModules |> Map.tryFind target.BehaviorModuleId with
+        | None -> Ok state
+        | Some behaviorModule ->
+            let connectedPlayers = connectedPlayersInRoom state roomId isCharacterConnected
+
+            match
+                Scripting.executeBehaviorTick
+                    target.BehaviorClassName
+                    state
+                    target
+                    roomId
+                    tickIndex
+                    tickSeconds
+                    connectedPlayers
+                    behaviorModule.CompiledSource
+            with
+            | Error _ -> Ok state
+            | Ok effects -> applyTickEffects target.Id target.Id effects state
+
+    let tickWorld (state: GameState) (tickIndex: int) (tickSeconds: int) (isCharacterConnected: CharacterId -> bool) =
+        let rooms =
             state.Objects
             |> Map.toList
-            |> List.choose (fun (_, gameObject) ->
-                if
-                    PlayerObjects.isPlayer gameObject
-                    && not (PlayerObjects.isInLimbo gameObject)
-                    && isCharacterConnected gameObject.Id
-                then
-                    PlayerObjects.tryLocationId gameObject
-                    |> Option.map (fun locationId -> locationId, gameObject)
-                else
-                    None)
-            |> List.distinctBy fst
+            |> List.map snd
+            |> List.filter WorldObjects.isRoom
+            |> List.sortBy _.Id
 
-        if List.isEmpty locations then
-            Ok state
-        else
-            let actor = locations |> List.head |> snd
+        rooms
+        |> List.fold
+            (fun result room ->
+                result
+                |> Result.bind (fun current ->
+                    let roomId = room.Id
 
-            locations
-            |> List.fold
-                (fun result (locationId, _) ->
-                    result
-                    |> Result.bind (fun current ->
-                        let location = current.Objects[locationId]
-                        let contents = contentsOf current locationId |> List.filter (fun object -> object.Id <> actor.Id)
-                        let behaviorModule = current.BehaviorModules[location.BehaviorModuleId]
+                    tickTarget current current.Objects[roomId] roomId tickIndex tickSeconds isCharacterConnected
+                    |> Result.bind (fun afterRoom ->
+                        contentsOf afterRoom roomId
+                        |> List.filter WorldObjects.shouldTickCreature
+                        |> List.sortBy _.Id
+                        |> List.fold
+                            (fun creatureResult creature ->
+                                creatureResult
+                                |> Result.bind (fun creatureState ->
+                                    tickTarget
+                                        creatureState
+                                        creature
+                                        roomId
+                                        tickIndex
+                                        tickSeconds
+                                        isCharacterConnected))
+                            (Ok afterRoom))))
+            (Ok state)
 
-                        match
-                            Scripting.executeBehaviorMethodWithContents
-                                location.BehaviorClassName
-                                "tick"
-                                current
-                                location
-                                contents
-                                Map.empty
-                                actor
-                                behaviorModule.CompiledSource
-                        with
-                        | Error _ -> Ok current
-                        | Ok effects -> applyTickEffects actor.Id location.Id effects current))
-                (Ok state)
+    let private disambiguationMessages (state: GameState) culture (ambiguous: CommandMatching.AmbiguousCommandMatch) =
+        let options =
+            ambiguous.Candidates
+            |> List.mapi (fun index objectId ->
+                $"{index + 1}) {Localizer.displayObjectName state culture objectId}")
+            |> String.concat "\n"
+
+        [ message "disambiguation.prompt" (Map.ofList [ "options", options ]) ]
+
+    let private pendingFromAmbiguous characterId (ambiguous: CommandMatching.AmbiguousCommandMatch) =
+        Some
+            { CharacterId = characterId
+              ObjectId = ambiguous.ObjectId
+              BehaviorModuleId = ambiguous.BehaviorModuleId
+              BehaviorClassName = ambiguous.BehaviorClassName
+              MethodName = ambiguous.MethodName
+              CompiledSource = ambiguous.CompiledSource
+              ResolvedArgs = ambiguous.ResolvedArgs
+              Placeholder = ambiguous.Placeholder
+              Candidates = ambiguous.Candidates }
+
+    let private executeMatchedCommand characterId (matched: MatchedBehaviorMethod) (state: GameState) =
+        let target = state.Objects[matched.ObjectId]
+
+        let contents =
+            contentsOf state target.Id
+            |> List.filter (fun object -> object.Id <> characterId)
+
+        let execution =
+            match validateObjectProperties state target with
+            | Error error -> Error error
+            | Ok() ->
+                Scripting.executeBehaviorMethodWithContents
+                    matched.BehaviorClassName
+                    matched.MethodName
+                    state
+                    target
+                    contents
+                    matched.Args
+                    (PlayerObjects.get state characterId)
+                    matched.CompiledSource
+
+        match execution with
+        | Error error ->
+            { State = state
+              Messages = [ message "script.error" (Map.ofList [ "error", error ]) ]
+              PendingDisambiguation = None }
+        | Ok effects ->
+            match applyEffects characterId target.Id 0 effects state [] maxAnonymousInvocations with
+            | Error "container_capacity_exceeded" ->
+                { State = state
+                  Messages = [ message "container.capacity.full" Map.empty ]
+                  PendingDisambiguation = None }
+            | Error error ->
+                { State = state
+                  Messages = [ message "script.error" (Map.ofList [ "error", error ]) ]
+                  PendingDisambiguation = None }
+            | Ok(state, messages, _) ->
+                { State = state
+                  Messages = messages
+                  PendingDisambiguation = None }
 
     let private submitValidCommand characterId culture text (state: GameState) =
         match CommandMatching.tryMatchForCharacter characterId culture text state with
-        | None ->
+        | CommandMatching.NoMatch ->
             { State = state
-              Messages = [ message "command.unknown" Map.empty ] }
-        | Some matched ->
-            let target = state.Objects[matched.ObjectId]
-            let contents =
-                contentsOf state target.Id
-                |> List.filter (fun object -> object.Id <> characterId)
+              Messages = [ message "command.unknown" Map.empty ]
+              PendingDisambiguation = None }
+        | CommandMatching.Ambiguous ambiguous ->
+            { State = state
+              Messages = disambiguationMessages state culture ambiguous
+              PendingDisambiguation = pendingFromAmbiguous characterId ambiguous }
+        | CommandMatching.Matched matched ->
+            executeMatchedCommand characterId matched state
+        | CommandMatching.MatchedSequence matches ->
+            matches
+            |> List.fold
+                (fun acc matched ->
+                    let result = executeMatchedCommand characterId matched acc.State
 
-            let execution =
-                match validateObjectProperties state target with
-                | Error error -> Error error
-                | Ok() ->
-                    Scripting.executeBehaviorMethodWithContents
-                        matched.BehaviorClassName
-                        matched.MethodName
-                        state
-                        target
-                        contents
-                        matched.Args
-                        (PlayerObjects.get state characterId)
-                        matched.CompiledSource
-
-            match execution with
-            | Error error ->
+                    { State = result.State
+                      Messages = acc.Messages @ result.Messages
+                      PendingDisambiguation = None })
                 { State = state
-                  Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
-            | Ok effects ->
-                match applyEffects characterId target.Id 0 effects state [] maxAnonymousInvocations with
-                | Error error ->
-                    { State = state
-                      Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
-                | Ok(state, messages, _) ->
-                    { State = state
-                      Messages = messages }
+                  Messages = []
+                  PendingDisambiguation = None }
+
+    let private tryExecutePendingSelection characterId culture selection (pending: PendingDisambiguation) (state: GameState) =
+        if pending.CharacterId <> characterId then
+            { State = state
+              Messages = [ message "disambiguation.invalid" Map.empty ]
+              PendingDisambiguation = None }
+        elif selection < 1 || selection > pending.Candidates.Length then
+            { State = state
+              Messages = [ message "disambiguation.invalid" Map.empty ]
+              PendingDisambiguation = Some pending }
+        else
+            let selected = pending.Candidates[selection - 1]
+
+            let matched =
+                { ObjectId = pending.ObjectId
+                  BehaviorModuleId = pending.BehaviorModuleId
+                  BehaviorClassName = pending.BehaviorClassName
+                  MethodName = pending.MethodName
+                  CompiledSource = pending.CompiledSource
+                  Args = Map.add pending.Placeholder selected pending.ResolvedArgs }
+
+            executeMatchedCommand characterId matched state
 
     let tryEnterPlayForCharacter characterId (state: GameState) =
         match Limbo.tryEnterPlay characterId state with
@@ -521,20 +694,37 @@ module Kernel =
         | Ok(state, messages, _) ->
             Ok { State = state; Messages = messages }
 
-    let submitCommandForCharacter characterId culture text (state: GameState) =
+    let submitCommandForCharacterWithPending characterId culture text (state: GameState) (pending: PendingDisambiguation option) =
         match PlayerObjects.tryGet state characterId with
         | None ->
             { State = state
-              Messages = [ message "script.error" (Map.ofList [ "error", $"Unknown character id: {characterId}" ]) ] }
+              Messages = [ message "script.error" (Map.ofList [ "error", $"Unknown character id: {characterId}" ]) ]
+              PendingDisambiguation = None }
         | Some player when Limbo.isInLimbo player ->
             { State = state
-              Messages = [ message "limbo.not_in_play" Map.empty ] }
-        | Some _ ->
+              Messages = [ message "limbo.not_in_play" Map.empty ]
+              PendingDisambiguation = None }
+        | Some player ->
+            let state =
+                match player.LocationId with
+                | Some locationId -> PlayerObjects.recordRoomVisit state characterId locationId
+                | None -> state
+
             match validateContainment state with
             | Error error ->
                 { State = state
-                  Messages = [ message "script.error" (Map.ofList [ "error", error ]) ] }
-            | Ok() -> submitValidCommand characterId culture text state
+                  Messages = [ message "script.error" (Map.ofList [ "error", error ]) ]
+                  PendingDisambiguation = None }
+            | Ok() ->
+                match pending with
+                | Some value ->
+                    match CommandMatching.tryParseSelection text with
+                    | Some selection -> tryExecutePendingSelection characterId culture selection value state
+                    | None -> submitValidCommand characterId culture text state
+                | None -> submitValidCommand characterId culture text state
+
+    let submitCommandForCharacter characterId culture text (state: GameState) =
+        submitCommandForCharacterWithPending characterId culture text state None
 
     let submitCommand culture text state =
         submitCommandForCharacter GameSnapshots.PrototypeCharacterId culture text state

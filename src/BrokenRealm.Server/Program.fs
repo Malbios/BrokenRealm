@@ -166,8 +166,10 @@ module Program =
                     match sessionStore.Login(session.Id, request.accountId, request.password, state) with
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
+                        tryCommitLimbo updated.SelectedCharacterId
+                        let stateAfterEnter = gameStore.Read().State
                         ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-                        Results.Json(authResponse culture updated state))))
+                        Results.Json(authResponse culture updated stateAfterEnter))))
         |> ignore
 
         app.MapPost(
@@ -186,8 +188,10 @@ module Program =
                         match sessionStore.BindRegisteredAccount(session.Id, request.accountId, committed.State) with
                         | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                         | Ok updated ->
+                            tryCommitLimbo updated.SelectedCharacterId
+                            let stateAfterEnter = gameStore.Read().State
                             ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-                            Results.Json(authResponse culture updated committed.State))))
+                            Results.Json(authResponse culture updated stateAfterEnter))))
         |> ignore
 
         app.MapPost(
@@ -260,6 +264,27 @@ module Program =
                 Results.Json(result)))
         |> ignore
 
+        app.MapGet(
+            "/game/map",
+            Func<HttpContext, IResult>(fun ctx ->
+                lock stateLock (fun () ->
+                    let session = resolveSession ctx
+                    let state = gameStore.Read().State
+
+                    match RoomMap.toResponse state session.SelectedCharacterId with
+                    | Some payload -> Results.Json(payload)
+                    | None ->
+                        Results.Json(
+                            { region = "main"
+                              minX = 0
+                              maxX = 0
+                              minY = 0
+                              maxY = 0
+                              currentRoomId = ""
+                              cells = [] }
+                            : GameMapResponse))))
+        |> ignore
+
         app.MapPost(
             "/game/command",
             Func<HttpContext, GameCommandRequest, IResult>(fun ctx request ->
@@ -270,7 +295,15 @@ module Program =
                         let session = resolveSession ctx
                         let stored = gameStore.Read()
                         let result =
-                            Kernel.submitCommandForCharacter session.SelectedCharacterId culture request.text stored.State
+                            Kernel.submitCommandForCharacterWithPending
+                                session.SelectedCharacterId
+                                culture
+                                request.text
+                                stored.State
+                                session.PendingDisambiguation
+
+                        sessionStore.SetPendingDisambiguation(session.Id, result.PendingDisambiguation)
+
                         let committed = commit stored result.State
                         let finalResult = { result with State = committed.State }
 
@@ -292,7 +325,16 @@ module Program =
 
         app.MapHub<GameHub>("/game/hub") |> ignore
 
-        let worldTickSeconds = 30
+        let worldTickSeconds =
+            match app.Configuration["WorldTickSeconds"] with
+            | null
+            | "" -> 30
+            | value ->
+                match System.Int32.TryParse value with
+                | true, seconds when seconds >= 1 -> seconds
+                | _ -> 30
+
+        let mutable worldTickIndex = 0
 
         System.Threading.Tasks.Task.Run(
             System.Func<System.Threading.Tasks.Task>(fun () ->
@@ -302,8 +344,15 @@ module Program =
 
                         lock stateLock (fun () ->
                             let stored = gameStore.Read()
+                            worldTickIndex <- worldTickIndex + 1
 
-                            match Kernel.tickWorld stored.State connectionRegistry.IsCharacterConnected with
+                            match
+                                Kernel.tickWorld
+                                    stored.State
+                                    worldTickIndex
+                                    worldTickSeconds
+                                    connectionRegistry.IsCharacterConnected
+                            with
                             | Ok updated -> commit stored updated |> ignore
                             | Error _ -> ())
                 }))
