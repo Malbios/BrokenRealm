@@ -210,7 +210,8 @@ type SessionCharacterResponse =
 
 [<CLIMutable>]
 type GameSessionResponse =
-    { accountId: string
+    { sessionId: string
+      accountId: string
       authenticated: bool
       displayName: string option
       selectedCharacterId: string
@@ -229,7 +230,8 @@ type RegisterRequest =
 
 [<CLIMutable>]
 type AuthResponse =
-    { accountId: string
+    { sessionId: string
+      accountId: string
       authenticated: bool
       displayName: string option
       selectedCharacterId: string

@@ -156,7 +156,7 @@ type HubConnection = {
 };
 
 type HubConnectionBuilder = {
-  withUrl(url: string, options?: { withCredentials?: boolean }): HubConnectionBuilder;
+  withUrl(url: string, options?: { withCredentials?: boolean; headers?: Record<string, string> }): HubConnectionBuilder;
   withAutomaticReconnect(): HubConnectionBuilder;
   build(): HubConnection;
 };
@@ -203,6 +203,7 @@ type SessionCharacter = {
 };
 
 type GameSessionResponse = {
+  sessionId: string;
   accountId: string;
   authenticated: boolean;
   displayName: string | null;
@@ -214,7 +215,46 @@ type AuthResponse = GameSessionResponse;
 
 type SelectCharacterResponse = AuthResponse;
 
-const gameFetchInit: RequestInit = { credentials: "include" };
+const TAB_SESSION_STORAGE_KEY = "brokenrealmSessionId";
+
+function createTabSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.padEnd(32, "0").slice(0, 32);
+}
+
+function getTabSessionId(): string {
+  let sessionId = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+
+  if (!sessionId) {
+    sessionId = createTabSessionId();
+    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
+  }
+
+  return sessionId;
+}
+
+function rememberTabSessionId(sessionId: string): void {
+  if (!sessionId) return;
+  sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
+}
+
+function resetTabSessionId(): void {
+  sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+}
+
+function gameFetchInit(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers ?? {});
+  headers.set("X-BrokenRealm-Session", getTabSessionId());
+
+  return {
+    credentials: "include",
+    ...init,
+    headers,
+  };
+}
 
 type BehaviorSeedDrift = {
   seedHashChanged: boolean;
@@ -644,12 +684,13 @@ function renderMinimap(map: GameMapResponse, culture: Culture): void {
 }
 
 async function reloadSession(): Promise<GameSessionResponse | null> {
-  const response = await fetch(sessionUrl(), gameFetchInit);
+  const response = await fetch(sessionUrl(), gameFetchInit());
   if (!response.ok) {
     return null;
   }
 
   const payload = (await response.json()) as GameSessionResponse;
+  rememberTabSessionId(payload.sessionId);
   renderCharacterSelector(payload);
   return payload;
 }
@@ -667,7 +708,7 @@ async function refreshMinimap(selectedCulture: Culture = (culture?.value === "de
   }
 
   try {
-    const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit);
+    const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit());
     if (!response.ok) {
       if (minimap) minimap.hidden = true;
       return;
@@ -956,6 +997,7 @@ function renderCharacterSelector(session: GameSessionResponse): void {
   });
 
   characterSelect.value = session.selectedCharacterId;
+  rememberTabSessionId(session.sessionId);
   currentSession = session;
   updateAuthUi(session);
   updateCharacterSelectorVisibility(activePanel);
@@ -977,7 +1019,10 @@ async function connectRoomHub(): Promise<void> {
     }
 
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl("/game/hub", { withCredentials: true })
+      .withUrl("/game/hub", {
+        withCredentials: true,
+        headers: { "X-BrokenRealm-Session": getTabSessionId() },
+      })
       .withAutomaticReconnect()
       .build();
 
@@ -998,10 +1043,7 @@ async function connectRoomHub(): Promise<void> {
 }
 
 async function enterPlay(): Promise<void> {
-  const response = await fetch(`/game/session/enter?culture=${encodeURIComponent(selectedCulture())}`, {
-    ...gameFetchInit,
-    method: "POST",
-  });
+  const response = await fetch(`/game/session/enter?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({ method: "POST" }));
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
@@ -1023,7 +1065,7 @@ async function ensureInPlay(session: GameSessionResponse): Promise<void> {
 }
 
 async function loadSession(): Promise<void> {
-  const response = await fetch(sessionUrl(), gameFetchInit);
+  const response = await fetch(sessionUrl(), gameFetchInit());
   if (!response.ok) {
     appendLine(playerUi(selectedCulture()).couldNotLoadSession, "line error-line");
     return;
@@ -1037,12 +1079,14 @@ async function loadSession(): Promise<void> {
 }
 
 async function login(accountId: string, password: string): Promise<void> {
-  const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
-    ...gameFetchInit,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ accountId, password }),
-  });
+  const response = await fetch(
+    `/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`,
+    gameFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, password }),
+    }),
+  );
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
@@ -1060,12 +1104,14 @@ async function login(accountId: string, password: string): Promise<void> {
 }
 
 async function register(accountId: string, password: string): Promise<void> {
-  const response = await fetch(`/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`, {
-    ...gameFetchInit,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ accountId, password, displayName: accountId }),
-  });
+  const response = await fetch(
+    `/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`,
+    gameFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, password, displayName: accountId }),
+    }),
+  );
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
@@ -1083,10 +1129,7 @@ async function register(accountId: string, password: string): Promise<void> {
 }
 
 async function logout(): Promise<void> {
-  const response = await fetch("/game/auth/logout", {
-    ...gameFetchInit,
-    method: "POST",
-  });
+  const response = await fetch("/game/auth/logout", gameFetchInit({ method: "POST" }));
 
   if (!response.ok) {
     appendLine(playerUi(selectedCulture()).couldNotLogout, "line error-line");
@@ -1094,17 +1137,20 @@ async function logout(): Promise<void> {
   }
 
   if (loginPassword) loginPassword.value = "";
+  resetTabSessionId();
   await loadSession();
   appendLine(playerUi(selectedCulture()).loggedOutGuest);
 }
 
 async function selectCharacter(characterId: string): Promise<void> {
-  const response = await fetch(`/game/session/character?culture=${encodeURIComponent(selectedCulture())}`, {
-    ...gameFetchInit,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ characterId }),
-  });
+  const response = await fetch(
+    `/game/session/character?culture=${encodeURIComponent(selectedCulture())}`,
+    gameFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ characterId }),
+    }),
+  );
 
   if (!response.ok) {
     appendLine(playerUi(selectedCulture()).couldNotSwitchCharacter, "line error-line");
@@ -1128,12 +1174,14 @@ async function selectCharacter(characterId: string): Promise<void> {
 async function sendCommand(command: string, selectedCulture: Culture): Promise<void> {
   appendLine(`> ${command}`, "line input-line");
 
-  const response = await fetch("/game/command", {
-    ...gameFetchInit,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: command, culture: selectedCulture }),
-  });
+  const response = await fetch(
+    "/game/command",
+    gameFetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: command, culture: selectedCulture }),
+    }),
+  );
 
   if (!response.ok) {
     appendLine(playerUi(selectedCulture).realmNotResponding, "line error-line");

@@ -20,7 +20,7 @@ module SessionTests =
     [<Fact>]
     let ``Session selection rejects characters owned by another account`` () =
         let store = SessionStore()
-        let session = store.CreateAnonymousPrototypeSession()
+        let session = store.GetOrCreate()
         let otherAccountPlayer =
             PlayerObjects.create
                 "other-account-character"
@@ -38,9 +38,26 @@ module SessionTests =
         | Ok _ -> Assert.True(false, "Expected foreign character selection to be rejected.")
 
     [<Fact>]
+    let ``Tab session ids isolate selected characters`` () =
+        let store = SessionStore()
+        let playerSession = store.GetOrCreate(sessionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        let scoutSession = store.GetOrCreate(sessionId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+        match store.SelectCharacter(scoutSession.Id, GameSnapshots.PrototypeScoutCharacterId, ObjectDatabase.initialState) with
+        | Ok updated -> Assert.Equal(GameSnapshots.PrototypeScoutCharacterId, updated.SelectedCharacterId)
+        | Error error -> Assert.True(false, error)
+
+        let refreshedPlayer =
+            match store.TryGet playerSession.Id with
+            | Some session -> session
+            | None -> failwith "Expected player tab session to exist."
+
+        Assert.Equal(GameSnapshots.PrototypeCharacterId, refreshedPlayer.SelectedCharacterId)
+
+    [<Fact>]
     let ``Session selection switches the acting character`` () =
         let store = SessionStore()
-        let session = store.CreateAnonymousPrototypeSession()
+        let session = store.GetOrCreate()
 
         match
             store.SelectCharacter(session.Id, GameSnapshots.PrototypeScoutCharacterId, ObjectDatabase.initialState)
@@ -51,7 +68,7 @@ module SessionTests =
     [<Fact>]
     let ``Login accepts the seeded prototype account password`` () =
         let store = SessionStore()
-        let session = store.CreateAnonymousPrototypeSession()
+        let session = store.GetOrCreate()
 
         match store.Login(session.Id, GameSnapshots.PrototypeAccountId, "prototype", ObjectDatabase.initialState) with
         | Ok updated ->
@@ -62,7 +79,7 @@ module SessionTests =
     [<Fact>]
     let ``Login rejects invalid passwords`` () =
         let store = SessionStore()
-        let session = store.CreateAnonymousPrototypeSession()
+        let session = store.GetOrCreate()
 
         match store.Login(session.Id, GameSnapshots.PrototypeAccountId, "wrong-password", ObjectDatabase.initialState) with
         | Error error -> Assert.Equal("Invalid password.", error)

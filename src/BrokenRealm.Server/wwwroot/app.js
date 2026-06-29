@@ -66,7 +66,38 @@ const PLAYER_UI = {
 function playerUi(culture) {
     return PLAYER_UI[culture];
 }
-const gameFetchInit = { credentials: "include" };
+const TAB_SESSION_STORAGE_KEY = "brokenrealmSessionId";
+function createTabSessionId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID().replace(/-/g, "");
+    }
+    return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.padEnd(32, "0").slice(0, 32);
+}
+function getTabSessionId() {
+    let sessionId = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+    if (!sessionId) {
+        sessionId = createTabSessionId();
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
+    }
+    return sessionId;
+}
+function rememberTabSessionId(sessionId) {
+    if (!sessionId)
+        return;
+    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
+}
+function resetTabSessionId() {
+    sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+}
+function gameFetchInit(init = {}) {
+    const headers = new Headers(init.headers ?? {});
+    headers.set("X-BrokenRealm-Session", getTabSessionId());
+    return {
+        credentials: "include",
+        ...init,
+        headers,
+    };
+}
 const form = document.querySelector("#command-form");
 const input = document.querySelector("#command");
 const culture = document.querySelector("#culture");
@@ -431,11 +462,12 @@ function renderMinimap(map, culture) {
     minimapGrid.textContent = rows.join("\n");
 }
 async function reloadSession() {
-    const response = await fetch(sessionUrl(), gameFetchInit);
+    const response = await fetch(sessionUrl(), gameFetchInit());
     if (!response.ok) {
         return null;
     }
     const payload = (await response.json());
+    rememberTabSessionId(payload.sessionId);
     renderCharacterSelector(payload);
     return payload;
 }
@@ -452,7 +484,7 @@ async function refreshMinimap(selectedCulture = (culture?.value === "de" ? "de" 
         return;
     }
     try {
-        const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit);
+        const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit());
         if (!response.ok) {
             if (minimap)
                 minimap.hidden = true;
@@ -709,6 +741,7 @@ function renderCharacterSelector(session) {
         characterSelect.append(option);
     });
     characterSelect.value = session.selectedCharacterId;
+    rememberTabSessionId(session.sessionId);
     currentSession = session;
     updateAuthUi(session);
     updateCharacterSelectorVisibility(activePanel);
@@ -727,7 +760,10 @@ async function connectRoomHub() {
             roomConnection = null;
         }
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/game/hub", { withCredentials: true })
+            .withUrl("/game/hub", {
+            withCredentials: true,
+            headers: { "X-BrokenRealm-Session": getTabSessionId() },
+        })
             .withAutomaticReconnect()
             .build();
         connection.on("roomLine", (line) => {
@@ -745,10 +781,7 @@ async function connectRoomHub() {
     }
 }
 async function enterPlay() {
-    const response = await fetch(`/game/session/enter?culture=${encodeURIComponent(selectedCulture())}`, {
-        ...gameFetchInit,
-        method: "POST",
-    });
+    const response = await fetch(`/game/session/enter?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({ method: "POST" }));
     if (!response.ok) {
         const payload = (await response.json());
         appendLine(payload.lines[0] ?? playerUi(selectedCulture()).couldNotEnterPlay, "line error-line");
@@ -766,7 +799,7 @@ async function ensureInPlay(session) {
     await enterPlay();
 }
 async function loadSession() {
-    const response = await fetch(sessionUrl(), gameFetchInit);
+    const response = await fetch(sessionUrl(), gameFetchInit());
     if (!response.ok) {
         appendLine(playerUi(selectedCulture()).couldNotLoadSession, "line error-line");
         return;
@@ -778,12 +811,11 @@ async function loadSession() {
     await refreshMinimap();
 }
 async function login(accountId, password) {
-    const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, {
-        ...gameFetchInit,
+    const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accountId, password }),
-    });
+    }));
     if (!response.ok) {
         const payload = (await response.json());
         appendLine(payload.lines[0] ?? playerUi(selectedCulture()).loginFailed, "line error-line");
@@ -798,12 +830,11 @@ async function login(accountId, password) {
     focusCommandInput();
 }
 async function register(accountId, password) {
-    const response = await fetch(`/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`, {
-        ...gameFetchInit,
+    const response = await fetch(`/game/auth/register?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accountId, password, displayName: accountId }),
-    });
+    }));
     if (!response.ok) {
         const payload = (await response.json());
         appendLine(payload.lines[0] ?? playerUi(selectedCulture()).registrationFailed, "line error-line");
@@ -818,26 +849,23 @@ async function register(accountId, password) {
     focusCommandInput();
 }
 async function logout() {
-    const response = await fetch("/game/auth/logout", {
-        ...gameFetchInit,
-        method: "POST",
-    });
+    const response = await fetch("/game/auth/logout", gameFetchInit({ method: "POST" }));
     if (!response.ok) {
         appendLine(playerUi(selectedCulture()).couldNotLogout, "line error-line");
         return;
     }
     if (loginPassword)
         loginPassword.value = "";
+    resetTabSessionId();
     await loadSession();
     appendLine(playerUi(selectedCulture()).loggedOutGuest);
 }
 async function selectCharacter(characterId) {
-    const response = await fetch(`/game/session/character?culture=${encodeURIComponent(selectedCulture())}`, {
-        ...gameFetchInit,
+    const response = await fetch(`/game/session/character?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId }),
-    });
+    }));
     if (!response.ok) {
         appendLine(playerUi(selectedCulture()).couldNotSwitchCharacter, "line error-line");
         return;
@@ -857,12 +885,11 @@ async function selectCharacter(characterId) {
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");
-    const response = await fetch("/game/command", {
-        ...gameFetchInit,
+    const response = await fetch("/game/command", gameFetchInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: command, culture: selectedCulture }),
-    });
+    }));
     if (!response.ok) {
         appendLine(playerUi(selectedCulture).realmNotResponding, "line error-line");
         return;

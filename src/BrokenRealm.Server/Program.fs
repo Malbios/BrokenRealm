@@ -48,15 +48,19 @@ module Program =
             options
 
         let resolveSession (ctx: HttpContext) =
+            let usesTabHeader = ctx.Request.Headers.ContainsKey Sessions.HeaderName
+
             let session =
-                match ctx.Request.Cookies.TryGetValue Sessions.CookieName with
-                | true, sessionId ->
+                match Sessions.tryReadSessionId ctx with
+                | Some sessionId ->
                     match sessionStore.TryGet sessionId with
                     | Some existing -> sessionStore.Touch existing
-                    | None -> sessionStore.CreateAnonymousPrototypeSession()
-                | false, _ -> sessionStore.CreateAnonymousPrototypeSession()
+                    | None -> sessionStore.GetOrCreate(sessionId = sessionId)
+                | None -> sessionStore.GetOrCreate()
 
-            ctx.Response.Cookies.Append(Sessions.CookieName, session.Id, sessionCookieOptions)
+            if not usesTabHeader then
+                ctx.Response.Cookies.Append(Sessions.CookieName, session.Id, sessionCookieOptions)
+
             session
 
         let commit stored state =
@@ -138,7 +142,8 @@ module Program =
         let authResponse (culture: Culture) (gameSession: GameSession) (state: GameState) =
             let account = state.Accounts[gameSession.AccountId]
 
-            { accountId = gameSession.AccountId
+            { sessionId = gameSession.Id
+              accountId = gameSession.AccountId
               authenticated = gameSession.Authenticated
               displayName = account.DisplayName
               selectedCharacterId = gameSession.SelectedCharacterId

@@ -49,11 +49,12 @@ module GameHubServices =
     let tryResolveSession (httpContext: HttpContext) =
         let services = current ()
 
-        match httpContext.Request.Cookies.TryGetValue Sessions.CookieName with
-        | true, sessionId ->
-            services.SessionStore.TryGet sessionId
-            |> Option.map (services.SessionStore.Touch)
-        | false, _ -> None
+        match Sessions.tryReadSessionId httpContext with
+        | Some sessionId ->
+            match services.SessionStore.TryGet sessionId with
+            | Some existing -> Some(services.SessionStore.Touch existing)
+            | None -> Some(services.SessionStore.GetOrCreate(sessionId = sessionId))
+        | None -> None
 
 type GameHub() =
     inherit Hub()

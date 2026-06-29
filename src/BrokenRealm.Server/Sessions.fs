@@ -2,10 +2,35 @@ namespace BrokenRealm.Server
 
 open System
 open System.Collections.Generic
+open System.Text.RegularExpressions
 
 module Sessions =
     [<Literal>]
     let CookieName = "brokenrealm_session"
+
+    [<Literal>]
+    let HeaderName = "X-BrokenRealm-Session"
+
+    let private sessionIdRegex = Regex(@"^[0-9a-f]{32}$", RegexOptions.CultureInvariant ||| RegexOptions.IgnoreCase)
+
+    let tryParseSessionId (raw: string) =
+        if String.IsNullOrWhiteSpace raw then
+            None
+        elif sessionIdRegex.IsMatch raw then
+            Some(raw.Trim().ToLowerInvariant())
+        else
+            None
+
+    let tryReadSessionId (httpContext: Microsoft.AspNetCore.Http.HttpContext) =
+        match httpContext.Request.Headers.TryGetValue HeaderName with
+        | true, values when values.Count > 0 ->
+            values
+            |> Seq.tryHead
+            |> Option.bind (fun value -> tryParseSessionId(value.ToString()))
+        | _ ->
+            match httpContext.Request.Cookies.TryGetValue CookieName with
+            | true, cookieId -> tryParseSessionId cookieId
+            | false, _ -> None
 
     let ownedCharacters culture (accountId: AccountId) (state: GameState) =
         PlayerObjects.playersByAccount state accountId
@@ -19,7 +44,8 @@ module Sessions =
     let toResponse culture (session: GameSession) (state: GameState) =
         let account = state.Accounts[session.AccountId]
 
-        { accountId = session.AccountId
+        { sessionId = session.Id
+          accountId = session.AccountId
           authenticated = session.Authenticated
           displayName = account.DisplayName
           selectedCharacterId = session.SelectedCharacterId
@@ -49,22 +75,29 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
             | true, session -> Some session
             | false, _ -> None)
 
-    member _.CreateAnonymousPrototypeSession() =
+    member _.GetOrCreate(?sessionId: SessionId) =
         lock gate (fun () ->
             let now = clock ()
-            let sessionId = Guid.CreateVersion7().ToString("N")
 
-            let session =
-                { Id = sessionId
-                  AccountId = GameSnapshots.PrototypeAccountId
-                  SelectedCharacterId = GameSnapshots.PrototypeCharacterId
-                  Authenticated = false
-                  CreatedAt = now
-                  LastSeenAt = now
-                  PendingDisambiguation = None }
+            let resolvedSessionId =
+                match sessionId |> Option.bind Sessions.tryParseSessionId with
+                | Some requested -> requested
+                | None -> Guid.CreateVersion7().ToString("N")
 
-            sessions[sessionId] <- session
-            session)
+            match sessions.TryGetValue resolvedSessionId with
+            | true, existing -> existing
+            | false, _ ->
+                let session =
+                    { Id = resolvedSessionId
+                      AccountId = GameSnapshots.PrototypeAccountId
+                      SelectedCharacterId = GameSnapshots.PrototypeCharacterId
+                      Authenticated = false
+                      CreatedAt = now
+                      LastSeenAt = now
+                      PendingDisambiguation = None }
+
+                sessions[resolvedSessionId] <- session
+                session)
 
     member _.Touch(session: GameSession) =
         lock gate (fun () ->
