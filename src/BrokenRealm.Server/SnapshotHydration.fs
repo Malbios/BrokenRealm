@@ -2,236 +2,22 @@ namespace BrokenRealm.Server
 
 open System
 open System.IO
-module SnapshotMigrations =
-    let private prototypeAccount: AccountSnapshot =
-        { Id = GameSnapshots.PrototypeAccountId
-          DisplayName = Some "Prototype account"
-          PasswordHash = None }
 
-    let private migrateV1 snapshot =
-        let accounts =
-            if Map.isEmpty snapshot.Accounts then
-                Map.ofList [ prototypeAccount.Id, prototypeAccount ]
-            else
-                snapshot.Accounts
-
-        let characters =
-            snapshot.Characters
-            |> Map.map (fun _ character ->
-                { character with
-                    AccountId =
-                        if String.IsNullOrWhiteSpace character.AccountId then
-                            GameSnapshots.PrototypeAccountId
-                        else
-                            character.AccountId })
-
-        { snapshot with
-            FormatVersion = 2
-            Accounts = accounts
-            Characters = characters
-            PlayerRevisions = Map.empty }
-
-    let private characterToPlayerObject (character: CharacterSnapshot) =
-        let name =
-            if character.Id = GameSnapshots.PrototypeCharacterId then
-                "prototype player"
-            elif character.Id = GameSnapshots.PrototypeScoutCharacterId then
-                "prototype scout"
-            else
-                character.Id.Replace('-', ' ')
-
-        let nameKey = $"object.{character.Id}.name"
-
-        PlayerObjects.createWithLegacyInventory character.Id name nameKey character.AccountId character.LocationId character.Inventory
-
-    let private ensurePrototypeDevelopmentCharacters snapshot =
-        let seedPlayers =
-            ObjectDatabase.initialState.Objects
-            |> Map.toList
-            |> List.choose (fun (_, gameObject) ->
-                if PlayerObjects.isPlayer gameObject then
-                    Some
-                        { Id = gameObject.Id
-                          AccountId = PlayerObjects.accountId gameObject
-                          Revision = 0L
-                          LocationId = PlayerObjects.locationId gameObject
-                          Inventory = PlayerObjects.legacyInventoryFromProperties gameObject.Properties }
-                else
-                    None)
-            |> List.map (fun character -> character.Id, character)
-            |> Map.ofList
-
-        let accounts =
-            if Map.containsKey GameSnapshots.PrototypeAccountId snapshot.Accounts then
-                snapshot.Accounts
-            elif Map.isEmpty seedPlayers then
-                snapshot.Accounts
-            else
-                Map.add GameSnapshots.PrototypeAccountId prototypeAccount snapshot.Accounts
-
-        let characters =
-            seedPlayers
-            |> Map.fold (fun characters characterId seedCharacter ->
-                match Map.tryFind characterId characters with
-                | Some (existing: CharacterSnapshot) ->
-                    Map.add
-                        characterId
-                        { existing with
-                            AccountId = GameSnapshots.PrototypeAccountId }
-                        characters
-                | None ->
-                    let added: CharacterSnapshot =
-                        { Id = seedCharacter.Id
-                          AccountId = seedCharacter.AccountId
-                          Revision = 0L
-                          LocationId = seedCharacter.LocationId
-                          Inventory = seedCharacter.Inventory }
-
-                    Map.add characterId added characters) snapshot.Characters
-
-        { snapshot with
-            Accounts = accounts
-            Characters = characters }
-
-    let private migrateV2 snapshot =
-        let playerObjects =
-            snapshot.Characters
-            |> Map.map (fun _ character -> characterToPlayerObject character)
-
-        let objects =
-            playerObjects
-            |> Map.fold (fun objects playerId playerObject -> Map.add playerId playerObject objects) snapshot.World.Objects
-
-        let playerRevisions =
-            snapshot.Characters
-            |> Map.map (fun _ character -> character.Revision)
-
-        { snapshot with
-            FormatVersion = 3
-            World = { snapshot.World with Objects = objects }
-            Characters = Map.empty
-            PlayerRevisions = playerRevisions }
-
-    let private migrateInventoryToCarriedStacks (snapshot: GameSnapshot) =
-        let objects =
-            snapshot.World.Objects
-            |> Map.toList
-            |> List.fold
-                (fun objects (_, gameObject) ->
-                    if not (PlayerObjects.isPlayer gameObject) then
-                        objects
-                    else
-                        let legacyInventory = PlayerObjects.legacyInventoryFromProperties gameObject.Properties
-                        let cleanedPlayer = PlayerObjects.withoutLegacyInventoryProperty gameObject
-                        let withPlayer = Map.add gameObject.Id cleanedPlayer objects
-
-                        legacyInventory
-                        |> Map.fold (fun objects itemId quantity ->
-                            let stackId = CarriedItems.migrationStackId gameObject.Id itemId
-                            let stack = CarriedItems.createStack stackId gameObject.Id itemId quantity
-                            Map.add stackId stack objects) withPlayer)
-                snapshot.World.Objects
-
-        { snapshot with
-            FormatVersion = 4
-            World = { snapshot.World with Objects = objects } }
-
-    let private migrateV3 snapshot =
-        if snapshot.FormatVersion < 4 then
-            migrateInventoryToCarriedStacks snapshot
-        else
-            snapshot
-
+module SnapshotLoading =
     let objectBehaviorModuleIds = BehaviorGraph.objectBehaviorModuleIds
 
-    let private migrateV5 snapshot =
-        match BehaviorSources.tryResolveServerRoot () with
-        | None ->
-            { snapshot with
-                FormatVersion = 5
-                World =
-                    { snapshot.World with
-                        BehaviorModules =
-                            snapshot.World.BehaviorModules
-                            |> Map.map (fun _ moduleSnapshot ->
-                                { moduleSnapshot with
-                                    Provenance =
-                                        if moduleSnapshot.Provenance = SeedSynced && String.IsNullOrWhiteSpace moduleSnapshot.SyncedSeedHash then
-                                            SeedSynced
-                                        else
-                                            moduleSnapshot.Provenance
-                                    SyncedSeedHash =
-                                        if String.IsNullOrWhiteSpace moduleSnapshot.SyncedSeedHash then
-                                            BehaviorSources.hashSource moduleSnapshot.Source
-                                        else
-                                            moduleSnapshot.SyncedSeedHash }) } }
-        | Some serverRoot ->
-            let seedHashes =
-                BehaviorSources.seedManifest serverRoot
-                |> List.map (fun entry -> entry.ModuleId, entry.Sha256)
-                |> Map.ofList
-
-            let modules =
-                snapshot.World.BehaviorModules
-                |> Map.map (fun moduleId moduleSnapshot ->
-                    let sourceHash = BehaviorSources.hashSource moduleSnapshot.Source
-
-                    match Map.tryFind moduleId seedHashes with
-                    | Some seedHash when sourceHash = seedHash ->
-                        { moduleSnapshot with
-                            Provenance = SeedSynced
-                            SyncedSeedHash = seedHash }
-                    | Some seedHash ->
-                        { moduleSnapshot with
-                            Provenance = AdminEdited
-                            SyncedSeedHash = seedHash }
-                    | None ->
-                        { moduleSnapshot with
-                            Provenance = AdminEdited
-                            SyncedSeedHash = sourceHash })
-
-            { snapshot with
-                FormatVersion = 5
-                World = { snapshot.World with BehaviorModules = modules } }
-
-    let private reconcileSnapshot snapshot =
-        match BehaviorSources.tryResolveServerRoot () with
-        | Some serverRoot -> BehaviorGraph.reconcileBehaviorModules serverRoot snapshot
-        | None -> snapshot
-
-    let migrate snapshot =
+    let prepare snapshot =
         if snapshot.FormatVersion > GameSnapshots.CurrentFormatVersion then
             Error $"Snapshot format version {snapshot.FormatVersion} is newer than this server supports ({GameSnapshots.CurrentFormatVersion})."
-        elif snapshot.FormatVersion < 1 then
-            Error $"Snapshot format version {snapshot.FormatVersion} is not supported."
+        elif snapshot.FormatVersion < GameSnapshots.CurrentFormatVersion then
+            Error
+                $"Snapshot format version {snapshot.FormatVersion} is outdated. Delete the snapshot file and restart to create a fresh world (current format is {GameSnapshots.CurrentFormatVersion})."
+        elif not (Map.isEmpty snapshot.Characters) then
+            Error "Snapshot contains legacy character records. Delete the snapshot file and restart."
         else
-            let migrated =
-                if snapshot.FormatVersion = 1 then
-                    migrateV1 snapshot
-                else
-                    snapshot
-
-            let withSeed =
-                if migrated.FormatVersion < 3 then
-                    ensurePrototypeDevelopmentCharacters migrated
-                else
-                    migrated
-
-            let afterV2 =
-                if withSeed.FormatVersion < 3 then
-                    migrateV2 withSeed
-                else
-                    withSeed
-
-            let afterV4 = migrateV3 afterV2
-
-            let afterV5 =
-                if afterV4.FormatVersion < 5 then
-                    migrateV5 afterV4
-                else
-                    afterV4
-
-            afterV5 |> reconcileSnapshot |> Ok
+            match BehaviorSources.tryResolveServerRoot () with
+            | Some serverRoot -> BehaviorGraph.reconcileBehaviorModules serverRoot snapshot |> Ok
+            | None -> Ok snapshot
 
 module SnapshotHydration =
     let private behaviorModulesFromSnapshot (modules: Map<string, BehaviorModuleSnapshot>) =
@@ -294,31 +80,6 @@ module SnapshotHydration =
         |> Option.map Error
         |> Option.defaultValue (Ok())
 
-    let private validateLegacyCharacterRecords (snapshot: GameSnapshot) =
-        if snapshot.FormatVersion >= 3 then
-            Ok()
-        else
-            snapshot.Characters
-            |> Map.toList
-            |> List.tryPick (fun (characterId, character) ->
-                if characterId <> character.Id then
-                    Some $"Character map key '{characterId}' does not match embedded character id '{character.Id}'."
-                elif not (snapshot.Accounts.ContainsKey character.AccountId) then
-                    Some $"Character {character.Id} references unknown account id: {character.AccountId}"
-                elif not (snapshot.World.Objects.ContainsKey character.LocationId) then
-                    Some $"Character {character.Id} references unknown location id: {character.LocationId}"
-                elif
-                    character.Inventory
-                    |> Map.toList
-                    |> List.exists (fun (itemId, quantity) ->
-                        not (snapshot.World.ItemIds.Contains itemId) || quantity < 0)
-                then
-                    Some $"Character {character.Id} has invalid inventory entries."
-                else
-                    None)
-            |> Option.map Error
-            |> Option.defaultValue (Ok())
-
     let private validateBehaviorModuleRecords (modules: Map<string, BehaviorModuleSnapshot>) =
         modules
         |> Map.toList
@@ -338,7 +99,7 @@ module SnapshotHydration =
     let private validateObjectBehaviorModuleReferences (objects: Map<ObjectId, GameObject>) (modules: Map<string, BehaviorModuleSnapshot>) =
         objects
         |> Map.toList
-        |> List.collect (fun (_, gameObject) -> SnapshotMigrations.objectBehaviorModuleIds gameObject)
+        |> List.collect (fun (_, gameObject) -> SnapshotLoading.objectBehaviorModuleIds gameObject)
         |> List.distinct
         |> List.tryPick (fun moduleId ->
             if Map.containsKey moduleId modules then
@@ -351,7 +112,6 @@ module SnapshotHydration =
     let validateSnapshot snapshot =
         [ validateObjectIds snapshot.World.Objects
           validateAccountRecords snapshot.Accounts
-          validateLegacyCharacterRecords snapshot
           validateBehaviorModuleRecords snapshot.World.BehaviorModules
           validateObjectBehaviorModuleReferences snapshot.World.Objects snapshot.World.BehaviorModules ]
         |> List.tryPick (function
@@ -364,12 +124,12 @@ module SnapshotHydration =
         (inspect: string -> string -> Result<Map<string, BehaviorClassDefinition>, CompilerDiagnostic>)
         snapshot
         =
-        SnapshotMigrations.migrate snapshot
-        |> Result.bind (fun migrated ->
-            validateSnapshot migrated
+        SnapshotLoading.prepare snapshot
+        |> Result.bind (fun prepared ->
+            validateSnapshot prepared
             |> Result.bind (fun () ->
                 let runtimeBehaviorModules =
-                    behaviorModulesFromSnapshot migrated.World.BehaviorModules
+                    behaviorModulesFromSnapshot prepared.World.BehaviorModules
 
                 Kernel.recompileBehaviorModules compile inspect runtimeBehaviorModules
                 |> Result.mapError (fun diagnostics ->
@@ -378,19 +138,19 @@ module SnapshotHydration =
                     |> String.concat Environment.NewLine)
                 |> Result.bind (fun activeBehaviorModules ->
                     let activeBehaviorModules = mergeSeedBehaviorModules activeBehaviorModules
-                    let graphReferences = BehaviorGraph.collectBehaviorGraphReferences migrated
+                    let graphReferences = BehaviorGraph.collectBehaviorGraphReferences prepared
 
                     BehaviorGraph.validateBehaviorGraphReferences activeBehaviorModules graphReferences
                     |> Result.mapError (String.concat Environment.NewLine)
                     |> Result.bind (fun () ->
                         let state =
-                            { ItemIds = migrated.World.ItemIds
+                            { ItemIds = prepared.World.ItemIds
                               BehaviorModules = activeBehaviorModules
-                              Objects = migrated.World.Objects
-                              Accounts = accountsFromSnapshot migrated.Accounts }
+                              Objects = prepared.World.Objects
+                              Accounts = accountsFromSnapshot prepared.Accounts }
 
                         Kernel.validateGameState state
-                        |> Result.map (fun () -> state, migrated)))))
+                        |> Result.map (fun () -> state, prepared)))))
 
 type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -> DateTimeOffset, ?seedSnapshot: GameSnapshot) =
     let inner = InMemoryGameStore(initialState, ?clock = clock, ?seedSnapshot = seedSnapshot)
@@ -423,7 +183,7 @@ type FileGameStore(snapshotPath: string, initialState: GameState, ?clock: unit -
             Error $"Backup file does not exist: {fileName}"
         | Ok sourcePath ->
             SnapshotCodec.tryReadFile sourcePath
-            |> Result.bind SnapshotMigrations.migrate
+            |> Result.bind SnapshotLoading.prepare
             |> Result.bind (SnapshotHydration.hydrate (ScriptCompiler.compile contentRoot) Scripting.inspectBehaviorModule)
             |> Result.map (fun (state, replacementSnapshot) ->
                 inner.Replace(state, replacementSnapshot)
@@ -442,7 +202,7 @@ module GameStoreBootstrap =
 
     let tryLoad contentRoot snapshotPath =
         SnapshotCodec.tryReadFile snapshotPath
-        |> Result.bind SnapshotMigrations.migrate
+        |> Result.bind SnapshotLoading.prepare
         |> Result.bind (SnapshotHydration.hydrate (ScriptCompiler.compile contentRoot) Scripting.inspectBehaviorModule)
 
     let createGameStore contentRoot snapshotPath =
