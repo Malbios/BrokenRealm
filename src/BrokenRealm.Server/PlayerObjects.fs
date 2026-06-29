@@ -14,24 +14,15 @@ module PlayerObjects =
     let LastSafeLocationProperty = "lastSafeLocationId"
 
     [<Literal>]
+    let VisitedRoomIdsProperty = "visitedRoomIds"
+
+    [<Literal>]
     let PlayerBehaviorModuleId = "player-behaviors"
 
     [<Literal>]
     let PlayerBehaviorClassName = "PlayerBehavior"
 
     let isPlayer (gameObject: GameObject) = gameObject.Tags.Contains PlayerTag
-
-    let legacyInventoryFromProperties (properties: Map<string, GameValue>) =
-        match properties |> Map.tryFind InventoryProperty with
-        | Some(MapValue values) ->
-            values
-            |> Map.toList
-            |> List.choose (fun (itemId, value) ->
-                match value with
-                | IntegerValue quantity when quantity >= 0L -> Some(itemId, int quantity)
-                | _ -> None)
-            |> Map.ofList
-        | _ -> Map.empty
 
     let accountIdFromProperties (properties: Map<string, GameValue>) =
         match properties |> Map.tryFind AccountIdProperty with
@@ -51,33 +42,13 @@ module PlayerObjects =
           Aliases = Map.empty
           DescriptionKey = None
           LocationId = Some locationId
-          Tags = Set.ofList [ PlayerTag ]
-          Properties = Map.ofList [ AccountIdProperty, StringValue accountId ]
+          Tags = Set.ofList [ PlayerTag; "creature" ]
+          Properties =
+              Map.ofList [ AccountIdProperty, StringValue accountId
+                           "hunger", IntegerValue 0L ]
           References = Map.empty
           BehaviorModuleId = PlayerBehaviorModuleId
           BehaviorClassName = PlayerBehaviorClassName }
-
-    let createWithLegacyInventory
-        (id: CharacterId)
-        (name: string)
-        (nameKey: string)
-        (accountId: AccountId)
-        (locationId: ObjectId)
-        (inventory: Map<ItemId, Quantity>)
-        =
-        let player = create id name nameKey accountId locationId
-
-        if Map.isEmpty inventory then
-            player
-        else
-            { player with
-                Properties =
-                    player.Properties
-                    |> Map.add
-                        InventoryProperty
-                        (inventory
-                         |> Map.map (fun _ quantity -> IntegerValue(int64 quantity))
-                         |> MapValue) }
 
     let tryGet (state: GameState) (characterId: CharacterId) =
         state.Objects
@@ -102,6 +73,43 @@ module PlayerObjects =
         | Some(StringValue locationId) -> Some locationId
         | _ -> None
 
+    let visitedRoomIds (gameObject: GameObject) =
+        match gameObject.Properties |> Map.tryFind VisitedRoomIdsProperty with
+        | Some(ListValue values) ->
+            values
+            |> List.choose (function
+                | StringValue roomId -> Some roomId
+                | _ -> None)
+        | _ -> []
+
+    let private isRoomObject (gameObject: GameObject) =
+        gameObject.LocationId.IsNone
+        && not (isPlayer gameObject)
+        && not (CarriedItems.isCarriedStack gameObject)
+
+    let recordRoomVisit (state: GameState) (playerId: CharacterId) (roomId: ObjectId) =
+        match tryGet state playerId, state.Objects |> Map.tryFind roomId with
+        | Some player, Some room when isRoomObject room ->
+            let visited = visitedRoomIds player |> Set.ofList
+
+            if visited.Contains roomId then
+                state
+            else
+                let updatedIds =
+                    visited
+                    |> Set.add roomId
+                    |> Set.toList
+                    |> List.sort
+
+                let listValue = ListValue(updatedIds |> List.map StringValue)
+
+                let updatedPlayer =
+                    { player with
+                        Properties = Map.add VisitedRoomIdsProperty listValue player.Properties }
+
+                { state with Objects = Map.add playerId updatedPlayer state.Objects }
+        | _ -> state
+
     let isInLimbo (gameObject: GameObject) = gameObject.LocationId.IsNone
 
     let locationId (gameObject: GameObject) =
@@ -112,10 +120,6 @@ module PlayerObjects =
         { gameObject with LocationId = Some locationId }
 
     let withoutLocation (gameObject: GameObject) = { gameObject with LocationId = None }
-
-    let withoutLegacyInventoryProperty (gameObject: GameObject) =
-        { gameObject with
-            Properties = gameObject.Properties |> Map.remove InventoryProperty }
 
     let playersByAccount (state: GameState) (accountId: AccountId) =
         state.Objects

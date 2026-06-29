@@ -1,77 +1,24 @@
-type CraftRecipe = {
-  costs: Record<string, number>;
-  placement: {
-    nameKey: string;
-    descriptionKey: string;
-    behaviorModuleId: string;
-    behaviorClassName: string;
-    tags: string;
-    aliasesEn: string;
-    aliasesDe: string;
-  };
-  successKey: string;
-  roomKey: string;
-};
-
-const CRAFT_RECIPES: Record<string, CraftRecipe> = {
-  stool: {
-    costs: { wood: 2 },
-    placement: {
-      nameKey: "object.wooden-stool.name",
-      descriptionKey: "object.wooden-stool.description",
-      behaviorModuleId: "thing-behaviors",
-      behaviorClassName: "PlaceableBehavior",
-      tags: "thing,stool,placeable,seating",
-      aliasesEn: "stool,wooden stool",
-      aliasesDe: "hocker,holzhocker"
-    },
-    successKey: "craft.stool.success",
-    roomKey: "craft.stool.room"
-  },
-  bench: {
-    costs: { wood: 3 },
-    placement: {
-      nameKey: "object.wooden-bench.name",
-      descriptionKey: "object.wooden-bench.description",
-      behaviorModuleId: "thing-behaviors",
-      behaviorClassName: "PlaceableBehavior",
-      tags: "thing,bench,placeable,seating",
-      aliasesEn: "bench,wooden bench",
-      aliasesDe: "bank,holzbank"
-    },
-    successKey: "craft.bench.success",
-    roomKey: "craft.bench.room"
-  }
-};
-
 function findLocationContent(context: VerbContext, objectId: string) {
   return context.actor.locationContents.find(object => object.id === objectId) ?? null;
 }
 
-function craftFromRecipe(recipeId: string, context: VerbContext): VerbResult {
-  const recipe = CRAFT_RECIPES[recipeId];
-  if (!recipe) {
-    return { effects: [{ type: "message", key: "craft.unknown", args: { recipe: recipeId } }] };
+function parseRequestedAmount(rawAmount: string | undefined): number | null {
+  if (!rawAmount) {
+    return 1;
   }
-  for (const [itemId, amount] of Object.entries(recipe.costs)) {
-    if ((context.actor.inventory[itemId] ?? 0) < amount) {
-      return {
-        effects: [{ type: "message", key: "craft.insufficient", args: { item: itemId, amount: String(amount) } }]
-      };
-    }
+  const requested = Number.parseInt(rawAmount, 10);
+  if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+    return null;
   }
-  const effects: ScriptEffect[] = [];
-  for (const [itemId, amount] of Object.entries(recipe.costs)) {
-    effects.push({ type: "removeInventory", itemId, amount });
+  return requested;
+}
+
+function findContainer(context: VerbContext, objectId: string) {
+  const object = findLocationContent(context, objectId);
+  if (!object || !object.tags.includes("container")) {
+    return null;
   }
-  effects.push({
-    type: "createObject",
-    locationId: context.actor.locationId,
-    ...recipe.placement
-  });
-  effects.push({ type: "message", key: recipe.successKey, args: {} });
-  effects.push({ type: "message", key: recipe.roomKey, args: { actor: context.actor.id } });
-  return { effects };
+  return object;
 }
 
 class PlayerBehavior extends GameBehavior {
@@ -107,14 +54,31 @@ class PlayerBehavior extends GameBehavior {
     {
       methodName: "take",
       patterns: [
+        { culture: "en", pattern: "take {amount} {item} from {object}" },
+        { culture: "en", pattern: "take {item} from {object}" },
         { culture: "en", pattern: "take {amount} {item}" },
         { culture: "en", pattern: "pick up {amount} {item}" },
         { culture: "en", pattern: "take {item}" },
         { culture: "en", pattern: "pick up {item}" },
+        { culture: "de", pattern: "nimm {amount} {item} aus {object}" },
+        { culture: "de", pattern: "nimm {item} aus {object}" },
         { culture: "de", pattern: "nimm {amount} {item}" },
         { culture: "de", pattern: "hebe {amount} {item} auf" },
         { culture: "de", pattern: "nimm {item}" },
         { culture: "de", pattern: "hebe {item} auf" }
+      ]
+    },
+    {
+      methodName: "put",
+      patterns: [
+        { culture: "en", pattern: "put {amount} {item} in {object}" },
+        { culture: "en", pattern: "put {item} in {object}" },
+        { culture: "en", pattern: "place {amount} {item} in {object}" },
+        { culture: "en", pattern: "place {item} in {object}" },
+        { culture: "de", pattern: "lege {amount} {item} in {object}" },
+        { culture: "de", pattern: "lege {item} in {object}" },
+        { culture: "de", pattern: "stecke {amount} {item} in {object}" },
+        { culture: "de", pattern: "stecke {item} in {object}" }
       ]
     },
     {
@@ -140,15 +104,6 @@ class PlayerBehavior extends GameBehavior {
       ]
     },
     {
-      methodName: "craft",
-      patterns: [
-        { culture: "en", pattern: "craft {recipe}" },
-        { culture: "en", pattern: "make {recipe}" },
-        { culture: "de", pattern: "fertige {recipe}" },
-        { culture: "de", pattern: "baue {recipe}" }
-      ]
-    },
-    {
       methodName: "push",
       patterns: [
         { culture: "en", pattern: "push {object} {direction}" },
@@ -161,22 +116,42 @@ class PlayerBehavior extends GameBehavior {
         { culture: "en", pattern: "move {object} to {destination}" },
         { culture: "de", pattern: "verschiebe {object} nach {destination}" }
       ]
+    },
+    {
+      methodName: "map",
+      patterns: [
+        { culture: "en", pattern: "map" },
+        { culture: "de", pattern: "karte" }
+      ]
     }
   ];
+
+  override tick(context: TickContext): VerbResult {
+    const hunger = Number(context.this.properties.hunger ?? 0);
+    const nextHunger = Math.min(100, hunger + 1);
+    if (nextHunger === hunger) {
+      return { effects: [] };
+    }
+    return { effects: [{ type: "replaceValue", path: ["hunger"], value: nextHunger }] };
+  }
 
   inventory(context: VerbContext): VerbResult {
     const entries = Object.entries(context.actor.inventory);
     const effects: ScriptEffect[] = entries.length === 0
       ? [{ type: "message", key: "inventory.empty", args: {} }]
       : [{ type: "message", key: "inventory.list", args: { items: context.actor.inventory } }];
+    const hunger = Number(context.actor.properties.hunger ?? 0);
+    if (hunger >= 50) {
+      effects.push({ type: "message", key: "player.hungry", args: {} });
+    }
     return { effects };
   }
 
   drop(context: VerbContext): VerbResult {
     const itemId = context.args.item;
     const available = context.actor.inventory[itemId] ?? 0;
-    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
-    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+    const requested = parseRequestedAmount(context.args.amount);
+    if (requested === null) {
       return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
     if (available < 1) {
@@ -201,8 +176,8 @@ class PlayerBehavior extends GameBehavior {
       return { effects: [{ type: "message", key: "give.self", args: {} }] };
     }
     const available = context.actor.inventory[itemId] ?? 0;
-    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
-    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+    const requested = parseRequestedAmount(context.args.amount);
+    if (requested === null) {
       return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
     if (available < 1) {
@@ -226,11 +201,42 @@ class PlayerBehavior extends GameBehavior {
 
   take(context: VerbContext): VerbResult {
     const itemId = context.args.item;
-    const available = context.actor.floorItems[itemId] ?? 0;
-    const requested = context.args.amount ? Number.parseInt(context.args.amount, 10) : 1;
-    if (!Number.isFinite(requested) || requested < 1 || requested > 100) {
+    const requested = parseRequestedAmount(context.args.amount);
+    if (requested === null) {
       return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
     }
+
+    const containerId = context.args.object;
+    if (containerId) {
+      const container = findContainer(context, containerId);
+      if (!container) {
+        return { effects: [{ type: "message", key: "container.not_here", args: {} }] };
+      }
+      const available = context.actor.containerStorage[containerId]?.[itemId] ?? 0;
+      if (available < 1) {
+        return { effects: [{ type: "message", key: "container.take.none", args: { item: itemId } }] };
+      }
+      if (available < requested) {
+        return {
+          effects: [{ type: "message", key: "container.take.insufficient", args: { item: itemId, amount: String(available) } }]
+        };
+      }
+      return {
+        effects: [
+          {
+            type: "transferItem",
+            itemId,
+            amount: requested,
+            sourceId: containerId,
+            destinationId: context.actor.id
+          },
+          { type: "message", key: "container.take.success", args: { item: itemId, amount: String(requested), object: containerId } },
+          { type: "message", key: "container.take.room", args: { actor: context.actor.id, item: itemId, amount: String(requested), object: containerId } }
+        ]
+      };
+    }
+
+    const available = context.actor.floorItems[itemId] ?? 0;
     if (available < 1) {
       return { effects: [{ type: "message", key: "take.none", args: { item: itemId } }] };
     }
@@ -248,6 +254,33 @@ class PlayerBehavior extends GameBehavior {
         },
         { type: "message", key: "take.success", args: { item: itemId, amount: String(requested) } },
         { type: "message", key: "take.room", args: { actor: context.actor.id, item: itemId, amount: String(requested) } }
+      ]
+    };
+  }
+
+  put(context: VerbContext): VerbResult {
+    const itemId = context.args.item;
+    const containerId = context.args.object;
+    const container = findContainer(context, containerId);
+    if (!container) {
+      return { effects: [{ type: "message", key: "container.not_here", args: {} }] };
+    }
+    const available = context.actor.inventory[itemId] ?? 0;
+    const requested = parseRequestedAmount(context.args.amount);
+    if (requested === null) {
+      return { effects: [{ type: "message", key: "transfer.invalid_amount", args: {} }] };
+    }
+    if (available < 1) {
+      return { effects: [{ type: "message", key: "put.none", args: { item: itemId } }] };
+    }
+    if (available < requested) {
+      return { effects: [{ type: "message", key: "put.insufficient", args: { item: itemId, amount: String(available) } }] };
+    }
+    return {
+      effects: [
+        { type: "transferItem", itemId, amount: requested, destinationId: containerId },
+        { type: "message", key: "put.success", args: { item: itemId, amount: String(requested), object: containerId } },
+        { type: "message", key: "put.room", args: { actor: context.actor.id, item: itemId, amount: String(requested), object: containerId } }
       ]
     };
   }
@@ -278,10 +311,6 @@ class PlayerBehavior extends GameBehavior {
     };
   }
 
-  craft(context: VerbContext): VerbResult {
-    return craftFromRecipe(context.args.recipe, context);
-  }
-
   push(context: VerbContext): VerbResult {
     const object = findLocationContent(context, context.args.object);
     if (!object || !object.tags.includes("placeable")) {
@@ -309,6 +338,12 @@ class PlayerBehavior extends GameBehavior {
         { type: "moveObject", objectId: object.id, destinationId: context.args.destination },
         { type: "message", key: "move_object.success", args: { object: object.id, destination: context.args.destination } }
       ]
+    };
+  }
+
+  map(context: VerbContext): VerbResult {
+    return {
+      effects: [{ type: "message", key: "map.display", args: { actor: context.actor.id } }]
     };
   }
 }
