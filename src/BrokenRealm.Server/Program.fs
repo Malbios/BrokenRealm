@@ -171,10 +171,9 @@ module Program =
                     match sessionStore.Login(session.Id, request.accountId, request.password, state) with
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
-                        tryCommitLimbo updated.SelectedCharacterId
-                        let stateAfterEnter = gameStore.Read().State
+                        let stateAfterLogin = gameStore.Read().State
                         ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-                        Results.Json(authResponse culture updated stateAfterEnter))))
+                        Results.Json(authResponse culture updated stateAfterLogin))))
         |> ignore
 
         app.MapPost(
@@ -193,26 +192,22 @@ module Program =
                         match sessionStore.BindRegisteredAccount(session.Id, request.accountId, committed.State) with
                         | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                         | Ok updated ->
-                            tryCommitLimbo updated.SelectedCharacterId
-                            let stateAfterEnter = gameStore.Read().State
+                            let stateAfterRegister = gameStore.Read().State
                             ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
-                            Results.Json(authResponse culture updated stateAfterEnter))))
+                            Results.Json(authResponse culture updated stateAfterRegister))))
         |> ignore
 
         app.MapPost(
             "/game/auth/logout",
             Func<HttpContext, IResult>(fun ctx ->
                 lock stateLock (fun () ->
-                    match ctx.Request.Cookies.TryGetValue Sessions.CookieName with
-                    | true, sessionId ->
-                        match sessionStore.TryGet sessionId with
-                        | Some session -> tryCommitLimbo session.SelectedCharacterId
-                        | None -> ()
+                    let session = resolveSession ctx
+                    tryCommitLimbo session.SelectedCharacterId
+                    sessionStore.Logout session.Id
 
-                        sessionStore.Logout sessionId
-                    | false, _ -> ()
+                    if not (ctx.Request.Headers.ContainsKey Sessions.HeaderName) then
+                        ctx.Response.Cookies.Delete(Sessions.CookieName, sessionCookieOptions)
 
-                    ctx.Response.Cookies.Delete(Sessions.CookieName, sessionCookieOptions)
                     Results.Json({ lines = [ "Logged out." ] } : CommandResponse))))
         |> ignore
 

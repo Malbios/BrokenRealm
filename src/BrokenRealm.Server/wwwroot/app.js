@@ -772,6 +772,11 @@ async function connectRoomHub() {
         await connection.start();
         await connection.invoke("SyncCharacter");
         roomConnection = connection;
+        const session = await reloadSession();
+        if (session) {
+            await ensureInPlay(session);
+            await refreshMinimap();
+        }
     })();
     try {
         await roomConnectionPromise;
@@ -806,9 +811,8 @@ async function loadSession() {
     }
     const payload = (await response.json());
     renderCharacterSelector(payload);
-    await connectRoomHub();
     await ensureInPlay(payload);
-    await refreshMinimap();
+    await connectRoomHub();
 }
 async function login(accountId, password) {
     const response = await fetch(`/game/auth/login?culture=${encodeURIComponent(selectedCulture())}`, gameFetchInit({
@@ -824,9 +828,8 @@ async function login(accountId, password) {
     const payload = (await response.json());
     renderCharacterSelector(payload);
     appendLine(playerUi(selectedCulture()).signedInAs(payload.displayName ?? payload.accountId));
-    await connectRoomHub();
     await ensureInPlay(payload);
-    await refreshMinimap();
+    await connectRoomHub();
     focusCommandInput();
 }
 async function register(accountId, password) {
@@ -843,9 +846,8 @@ async function register(accountId, password) {
     const payload = (await response.json());
     renderCharacterSelector(payload);
     appendLine(playerUi(selectedCulture()).registeredAs(payload.displayName ?? payload.accountId));
-    await connectRoomHub();
     await ensureInPlay(payload);
-    await refreshMinimap();
+    await connectRoomHub();
     focusCommandInput();
 }
 async function logout() {
@@ -874,14 +876,18 @@ async function selectCharacter(characterId) {
     renderCharacterSelector(payload);
     const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
     appendLine(playerUi(selectedCulture()).nowPlayingAs(selected?.displayName ?? payload.selectedCharacterId));
+    await ensureInPlay(payload);
     if (roomConnection) {
         await roomConnection.invoke("SyncCharacter");
+        const session = await reloadSession();
+        if (session) {
+            await ensureInPlay(session);
+            await refreshMinimap();
+        }
     }
     else {
         await connectRoomHub();
     }
-    await ensureInPlay(payload);
-    await refreshMinimap();
 }
 async function sendCommand(command, selectedCulture) {
     appendLine(`> ${command}`, "line input-line");

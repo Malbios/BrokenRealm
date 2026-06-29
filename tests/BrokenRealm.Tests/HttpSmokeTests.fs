@@ -22,6 +22,10 @@ module HttpSmokeTests =
         Directory.CreateDirectory(directory) |> ignore
         directory, Path.Combine(directory, "game-snapshot.json")
 
+    let private withTabSession (client: HttpClient) (sessionId: string) =
+        client.DefaultRequestHeaders.Remove Sessions.HeaderName |> ignore
+        client.DefaultRequestHeaders.Add(Sessions.HeaderName, sessionId)
+
     let private postCommand (client: HttpClient) (text: string) =
         task {
             let! response =
@@ -110,6 +114,47 @@ module HttpSmokeTests =
                 Assert.True(commandResponse.IsSuccessStatusCode)
                 Assert.NotNull(commandPayload)
                 Assert.NotEmpty(commandPayload.lines)
+                Assert.Contains(commandPayload.lines, fun line -> line.Contains("forest"))
+            finally
+                RoomBroadcast.setConnectionFilter (fun _ -> true)
+                Environment.SetEnvironmentVariable("BROKENREALM_SNAPSHOT_PATH", null)
+
+                if Directory.Exists directory then
+                    Directory.Delete(directory, true)
+        }
+
+    [<Fact>]
+    let ``HTTP tab session login enter and look succeeds`` () : Task =
+        task {
+            let directory, snapshotPath = createTempSnapshotDirectory()
+
+            try
+                use factory = new SmokeTestWebApplicationFactory(snapshotPath)
+
+                use client =
+                    factory.CreateClient(
+                        new WebApplicationFactoryClientOptions(
+                            HandleCookies = false,
+                            AllowAutoRedirect = false))
+
+                withTabSession client "cccccccccccccccccccccccccccccccc"
+
+                let! loginResponse =
+                    client.PostAsJsonAsync(
+                        "/game/auth/login?culture=en",
+                        { accountId = GameSnapshots.PrototypeAccountId
+                          password = "prototype" })
+
+                Assert.True(loginResponse.IsSuccessStatusCode)
+
+                let! enterResponse = client.PostAsync("/game/session/enter?culture=en", null)
+                Assert.True(enterResponse.IsSuccessStatusCode)
+
+                let! commandResponse, commandPayload = postCommand client "look"
+                Assert.True(commandResponse.IsSuccessStatusCode)
+                Assert.NotNull(commandPayload)
+                Assert.NotEmpty(commandPayload.lines)
+                Assert.DoesNotContain(commandPayload.lines, fun line -> line.Contains("not in the world"))
                 Assert.Contains(commandPayload.lines, fun line -> line.Contains("forest"))
             finally
                 RoomBroadcast.setConnectionFilter (fun _ -> true)

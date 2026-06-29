@@ -1,6 +1,8 @@
 namespace BrokenRealm.Server
 
+open System
 open System.Collections.Generic
+open System.Threading
 open System.Threading.Tasks
 open Microsoft.AspNetCore.Http
 open Microsoft.AspNetCore.SignalR
@@ -80,11 +82,13 @@ type GameHub() =
         let connectionId = this.Context.ConnectionId
 
         match services.Connections.Remove connectionId with
-        | Some characterId when not (services.Connections.IsCharacterConnected characterId) ->
-            services.EnterLimboIfDisconnected characterId
-        | _ -> ()
+        | Some characterId ->
+            Task.Run(fun () ->
+                Thread.Sleep 300
 
-        Task.CompletedTask
+                if not (services.Connections.IsCharacterConnected characterId) then
+                    services.EnterLimboIfDisconnected characterId)
+        | None -> Task.CompletedTask
 
     member this.SyncCharacter() =
         match this.Context.GetHttpContext() |> GameHubServices.tryResolveSession with
