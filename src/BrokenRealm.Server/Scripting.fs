@@ -203,6 +203,47 @@ module Scripting =
                         decodedProperties))
             | _ ->
                 Error "createObject effects require locationId, nameKey, behaviorModuleId, behaviorClassName, and tags."
+        | Some "growRoomExit" ->
+            match
+                readString "direction" effect,
+                readString "reverseDirection" effect,
+                readString "nameKey" effect,
+                readString "behaviorModuleId" effect,
+                readString "behaviorClassName" effect,
+                readString "tags" effect
+            with
+            | Some direction, Some reverseDirection, Some nameKey, Some behaviorModuleId, Some behaviorClassName, Some tags ->
+                let descriptionKey = readString "descriptionKey" effect
+                let aliasesEn = readString "aliasesEn" effect |> Option.defaultValue ""
+                let aliasesDe = readString "aliasesDe" effect |> Option.defaultValue ""
+
+                let properties =
+                    match effect.TryGetProperty("properties") with
+                    | true, value when value.ValueKind = JsonValueKind.Object ->
+                        value.EnumerateObject()
+                        |> Seq.fold
+                            (fun result property ->
+                                result
+                                |> Result.bind (fun values ->
+                                    decodeGameValue property.Value
+                                    |> Result.map (fun decoded -> Map.add property.Name decoded values)))
+                            (Ok Map.empty)
+                    | _ -> Ok Map.empty
+
+                properties
+                |> Result.map (fun decodedProperties ->
+                    GrowRoomExit(
+                        direction,
+                        reverseDirection,
+                        nameKey,
+                        descriptionKey,
+                        behaviorModuleId,
+                        behaviorClassName,
+                        WorldObjects.parseTags tags,
+                        WorldObjects.parseAliases aliasesEn aliasesDe,
+                        decodedProperties))
+            | _ ->
+                Error "growRoomExit effects require direction, reverseDirection, nameKey, behaviorModuleId, behaviorClassName, and tags."
         | Some "movePlayer" ->
             match readString "destinationId" effect with
             | Some destinationId -> Ok(MoveObject(None, destinationId))
@@ -321,6 +362,16 @@ module Scripting =
            descriptionKey = gameObject.DescriptionKey |> Option.defaultValue ""
            tags = gameObject.Tags |> Set.toArray |}
 
+    let private containerStorageMap (state: GameState) (locationId: ObjectId) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject ->
+            gameObject.LocationId = Some locationId
+            && WorldObjects.isItemContainer gameObject)
+        |> List.map (fun container -> container.Id, CarriedItems.itemQuantitiesInContainer state container.Id)
+        |> Map.ofList
+
     let private actorSummary (state: GameState) (actor: GameObject) =
         let locationId = PlayerObjects.locationId actor
         let location = state.Objects[locationId]
@@ -343,7 +394,8 @@ module Scripting =
            inventory = PlayerObjects.inventory state actor.Id
            locationId = locationId
            locationContents = locationContents |> List.toArray
-           floorItems = CarriedItems.itemQuantitiesInContainer state locationId |}
+           floorItems = CarriedItems.itemQuantitiesInContainer state locationId
+           containerStorage = containerStorageMap state locationId |}
 
     let private executeWithinLimits limits invocation (state: GameState) (target: GameObject) (contents: GameObject list) (args: Map<string, string>) (actor: GameObject) source =
         let context =
@@ -355,7 +407,9 @@ module Scripting =
                    tags = target.Tags |> Set.toArray
                    properties = objectProperties target
                    references = target.References
-                   contents = contents |> List.map objectSummary |> List.toArray |}
+                   contents = contents |> List.map objectSummary |> List.toArray
+                   storedItems = CarriedItems.itemQuantitiesInContainer state target.Id
+                   containerStorage = containerStorageMap state target.Id |}
                actor = actorSummary state actor |}
 
         executeContextWithinLimits limits invocation context source
@@ -391,6 +445,62 @@ module Scripting =
         else
             let invocation context = $"(new {className}()).{methodName}({context})"
             executeWithinLimits defaultLimits invocation state target contents args actor source
+
+    let private roomContentsForTick (state: GameState) (locationId: ObjectId) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject ->
+            gameObject.LocationId = Some locationId && not (CarriedItems.isCarriedStack gameObject))
+        |> List.sortBy _.Id
+
+    let private buildTickRoomContext (state: GameState) (roomId: ObjectId) (connectedPlayers: GameObject list) =
+        let room = state.Objects[roomId]
+        let contents = roomContentsForTick state roomId
+
+        {| id = room.Id
+           properties = objectProperties room
+           references = room.References
+           contents = contents |> List.map objectSummary |> List.toArray
+           floorItems = CarriedItems.itemQuantitiesInContainer state roomId
+           containerStorage = containerStorageMap state roomId
+           connectedPlayers = connectedPlayers |> List.map objectSummary |> List.toArray |}
+
+    let executeBehaviorTick
+        (className: string)
+        (state: GameState)
+        (target: GameObject)
+        (roomId: ObjectId)
+        (tickIndex: int)
+        (tickSeconds: int)
+        (connectedPlayers: GameObject list)
+        (source: string)
+        =
+        if not (identifierPattern.IsMatch className) then
+            Error "Behavior class names must be valid JavaScript identifiers."
+        elif source.Length > defaultLimits.MaxSourceCharacters then
+            Error $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters."
+        else
+            let roomContents =
+                roomContentsForTick state roomId
+                |> List.filter (fun gameObject -> gameObject.Id <> target.Id)
+
+            let context =
+                {| tick = {| index = tickIndex; seconds = tickSeconds |}
+                   this =
+                    {| id = target.Id
+                       name = target.Name
+                       descriptionKey = target.DescriptionKey |> Option.defaultValue ""
+                       tags = target.Tags |> Set.toArray
+                       properties = objectProperties target
+                       references = target.References
+                       contents = roomContents |> List.map objectSummary |> List.toArray
+                       storedItems = CarriedItems.itemQuantitiesInContainer state target.Id
+                       containerStorage = containerStorageMap state target.Id |}
+                   room = buildTickRoomContext state roomId connectedPlayers |}
+
+            let invocation contextJson = $"(new {className}()).tick({contextJson})"
+            executeContextWithinLimits defaultLimits invocation context source
 
     let executeAnonymousBehaviorMethodAtPath (className: string) (methodName: string) storagePath (value: AnonymousBehaviorValue) args state actor (source: string) =
         if not (identifierPattern.IsMatch className) || not (identifierPattern.IsMatch methodName) then

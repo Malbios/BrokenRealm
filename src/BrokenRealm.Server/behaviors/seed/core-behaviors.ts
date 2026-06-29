@@ -5,6 +5,10 @@ type CommandDefinition = {
 
 class GameBehavior {
   static commands: CommandDefinition[] = [];
+
+  tick(_context: TickContext): VerbResult {
+    return { effects: [] };
+  }
 }
 
 const coreBehaviorClasses = { GameBehavior };

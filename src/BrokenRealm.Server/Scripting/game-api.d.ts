@@ -3,6 +3,7 @@ declare type ScriptEffect =
   | { type: "removeInventory"; itemId: string; amount: number; objectId?: string }
   | { type: "transferItem"; itemId: string; amount: number; destinationId: string; sourceId?: string }
   | { type: "createObject"; locationId: string; nameKey: string; descriptionKey?: string; behaviorModuleId: string; behaviorClassName: string; tags: string; aliasesEn?: string; aliasesDe?: string; properties?: Record<string, GameValue> }
+  | { type: "growRoomExit"; direction: string; reverseDirection: string; nameKey: string; descriptionKey?: string; behaviorModuleId: string; behaviorClassName: string; tags: string; aliasesEn?: string; aliasesDe?: string; properties?: Record<string, GameValue> }
   | { type: "destroyObject"; objectId?: string }
   | { type: "moveObject"; destinationId: string; objectId?: string }
   | { type: "movePlayer"; destinationId: string }
@@ -20,12 +21,37 @@ declare interface VerbObjectSummary {
   tags: string[];
 }
 
+declare interface TickContext {
+  tick: {
+    index: number;
+    seconds: number;
+  };
+  this: VerbObjectSummary & {
+    properties: Record<string, GameValue>;
+    references: Record<string, string>;
+    contents: VerbObjectSummary[];
+    storedItems: Record<string, number>;
+    containerStorage: Record<string, Record<string, number>>;
+  };
+  room: {
+    id: string;
+    properties: Record<string, GameValue>;
+    references: Record<string, string>;
+    contents: VerbObjectSummary[];
+    floorItems: Record<string, number>;
+    containerStorage: Record<string, Record<string, number>>;
+    connectedPlayers: VerbObjectSummary[];
+  };
+}
+
 declare interface VerbContext {
   args: Record<string, string>;
   this: VerbObjectSummary & {
     properties: Record<string, GameValue>;
     references: Record<string, string>;
     contents: VerbObjectSummary[];
+    storedItems: Record<string, number>;
+    containerStorage: Record<string, Record<string, number>>;
   };
   actor: VerbObjectSummary & {
     properties: Record<string, GameValue>;
@@ -35,6 +61,7 @@ declare interface VerbContext {
     locationId: string;
     locationContents: VerbObjectSummary[];
     floorItems: Record<string, number>;
+    containerStorage: Record<string, Record<string, number>>;
   };
 }
 
@@ -65,6 +92,10 @@ declare interface Gatherable {
 
 declare interface Placeable {
   use(context: VerbContext): VerbResult;
+}
+
+declare interface Container {
+  open(context: VerbContext): VerbResult;
 }
 
 declare function execute(context: VerbContext): VerbResult;
