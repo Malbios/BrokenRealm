@@ -1,6 +1,109 @@
 type Culture = "en" | "de";
 type Panel = "player" | "admin";
 
+type PlayerUiStrings = {
+  playerTab: string;
+  characterLabel: string;
+  languageLabel: string;
+  accountLabel: string;
+  passwordLabel: string;
+  loginButton: string;
+  registerButton: string;
+  sendButton: string;
+  logoutButton: string;
+  guestLabel: (accountId: string) => string;
+  mapTitle: string;
+  mapAriaLabel: string;
+  terminalAriaLabel: string;
+  modeTabsAriaLabel: string;
+  welcome: string;
+  limboLocation: string;
+  signedInAs: (name: string) => string;
+  registeredAs: (name: string) => string;
+  loggedOutGuest: string;
+  nowPlayingAs: (name: string) => string;
+  couldNotLoadSession: string;
+  couldNotEnterPlay: string;
+  loginFailed: string;
+  registrationFailed: string;
+  couldNotLogout: string;
+  couldNotSwitchCharacter: string;
+  realmNotResponding: string;
+  registerNeedsCredentials: string;
+  leaveModuleConfirm: (moduleId: string) => string;
+};
+
+const PLAYER_UI: Record<Culture, PlayerUiStrings> = {
+  en: {
+    playerTab: "Player",
+    characterLabel: "Character",
+    languageLabel: "Language",
+    accountLabel: "Account",
+    passwordLabel: "Password",
+    loginButton: "Login",
+    registerButton: "Register",
+    sendButton: "Send",
+    logoutButton: "Logout",
+    guestLabel: (accountId) => `Guest (${accountId})`,
+    mapTitle: "Map",
+    mapAriaLabel: "Area map",
+    terminalAriaLabel: "BrokenRealm",
+    modeTabsAriaLabel: "Mode",
+    welcome: "BrokenRealm awaits.",
+    limboLocation: "limbo",
+    signedInAs: (name) => `Signed in as ${name}.`,
+    registeredAs: (name) => `Registered and signed in as ${name}.`,
+    loggedOutGuest: "Logged out. Continuing as guest.",
+    nowPlayingAs: (name) => `Now playing as ${name}.`,
+    couldNotLoadSession: "Could not load the current session.",
+    couldNotEnterPlay: "Could not enter play.",
+    loginFailed: "Login failed.",
+    registrationFailed: "Registration failed.",
+    couldNotLogout: "Could not log out.",
+    couldNotSwitchCharacter: "Could not switch characters.",
+    realmNotResponding: "The realm is not responding.",
+    registerNeedsCredentials: "Enter an account id and password to register.",
+    leaveModuleConfirm: (moduleId) =>
+      `Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`,
+  },
+  de: {
+    playerTab: "Spieler",
+    characterLabel: "Charakter",
+    languageLabel: "Sprache",
+    accountLabel: "Konto",
+    passwordLabel: "Passwort",
+    loginButton: "Anmelden",
+    registerButton: "Registrieren",
+    sendButton: "Senden",
+    logoutButton: "Abmelden",
+    guestLabel: (accountId) => `Gast (${accountId})`,
+    mapTitle: "Karte",
+    mapAriaLabel: "Gebietskarte",
+    terminalAriaLabel: "BrokenRealm",
+    modeTabsAriaLabel: "Modus",
+    welcome: "BrokenRealm wartet.",
+    limboLocation: "Limbo",
+    signedInAs: (name) => `Angemeldet als ${name}.`,
+    registeredAs: (name) => `Registriert und angemeldet als ${name}.`,
+    loggedOutGuest: "Abgemeldet. Es geht weiter als Gast.",
+    nowPlayingAs: (name) => `Du spielst jetzt als ${name}.`,
+    couldNotLoadSession: "Die aktuelle Sitzung konnte nicht geladen werden.",
+    couldNotEnterPlay: "Spielbeitritt fehlgeschlagen.",
+    loginFailed: "Anmeldung fehlgeschlagen.",
+    registrationFailed: "Registrierung fehlgeschlagen.",
+    couldNotLogout: "Abmeldung fehlgeschlagen.",
+    couldNotSwitchCharacter: "Charakterwechsel fehlgeschlagen.",
+    realmNotResponding: "Das Reich antwortet nicht.",
+    registerNeedsCredentials: "Gib Konto und Passwort ein, um dich zu registrieren.",
+    leaveModuleConfirm: (moduleId) =>
+      `${moduleId} mit ungespeicherten Änderungen verlassen? Sie bleiben in diesem Browser, bis die Seite neu geladen wird.`,
+  },
+};
+
+function playerUi(culture: Culture): PlayerUiStrings {
+  return PLAYER_UI[culture];
+}
+
 type MonacoEditor = {
   getValue(): string;
   setValue(value: string): void;
@@ -70,6 +173,25 @@ interface Window {
 
 type CommandResponse = {
   lines: string[];
+};
+
+type MapCellResponse = {
+  x: number;
+  y: number;
+  roomId: string;
+  label: string;
+  visited: boolean;
+  current: boolean;
+};
+
+type GameMapResponse = {
+  region: string;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  currentRoomId: string;
+  cells: MapCellResponse[];
 };
 
 type SessionCharacter = {
@@ -162,6 +284,9 @@ const loginAccount = document.querySelector<HTMLInputElement>("#login-account");
 const loginPassword = document.querySelector<HTMLInputElement>("#login-password");
 const registerButton = document.querySelector<HTMLButtonElement>("#register-button");
 const log = document.querySelector<HTMLDivElement>("#log");
+const minimap = document.querySelector<HTMLElement>("#minimap");
+const minimapTitle = document.querySelector<HTMLDivElement>("#minimap-title");
+const minimapGrid = document.querySelector<HTMLPreElement>("#minimap-grid");
 const playerTab = document.querySelector<HTMLButtonElement>("#player-tab");
 const adminTab = document.querySelector<HTMLButtonElement>("#admin-tab");
 const playerPanel = document.querySelector<HTMLDivElement>("#player-panel");
@@ -176,6 +301,17 @@ const scriptStatus = document.querySelector<HTMLDivElement>("#script-status");
 const behaviorModuleSelect = document.querySelector<HTMLSelectElement>("#behavior-module");
 const verbTitle = document.querySelector<HTMLHeadingElement>("#verb-title");
 const moduleDetails = document.querySelector<HTMLDivElement>("#module-details");
+const playerTabLabel = document.querySelector<HTMLSpanElement>("#player-tab-label");
+const characterLabelText = document.querySelector<HTMLSpanElement>("#character-label-text");
+const languageLabelText = document.querySelector<HTMLSpanElement>("#language-label-text");
+const accountLabelText = document.querySelector<HTMLSpanElement>("#account-label-text");
+const passwordLabelText = document.querySelector<HTMLSpanElement>("#password-label-text");
+const loginButtonLabel = document.querySelector<HTMLSpanElement>("#login-button-label");
+const registerButtonLabel = document.querySelector<HTMLSpanElement>("#register-button-label");
+const sendButtonLabel = document.querySelector<HTMLSpanElement>("#send-button-label");
+const logoutButtonLabel = document.querySelector<HTMLSpanElement>("#logout-button-label");
+const terminalSection = document.querySelector<HTMLElement>(".terminal");
+const modeTabs = document.querySelector<HTMLDivElement>(".tabs");
 let editor: MonacoEditor | null = null;
 let editorReady: Promise<void> | null = null;
 let behaviorModules: AdminBehaviorModule[] = [];
@@ -416,9 +552,10 @@ function hasUnsavedChanges(): boolean {
 }
 
 function canLeaveModule(moduleId: string | null): boolean {
+  const ui = playerUi(selectedCulture());
   return !moduleId
     || !isModuleDirty(moduleId)
-    || window.confirm(`Leave ${moduleId} with unsaved changes? They will remain in this browser until the page is reloaded.`);
+    || window.confirm(ui.leaveModuleConfirm(moduleId));
 }
 
 function selectedCulture(): Culture {
@@ -429,10 +566,35 @@ function sessionUrl(): string {
   return `/game/session?culture=${encodeURIComponent(selectedCulture())}`;
 }
 
-function updateAuthUi(session: GameSessionResponse): void {
+function applyPlayerLocale(selectedCulture: Culture): void {
+  const ui = playerUi(selectedCulture);
+  document.documentElement.lang = selectedCulture;
+
+  if (playerTabLabel) playerTabLabel.textContent = ui.playerTab;
+  if (characterLabelText) characterLabelText.textContent = ui.characterLabel;
+  if (languageLabelText) languageLabelText.textContent = ui.languageLabel;
+  if (accountLabelText) accountLabelText.textContent = ui.accountLabel;
+  if (passwordLabelText) passwordLabelText.textContent = ui.passwordLabel;
+  if (loginButtonLabel) loginButtonLabel.textContent = ui.loginButton;
+  if (registerButtonLabel) registerButtonLabel.textContent = ui.registerButton;
+  if (sendButtonLabel) sendButtonLabel.textContent = ui.sendButton;
+  if (logoutButtonLabel) logoutButtonLabel.textContent = ui.logoutButton;
+  if (minimapTitle) minimapTitle.textContent = ui.mapTitle;
+  if (minimap) minimap.setAttribute("aria-label", ui.mapAriaLabel);
+  if (terminalSection) terminalSection.setAttribute("aria-label", ui.terminalAriaLabel);
+  if (modeTabs) modeTabs.setAttribute("aria-label", ui.modeTabsAriaLabel);
+
+  if (currentSession) {
+    updateAuthUi(currentSession, selectedCulture);
+  }
+}
+
+function updateAuthUi(session: GameSessionResponse, culture: Culture = selectedCulture()): void {
+  const ui = playerUi(culture);
+
   if (accountDisplay) {
     const label = session.displayName ?? session.accountId;
-    accountDisplay.textContent = session.authenticated ? label : `Guest (${session.accountId})`;
+    accountDisplay.textContent = session.authenticated ? label : ui.guestLabel(session.accountId);
   }
 
   if (logoutButton) logoutButton.hidden = !session.authenticated;
@@ -445,6 +607,65 @@ function updateCharacterSelectorVisibility(panel: Panel): void {
   const isPlayer = panel === "player";
   const hasCharacters = (currentSession?.characters.length ?? 0) > 0;
   characterLabel.hidden = !isPlayer || !hasCharacters;
+}
+
+function focusCommandInput(): void {
+  if (activePanel !== "player") return;
+  requestAnimationFrame(() => input?.focus());
+}
+
+function renderMinimap(map: GameMapResponse, culture: Culture): void {
+  if (!minimap || !minimapGrid || !minimapTitle) return;
+
+  if (map.cells.length === 0) {
+    minimap.hidden = true;
+    minimapGrid.textContent = "";
+    return;
+  }
+
+  minimap.hidden = false;
+  minimapTitle.textContent = playerUi(culture).mapTitle;
+
+  const rows: string[] = [];
+  for (let y = map.minY; y <= map.maxY; y += 1) {
+    const row: string[] = [];
+    for (let x = map.minX; x <= map.maxX; x += 1) {
+      const cell = map.cells.find((entry) => entry.x === x && entry.y === y);
+      if (!cell) {
+        row.push("  ");
+        continue;
+      }
+      row.push(cell.current ? `[${cell.label}]` : cell.label);
+    }
+    rows.push(row.join(" "));
+  }
+
+  minimapGrid.textContent = rows.join("\n");
+}
+
+async function refreshMinimap(selectedCulture: Culture = (culture?.value === "de" ? "de" : "en") as Culture): Promise<void> {
+  if (!currentSession) {
+    if (minimap) minimap.hidden = true;
+    return;
+  }
+
+  const selected = currentSession.characters.find((character) => character.id === currentSession?.selectedCharacterId);
+  if (!selected?.inPlay) {
+    if (minimap) minimap.hidden = true;
+    return;
+  }
+
+  try {
+    const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit);
+    if (!response.ok) {
+      if (minimap) minimap.hidden = true;
+      return;
+    }
+
+    renderMinimap((await response.json()) as GameMapResponse, selectedCulture);
+  } catch {
+    if (minimap) minimap.hidden = true;
+  }
 }
 
 function showPanel(panel: Panel): void {
@@ -461,7 +682,7 @@ function showPanel(panel: Panel): void {
     editor?.layout();
     scriptSource?.focus();
   } else {
-    input?.focus();
+    focusCommandInput();
   }
 }
 
@@ -717,7 +938,7 @@ function renderCharacterSelector(session: GameSessionResponse): void {
 
   session.characters.forEach((character) => {
     const option = document.createElement("option");
-    const where = character.inPlay ? character.locationId ?? "?" : "limbo";
+    const where = character.inPlay ? character.locationId ?? "?" : playerUi(selectedCulture()).limboLocation;
     option.value = character.id;
     option.textContent = `${character.displayName} @ ${where}`;
     characterSelect.append(option);
@@ -773,12 +994,13 @@ async function enterPlay(): Promise<void> {
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
-    appendLine(payload.lines[0] ?? "Could not enter play.", "line error-line");
+    appendLine(payload.lines[0] ?? playerUi(selectedCulture()).couldNotEnterPlay, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as CommandResponse;
   payload.lines.forEach((line) => appendLine(line));
+  await refreshMinimap();
 }
 
 async function ensureInPlay(session: GameSessionResponse): Promise<void> {
@@ -796,14 +1018,19 @@ async function ensureInPlay(session: GameSessionResponse): Promise<void> {
 async function loadSession(): Promise<void> {
   const response = await fetch(sessionUrl(), gameFetchInit);
   if (!response.ok) {
-    appendLine("Could not load the current session.", "line error-line");
+    appendLine(playerUi(selectedCulture()).couldNotLoadSession, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as GameSessionResponse;
   renderCharacterSelector(payload);
   await connectRoomHub();
+  if (!payload.authenticated) {
+    return;
+  }
+
   await ensureInPlay(payload);
+  await refreshMinimap();
 }
 
 async function login(accountId: string, password: string): Promise<void> {
@@ -816,13 +1043,17 @@ async function login(accountId: string, password: string): Promise<void> {
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
-    appendLine(payload.lines[0] ?? "Login failed.", "line error-line");
+    appendLine(payload.lines[0] ?? playerUi(selectedCulture()).loginFailed, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as AuthResponse;
   renderCharacterSelector(payload);
-  appendLine(`Signed in as ${payload.displayName ?? payload.accountId}.`);
+  appendLine(playerUi(selectedCulture()).signedInAs(payload.displayName ?? payload.accountId));
+  await connectRoomHub();
+  await ensureInPlay(payload);
+  await refreshMinimap();
+  focusCommandInput();
 }
 
 async function register(accountId: string, password: string): Promise<void> {
@@ -835,13 +1066,17 @@ async function register(accountId: string, password: string): Promise<void> {
 
   if (!response.ok) {
     const payload = (await response.json()) as CommandResponse;
-    appendLine(payload.lines[0] ?? "Registration failed.", "line error-line");
+    appendLine(payload.lines[0] ?? playerUi(selectedCulture()).registrationFailed, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as AuthResponse;
   renderCharacterSelector(payload);
-  appendLine(`Registered and signed in as ${payload.displayName ?? payload.accountId}.`);
+  appendLine(playerUi(selectedCulture()).registeredAs(payload.displayName ?? payload.accountId));
+  await connectRoomHub();
+  await ensureInPlay(payload);
+  await refreshMinimap();
+  focusCommandInput();
 }
 
 async function logout(): Promise<void> {
@@ -851,13 +1086,13 @@ async function logout(): Promise<void> {
   });
 
   if (!response.ok) {
-    appendLine("Could not log out.", "line error-line");
+    appendLine(playerUi(selectedCulture()).couldNotLogout, "line error-line");
     return;
   }
 
   if (loginPassword) loginPassword.value = "";
   await loadSession();
-  appendLine("Logged out. Continuing as guest.");
+  appendLine(playerUi(selectedCulture()).loggedOutGuest);
 }
 
 async function selectCharacter(characterId: string): Promise<void> {
@@ -869,19 +1104,21 @@ async function selectCharacter(characterId: string): Promise<void> {
   });
 
   if (!response.ok) {
-    appendLine("Could not switch characters.", "line error-line");
+    appendLine(playerUi(selectedCulture()).couldNotSwitchCharacter, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as SelectCharacterResponse;
   renderCharacterSelector(payload);
   const selected = payload.characters.find((character) => character.id === payload.selectedCharacterId);
-  appendLine(`Now playing as ${selected?.displayName ?? payload.selectedCharacterId}.`);
+  appendLine(playerUi(selectedCulture()).nowPlayingAs(selected?.displayName ?? payload.selectedCharacterId));
   if (roomConnection) {
     await roomConnection.invoke("SyncCharacter");
   } else {
     await connectRoomHub();
   }
+
+  await refreshMinimap();
 
   await ensureInPlay(payload);
 }
@@ -897,12 +1134,13 @@ async function sendCommand(command: string, selectedCulture: Culture): Promise<v
   });
 
   if (!response.ok) {
-    appendLine("The realm is not responding.", "line error-line");
+    appendLine(playerUi(selectedCulture).realmNotResponding, "line error-line");
     return;
   }
 
   const payload = (await response.json()) as CommandResponse;
   payload.lines.forEach((line) => appendLine(line));
+  await refreshMinimap(selectedCulture);
 }
 
 async function loadScript(): Promise<void> {
@@ -1079,7 +1317,7 @@ registerButton?.addEventListener("click", async () => {
   const accountId = loginAccount?.value.trim() ?? "";
   const password = loginPassword?.value ?? "";
   if (!accountId || !password) {
-    appendLine("Enter an account id and password to register.", "line error-line");
+    appendLine(playerUi(selectedCulture()).registerNeedsCredentials, "line error-line");
     return;
   }
   await register(accountId, password);
@@ -1090,6 +1328,7 @@ logoutButton?.addEventListener("click", () => {
 });
 
 culture?.addEventListener("change", () => {
+  applyPlayerLocale(selectedCulture());
   void loadSession();
 });
 
@@ -1111,7 +1350,7 @@ form?.addEventListener("submit", async (event) => {
   try {
     await sendCommand(command, selectedCulture);
   } catch {
-    appendLine("The realm is not responding.", "line error-line");
+    appendLine(playerUi(selectedCulture).realmNotResponding, "line error-line");
   } finally {
     input?.focus();
   }
@@ -1163,5 +1402,6 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 
-appendLine("BrokenRealm awaits.");
+applyPlayerLocale(selectedCulture());
+appendLine(playerUi(selectedCulture()).welcome);
 void loadSession();

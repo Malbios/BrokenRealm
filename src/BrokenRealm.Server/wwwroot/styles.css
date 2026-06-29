@@ -149,7 +149,39 @@ select {
 }
 
 #player-panel {
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto 1fr auto;
+}
+
+.player-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.minimap {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  border-left: 1px solid rgba(177, 206, 183, 0.16);
+  background: rgba(15, 22, 18, 0.72);
+  min-width: 88px;
+}
+
+.minimap-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8fa896;
+}
+
+.minimap-grid {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #b8c7bc;
+  font-family: inherit;
 }
 
 .log {

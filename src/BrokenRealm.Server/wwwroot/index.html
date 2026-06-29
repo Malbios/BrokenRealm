@@ -13,19 +13,19 @@
         <h1>BrokenRealm</h1>
         <div class="toolbar">
           <div class="tabs" role="tablist" aria-label="Mode">
-            <button id="player-tab" class="tab active" type="button">Player</button>
+            <button id="player-tab" class="tab active" type="button"><span id="player-tab-label">Player</span></button>
             <button id="admin-tab" class="tab" type="button">Admin</button>
           </div>
           <div id="account-controls" class="account-controls">
             <span id="account-display" class="account-display">Guest</span>
-            <button id="logout-button" class="secondary-button" type="button" hidden>Logout</button>
+            <button id="logout-button" class="secondary-button" type="button" hidden><span id="logout-button-label">Logout</span></button>
           </div>
           <label id="character-label" class="language" hidden>
-            <span>Character</span>
+            <span id="character-label-text">Character</span>
             <select id="character"></select>
           </label>
           <label class="language">
-            <span>Language</span>
+            <span id="language-label-text">Language</span>
             <select id="culture">
               <option value="en">English</option>
               <option value="de">Deutsch</option>
@@ -37,22 +37,28 @@
         <div id="auth-panel" class="auth-panel">
           <form id="login-form" class="auth-form">
             <label>
-              <span>Account</span>
+              <span id="account-label-text">Account</span>
               <input id="login-account" name="accountId" autocomplete="username" value="prototype-account">
             </label>
             <label>
-              <span>Password</span>
+              <span id="password-label-text">Password</span>
               <input id="login-password" name="password" type="password" autocomplete="current-password">
             </label>
-            <button type="submit">Login</button>
-            <button id="register-button" class="secondary-button" type="button">Register</button>
+            <button type="submit"><span id="login-button-label">Login</span></button>
+            <button id="register-button" class="secondary-button" type="button"><span id="register-button-label">Register</span></button>
           </form>
         </div>
-        <div id="log" class="log" aria-live="polite"></div>
+        <div class="player-body">
+          <div id="log" class="log" aria-live="polite"></div>
+          <aside id="minimap" class="minimap" aria-label="Area map" hidden>
+            <div id="minimap-title" class="minimap-title">Map</div>
+            <pre id="minimap-grid" class="minimap-grid"></pre>
+          </aside>
+        </div>
         <form id="command-form" class="command-row">
           <span class="prompt">&gt;</span>
           <input id="command" name="command" autocomplete="off" autofocus>
-          <button type="submit">Send</button>
+          <button type="submit"><span id="send-button-label">Send</span></button>
         </form>
       </div>
       <div id="admin-panel" class="panel admin-panel">
