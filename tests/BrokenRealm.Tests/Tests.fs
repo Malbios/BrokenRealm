@@ -20,7 +20,7 @@ module GameStateTestCompatibility =
           Inventory = PlayerObjects.inventory state player.Id }
 
     let toPlayerObject (view: CharacterView) =
-        PlayerObjects.createWithLegacyInventory view.Id view.Id view.Id view.AccountId view.LocationId view.Inventory
+        PlayerObjects.create view.Id view.Id view.Id view.AccountId view.LocationId
 
     type GameState with
         member state.Player = toView state (PlayerObjects.get state GameSnapshots.PrototypeCharacterId)
@@ -55,14 +55,31 @@ module PersistenceTests =
     let ``Character-only commit advances only character revision`` () =
         let store = createStore ()
         let stored = store.Read()
-        let result = Kernel.submitCommand En "gather wood" stored.State
+        let result = Kernel.submitCommand En "go north" stored.State
 
         match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, result.State) with
         | Ok committed ->
             Assert.Equal(0L, committed.WorldRevision)
             Assert.Equal(1L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
-            Assert.Equal(2, committed.State.Player.Inventory["wood"])
+            Assert.Equal("village", committed.State.Player.LocationId)
         | Error _ -> Assert.True(false, "Expected the character commit to succeed.")
+
+    [<Fact>]
+    let ``Gather wood advances character and world revisions`` () =
+        let store = createStore ()
+        let stored = store.Read()
+        let result = Kernel.submitCommand En "gather wood" stored.State
+
+        match store.TryCommit(stored.WorldRevision, stored.CharacterRevisions, result.State) with
+        | Ok committed ->
+            Assert.Equal(1L, committed.WorldRevision)
+            Assert.Equal(1L, committed.CharacterRevisions[GameSnapshots.PrototypeCharacterId])
+            Assert.Equal(2, committed.State.Player.Inventory["wood"])
+
+            match committed.State.Objects["forest"].Properties |> Map.tryFind "woodYield" with
+            | Some(IntegerValue 8L) -> Assert.True(true)
+            | _ -> Assert.True(false, "Expected gather to deplete forest woodYield.")
+        | Error _ -> Assert.True(false, "Expected the gather commit to succeed.")
 
     [<Fact>]
     let ``World commit advances world revision and preserves character revision`` () =
@@ -193,15 +210,23 @@ module SnapshotPersistenceTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
-    let ``Migration rejects newer snapshot format versions`` () =
+    let ``Snapshot loading rejects newer snapshot format versions`` () =
         let snapshot = { createSnapshot () with FormatVersion = GameSnapshots.CurrentFormatVersion + 1 }
 
-        match SnapshotMigrations.migrate snapshot with
+        match SnapshotLoading.prepare snapshot with
         | Error error -> Assert.Contains("newer than this server supports", error)
         | Ok _ -> Assert.True(false, "Expected an unsupported format version error.")
 
     [<Fact>]
-    let ``Migration upgrades format version 1 snapshots to accounts and ownership`` () =
+    let ``Snapshot loading rejects outdated snapshot format versions`` () =
+        let legacy = { createSnapshot () with FormatVersion = 1 }
+
+        match SnapshotLoading.prepare legacy with
+        | Error error -> Assert.Contains("outdated", error)
+        | Ok _ -> Assert.True(false, "Expected an outdated format version error.")
+
+    [<Fact>]
+    let ``Snapshot loading rejects snapshots with legacy character records`` () =
         let character =
             { Id = GameSnapshots.PrototypeCharacterId
               AccountId = ""
@@ -210,53 +235,12 @@ module SnapshotPersistenceTests =
               Inventory = Map.empty }
 
         let legacy =
-            { FormatVersion = 1
-              World = createSnapshot().World
-              Accounts = Map.empty
-              Characters = Map.ofList [ character.Id, character ]
-              PlayerRevisions = Map.empty }
+            { createSnapshot () with
+                Characters = Map.ofList [ character.Id, character ] }
 
-        match SnapshotMigrations.migrate legacy with
-        | Ok migrated ->
-            Assert.Equal(5, migrated.FormatVersion)
-            Assert.True(migrated.Accounts.ContainsKey GameSnapshots.PrototypeAccountId)
-            Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeCharacterId)
-            Assert.True(migrated.World.Objects.ContainsKey GameSnapshots.PrototypeScoutCharacterId)
-            Assert.Equal(GameSnapshots.PrototypeAccountId, PlayerObjects.accountId migrated.World.Objects[character.Id])
-        | Error error -> Assert.True(false, error)
-
-    [<Fact>]
-    let ``Migration promotes legacy player inventory properties to carried stacks`` () =
-        let player =
-            PlayerObjects.createWithLegacyInventory
-                GameSnapshots.PrototypeCharacterId
-                "prototype player"
-                "object.prototype-player.name"
-                GameSnapshots.PrototypeAccountId
-                "forest"
-                (Map.ofList [ "wood", 2 ])
-
-        let legacy =
-            { FormatVersion = 3
-              World =
-                { Revision = 0L
-                  ItemIds = Set.ofList [ "wood" ]
-                  BehaviorModules = Map.empty
-                  Objects = Map.ofList [ player.Id, player ] }
-              Accounts = Map.empty
-              Characters = Map.empty
-              PlayerRevisions = Map.empty }
-
-        match SnapshotMigrations.migrate legacy with
-        | Ok migrated ->
-            Assert.Equal(5, migrated.FormatVersion)
-            Assert.False(migrated.World.Objects[player.Id].Properties.ContainsKey PlayerObjects.InventoryProperty)
-
-            let stackId = CarriedItems.migrationStackId player.Id "wood"
-            Assert.True(migrated.World.Objects.ContainsKey stackId)
-            let migratedState = { ObjectDatabase.initialState with Objects = migrated.World.Objects }
-            Assert.Equal(2, (CarriedItems.inventoryMap migratedState player.Id).["wood"])
-        | Error error -> Assert.True(false, error)
+        match SnapshotLoading.prepare legacy with
+        | Error error -> Assert.Contains("legacy character records", error)
+        | Ok _ -> Assert.True(false, "Expected legacy character records to be rejected.")
 
     [<Fact>]
     let ``Gather wood creates a carried stack object`` () =
@@ -287,7 +271,7 @@ module SnapshotPersistenceTests =
                     { snapshot.World with
                         BehaviorModules = snapshot.World.BehaviorModules |> Map.remove "player-behaviors" } }
 
-        match SnapshotMigrations.migrate legacySnapshot with
+        match SnapshotLoading.prepare legacySnapshot with
         | Ok repaired ->
             Assert.True(repaired.World.BehaviorModules.ContainsKey "player-behaviors")
             Assert.True(
@@ -351,10 +335,10 @@ module SnapshotPersistenceTests =
                             snapshot.World.BehaviorModules } }
 
     [<Fact>]
-    let ``Migration repairs stale seed behavior module sources when referenced classes are missing`` () =
+    let ``Snapshot loading repairs stale seed behavior module sources when referenced classes are missing`` () =
         let legacySnapshot = createSnapshot () |> snapshotWithStaleThingBehaviors
 
-        match SnapshotMigrations.migrate legacySnapshot with
+        match SnapshotLoading.prepare legacySnapshot with
         | Ok repaired ->
             let thingSource = repaired.World.BehaviorModules["thing-behaviors"].Source
             Assert.Contains("PlaceableBehavior", thingSource)
@@ -362,13 +346,13 @@ module SnapshotPersistenceTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
-    let ``Migration does not auto-upgrade admin-edited behavior modules when seed drifts`` () =
+    let ``Snapshot loading does not auto-upgrade admin-edited behavior modules when seed drifts`` () =
         let legacySnapshot = createSnapshot () |> snapshotWithStaleAdminEditedThingBehaviors
 
-        match SnapshotMigrations.migrate legacySnapshot with
+        match SnapshotLoading.prepare legacySnapshot with
         | Ok repaired ->
             let thingSource = repaired.World.BehaviorModules["thing-behaviors"].Source
-            Assert.DoesNotContain("PlaceableBehavior", thingSource)
+            Assert.DoesNotContain("class PlaceableBehavior", thingSource)
             Assert.Equal(AdminEdited, repaired.World.BehaviorModules["thing-behaviors"].Provenance)
         | Error error -> Assert.True(false, error)
 
@@ -405,10 +389,14 @@ module SnapshotPersistenceTests =
             Assert.Contains("PlaceableBehavior", repairedSnapshot.World.BehaviorModules["thing-behaviors"].Source)
             Assert.True(state.BehaviorModules["thing-behaviors"].Classes.ContainsKey "PlaceableBehavior")
 
-            let withWood = CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "wood" 2
+            let inVillage =
+                CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "wood" 2
+                |> fun woodState ->
+                    Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" woodState
+                    |> fun moved -> moved.State
 
             let crafted =
-                Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft stool" withWood
+                Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft stool at workbench" inVillage
 
             Assert.Equal(
                 0,
@@ -417,7 +405,7 @@ module SnapshotPersistenceTests =
                 |> Option.defaultValue 0)
 
             let stools =
-                Kernel.contentsOf crafted.State "forest"
+                Kernel.contentsOf crafted.State "village"
                 |> List.filter (fun gameObject -> gameObject.Tags.Contains "stool")
 
             Assert.Equal(1, stools.Length)
@@ -441,7 +429,7 @@ module SnapshotPersistenceTests =
             let reloaded =
                 match
                     SnapshotCodec.tryReadFile path
-                    |> Result.bind SnapshotMigrations.migrate
+                    |> Result.bind SnapshotLoading.prepare
                     |> Result.bind (SnapshotHydration.hydrate mockCompile mockInspect)
                 with
                 | Ok(state, _) -> state
@@ -611,7 +599,9 @@ module KernelTests =
         Assert.Equal<string list>(
             [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
-        Assert.Equal<string list>([ "fallen-log"; "forest"; "prototype-player"; "prototype-scout"; "village" ], objects)
+        Assert.Equal<string list>(
+            [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],
+            objects)
 
     [<Fact>]
     let ``Updating a base module recompiles dependents in dependency order`` () =
@@ -639,7 +629,9 @@ module KernelTests =
             Assert.Equal<string list>(
                 [ "core-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
-            Assert.Equal<string list>([ "fallen-log"; "forest"; "prototype-player"; "prototype-scout"; "village" ], update.AffectedObjects)
+            Assert.Equal<string list>(
+                [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],
+                update.AffectedObjects)
             Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
             Assert.Contains(editedCore, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
             Assert.Contains(BehaviorSources.location, update.State.BehaviorModules["forest-behaviors"].CompiledSource)
@@ -764,7 +756,10 @@ module KernelTests =
             | Error diagnostics -> failwith (diagnostics |> List.map _.message |> String.concat "\n")
 
         let matched = CommandMatching.tryMatch En "harvest wood" state
-        Assert.Equal("gather", (matched |> Option.get).MethodName)
+
+        match matched with
+        | CommandMatching.Matched value -> Assert.Equal("gather", value.MethodName)
+        | _ -> Assert.True(false, "Expected command to match the gather verb.")
 
     [<Fact>]
     let ``Behavior updates cannot remove a class used by an object`` () =
@@ -800,16 +795,17 @@ module KernelTests =
         let matched = CommandMatching.tryMatch De "gehe nach norden" ObjectDatabase.initialState
 
         match matched with
-        | Some value ->
+        | CommandMatching.Matched value ->
             Assert.Equal("move", value.MethodName)
             Assert.Equal("north", value.Args["direction"])
-        | None -> Assert.True(false, "Expected command to match the movement verb.")
+        | CommandMatching.NoMatch -> Assert.True(false, "Expected command to match the movement verb.")
+        | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected an unambiguous movement match.")
 
     [<Fact>]
     let ``Forest contents are derived from permanent object locations`` () =
         let contents = Kernel.contentsOf ObjectDatabase.initialState "forest"
 
-        Assert.Equal<string list>([ "fallen-log"; "prototype-player" ], contents |> List.map _.Id)
+        Assert.Equal<string list>([ "fallen-log"; "forest-hare"; "prototype-player" ], contents |> List.map _.Id)
 
     [<Theory>]
     [<InlineData("examine log", "en")>]
@@ -817,7 +813,10 @@ module KernelTests =
     let ``Localized examine commands dispatch to visible object behavior`` command cultureName =
         let culture = if cultureName = "de" then De else En
         let state = ObjectDatabase.initialState
-        let matched = CommandMatching.tryMatch culture command state |> Option.get
+        let matched =
+            match CommandMatching.tryMatch culture command state with
+            | CommandMatching.Matched value -> value
+            | _ -> failwith "Expected examine command to match."
 
         Assert.Equal("fallen-log", matched.ObjectId)
         Assert.Equal("ThingBehavior", matched.BehaviorClassName)
@@ -852,7 +851,7 @@ module KernelTests =
         let villageContents = Kernel.contentsOf villageState "village" |> List.map _.Id
         Assert.Contains("prototype-player", villageContents)
         Assert.DoesNotContain("fallen-log", villageContents)
-        Assert.True(CommandMatching.tryMatch En "examine log" villageState |> Option.isNone)
+        Assert.Equal(CommandMatching.NoMatch, CommandMatching.tryMatch En "examine log" villageState)
 
         let result = Kernel.submitCommand En "examine log" villageState
         let line = result.Messages |> List.exactlyOne |> ResponseFormatting.localizeMessage result.State En
@@ -958,11 +957,12 @@ module KernelTests =
         let matched = CommandMatching.tryMatch De "holz sammeln" state
 
         match matched with
-        | Some value ->
+        | CommandMatching.Matched value ->
             Assert.Equal("forest", value.ObjectId)
             Assert.Equal("gather", value.MethodName)
             Assert.Equal("wood", value.Args["item"])
-        | None -> Assert.True(false, "Expected command to match a verb.")
+        | CommandMatching.NoMatch -> Assert.True(false, "Expected command to match a verb.")
+        | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected an unambiguous gather match.")
 
     [<Fact>]
     let ``Gather verb returns neutral effects applied by kernel`` () =
@@ -1078,12 +1078,13 @@ module KernelTests =
         let matched = CommandMatching.tryMatch En "give wood to scout" state
 
         match matched with
-        | Some value ->
+        | CommandMatching.Matched value ->
             Assert.Equal(GameSnapshots.PrototypeCharacterId, value.ObjectId)
             Assert.Equal("give", value.MethodName)
             Assert.Equal("wood", value.Args["item"])
             Assert.Equal(GameSnapshots.PrototypeScoutCharacterId, value.Args["player"])
-        | None -> Assert.True(false, "Expected give command to match.")
+        | CommandMatching.NoMatch -> Assert.True(false, "Expected give command to match.")
+        | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected an unambiguous give match.")
 
     [<Fact>]
     let ``Take picks up one item from a floor stack in the room`` () =
@@ -1165,10 +1166,11 @@ module KernelTests =
         let matched = CommandMatching.tryMatch En ": smile" ObjectDatabase.initialState
 
         match matched with
-        | Some value ->
+        | CommandMatching.Matched value ->
             Assert.Equal("emote", value.MethodName)
             Assert.Equal("smile", value.Args["text"])
-        | None -> Assert.True(false, "Expected colon emote to match.")
+        | CommandMatching.NoMatch -> Assert.True(false, "Expected colon emote to match.")
+        | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected an unambiguous emote match.")
 
         let result = Kernel.submitCommand En ": smile" ObjectDatabase.initialState
 

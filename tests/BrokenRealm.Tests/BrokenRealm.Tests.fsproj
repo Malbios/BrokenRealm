@@ -11,9 +11,14 @@
     <Compile Include="LimboTests.fs" />
     <Compile Include="CraftTests.fs" />
     <Compile Include="WorldMechanicsTests.fs" />
-    <Compile Include="LegacySnapshotTests.fs" />
     <Compile Include="HttpSmokeTests.fs" />
     <Compile Include="PlaceableMovementTests.fs" />
+    <Compile Include="ContainerTests.fs" />
+    <Compile Include="RoomGrowthTests.fs" />
+    <Compile Include="MapTests.fs" />
+    <Compile Include="DisambiguationTests.fs" />
+    <Compile Include="WorldTickTests.fs" />
+    <Compile Include="WorldEcologyTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,7 +34,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
 
 </Project>

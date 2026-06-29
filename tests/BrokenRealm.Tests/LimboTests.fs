@@ -4,6 +4,9 @@ open BrokenRealm.Server
 open Xunit
 
 module LimboTests =
+    let private ensureDefaultRoomBroadcastFilter () =
+        RoomBroadcast.setConnectionFilter (fun _ -> true)
+
     let private scoutInForest state =
         let scout = PlayerObjects.get state GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
@@ -73,6 +76,7 @@ module LimboTests =
 
     [<Fact>]
     let ``Enter play announces arrival to other players in the room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let limboState =
             match Limbo.enterLimbo (scoutInForest ObjectDatabase.initialState) GameSnapshots.PrototypeCharacterId with
             | Ok state -> state
@@ -94,6 +98,7 @@ module LimboTests =
 
     [<Fact>]
     let ``Limbo players are not room broadcast recipients`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scoutInLimbo =
             PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
             |> PlayerObjects.withoutLocation

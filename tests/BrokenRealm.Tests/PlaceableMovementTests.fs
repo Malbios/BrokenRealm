@@ -7,8 +7,12 @@ module PlaceableMovementTests =
     let private withWood state amount =
         CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "wood" amount
 
+    let private inVillage state =
+        Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
+        |> fun result -> result.State
+
     let private craftStool state =
-        Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft stool" state
+        Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft stool at workbench" (inVillage state)
 
     let private stoolsIn (state: GameState) (locationId: ObjectId) =
         Kernel.contentsOf state locationId
@@ -19,23 +23,23 @@ module PlaceableMovementTests =
         |> List.filter (fun gameObject -> gameObject.Tags.Contains "bench")
 
     [<Fact>]
-    let ``Push stool north relocates the placeable to the adjacent room`` () =
+    let ``Push stool south relocates the placeable to the adjacent room`` () =
         let crafted = craftStool (withWood ObjectDatabase.initialState 2)
 
-        Assert.Equal(1, stoolsIn crafted.State "forest" |> List.length)
+        Assert.Equal(1, stoolsIn crafted.State "village" |> List.length)
 
         let pushed =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "push stool north" crafted.State
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "push stool south" crafted.State
 
-        Assert.Empty(stoolsIn pushed.State "forest")
-        Assert.Equal(1, stoolsIn pushed.State "village" |> List.length)
+        Assert.Empty(stoolsIn pushed.State "village")
+        Assert.Equal(1, stoolsIn pushed.State "forest" |> List.length)
 
         let line =
             RoomBroadcast.actorMessages pushed.Messages
             |> List.head
             |> ResponseFormatting.localizeMessage pushed.State En
 
-        Assert.Equal("You push a wooden stool to the north.", line)
+        Assert.Equal("You push a wooden stool to the south.", line)
 
     [<Fact>]
     let ``Push rejects non placeable objects`` () =
@@ -61,10 +65,14 @@ module PlaceableMovementTests =
     [<Fact>]
     let ``Craft bench consumes three wood and places seating in the room`` () =
         let result =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "craft bench" (withWood ObjectDatabase.initialState 3)
+            Kernel.submitCommandForCharacter
+                GameSnapshots.PrototypeCharacterId
+                En
+                "craft bench at workbench"
+                (inVillage (withWood ObjectDatabase.initialState 3))
 
         Assert.Equal(0, PlayerObjects.inventory result.State GameSnapshots.PrototypeCharacterId |> Map.tryFind "wood" |> Option.defaultValue 0)
-        Assert.Equal(1, benchesIn result.State "forest" |> List.length)
+        Assert.Equal(1, benchesIn result.State "village" |> List.length)
 
         let line =
             RoomBroadcast.actorMessages result.Messages
@@ -75,12 +83,19 @@ module PlaceableMovementTests =
 
     [<Fact>]
     let ``German bench craft and push commands work`` () =
-        let crafted =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId De "fertige bank" (withWood ObjectDatabase.initialState 3)
+        let inVillage =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId De "gehe nach norden" ObjectDatabase.initialState
 
-        Assert.Equal(1, benchesIn crafted.State "forest" |> List.length)
+        let crafted =
+            Kernel.submitCommandForCharacter
+                GameSnapshots.PrototypeCharacterId
+                De
+                "fertige bank an werkbank"
+                (withWood inVillage.State 3)
+
+        Assert.Equal(1, benchesIn crafted.State "village" |> List.length)
 
         let pushed =
-            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId De "schiebe bank nach norden" crafted.State
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId De "schiebe bank nach süden" crafted.State
 
-        Assert.Equal(1, benchesIn pushed.State "village" |> List.length)
+        Assert.Equal(1, benchesIn pushed.State "forest" |> List.length)

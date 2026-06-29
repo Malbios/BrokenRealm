@@ -4,6 +4,9 @@ open BrokenRealm.Server
 open Xunit
 
 module SessionTests =
+    let private ensureDefaultRoomBroadcastFilter () =
+        RoomBroadcast.setConnectionFilter (fun _ -> true)
+
     [<Fact>]
     let ``Prototype account owns both seeded characters`` () =
         let state = ObjectDatabase.initialState
@@ -77,6 +80,7 @@ module SessionTests =
 
     [<Fact>]
     let ``Say room delivery targets other players in the same room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
 
@@ -90,6 +94,7 @@ module SessionTests =
         let actorLines = RoomBroadcast.actorResponseLines said.State En said.Messages
         Assert.Equal<string list>([ "You say, \"Hello scout\"." ], actorLines)
 
+        ensureDefaultRoomBroadcastFilter ()
         let deliveries = RoomBroadcast.planRoomDelivery said.State En GameSnapshots.PrototypeCharacterId said.Messages
 
         Assert.Equal(1, deliveries.Length)
@@ -100,6 +105,7 @@ module SessionTests =
 
     [<Fact>]
     let ``Drop room delivery notifies other players in the same room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
 
@@ -113,6 +119,7 @@ module SessionTests =
         let dropped =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "drop wood" gathered.State
 
+        ensureDefaultRoomBroadcastFilter ()
         let deliveries =
             RoomBroadcast.planRoomDelivery dropped.State En GameSnapshots.PrototypeCharacterId dropped.Messages
             |> List.filter (fun (recipient, _) -> recipient = GameSnapshots.PrototypeScoutCharacterId)
@@ -122,6 +129,7 @@ module SessionTests =
 
     [<Fact>]
     let ``Move leave room delivery notifies players in the departed room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInForest = PlayerObjects.withLocation scout "forest"
 
@@ -132,6 +140,7 @@ module SessionTests =
         let moved =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
 
+        ensureDefaultRoomBroadcastFilter ()
         let leaveDeliveries =
             RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
             |> List.filter (fun (recipient, line) ->
@@ -143,6 +152,7 @@ module SessionTests =
 
     [<Fact>]
     let ``Move arrive room delivery notifies players in the destination room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInVillage = PlayerObjects.withLocation scout "village"
 
@@ -153,6 +163,7 @@ module SessionTests =
         let moved =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
 
+        ensureDefaultRoomBroadcastFilter ()
         let arriveDeliveries =
             RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
             |> List.filter (fun (recipient, line) ->
@@ -164,6 +175,7 @@ module SessionTests =
 
     [<Fact>]
     let ``Move leave room delivery does not target players in the destination room`` () =
+        ensureDefaultRoomBroadcastFilter ()
         let scout = PlayerObjects.get ObjectDatabase.initialState GameSnapshots.PrototypeScoutCharacterId
         let scoutInVillage = PlayerObjects.withLocation scout "village"
 
@@ -174,6 +186,7 @@ module SessionTests =
         let moved =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" state
 
+        ensureDefaultRoomBroadcastFilter ()
         let leaveDeliveries =
             RoomBroadcast.planRoomDelivery moved.State En GameSnapshots.PrototypeCharacterId moved.Messages
             |> List.filter (fun (recipient, _) -> recipient = GameSnapshots.PrototypeScoutCharacterId)
@@ -186,5 +199,6 @@ module SessionTests =
         let state = ObjectDatabase.initialState
 
         match CommandMatching.tryMatchForCharacter GameSnapshots.PrototypeCharacterId En "inventory" state with
-        | Some matched -> Assert.Equal(GameSnapshots.PrototypeCharacterId, matched.ObjectId)
-        | None -> Assert.True(false, "Expected inventory to match the player object.")
+        | CommandMatching.Matched matched -> Assert.Equal(GameSnapshots.PrototypeCharacterId, matched.ObjectId)
+        | CommandMatching.NoMatch -> Assert.True(false, "Expected inventory to match the player object.")
+        | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected an unambiguous inventory match.")
