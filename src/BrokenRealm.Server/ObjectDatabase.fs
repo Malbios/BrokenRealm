@@ -21,6 +21,9 @@ module ObjectDatabase =
               Properties =
                 Map.ofList
                     [ "biome", StringValue "forest"
+                      "hareCap", IntegerValue 2L
+                      "woodCap", IntegerValue 10L
+                      "woodYield", IntegerValue 10L
                       "tickCount", IntegerValue 0L
                       "resourceItem", StringValue "wood"
                       "elevation", IntegerValue 120L
@@ -28,6 +31,10 @@ module ObjectDatabase =
                       "landmarks", ListValue [ StringValue "old-oak"; StringValue "brook" ]
                       "climate", MapValue(Map.ofList [ "humidity", FloatValue 0.72 ])
                       "nearestSettlement", ObjectReferenceValue "village"
+                      "mapCode", StringValue "FO"
+                      "mapRegion", StringValue "main"
+                      "mapX", IntegerValue 0L
+                      "mapY", IntegerValue 0L
                       "trailToken",
                       AnonymousValue
                           { BehaviorModuleId = "anonymous-behaviors"
@@ -49,11 +56,33 @@ module ObjectDatabase =
                 Map.ofList
                     [ "biome", StringValue "settlement"
                       "comfort", IntegerValue 0L
+                      "stocked", IntegerValue 0L
+                      "wildlife", IntegerValue 0L
                       "population", IntegerValue 24L
-                      "nearestForest", ObjectReferenceValue "forest" ]
+                      "nearestForest", ObjectReferenceValue "forest"
+                      "mapCode", StringValue "VI"
+                      "mapRegion", StringValue "main"
+                      "mapX", IntegerValue 0L
+                      "mapY", IntegerValue -1L ]
               References = Map.ofList [ "south", "forest" ]
               BehaviorModuleId = "village-behaviors"
               BehaviorClassName = "VillageBehavior" }
+
+        let forestHare =
+            { Id = "forest-hare"
+              Name = "forest hare"
+              NameKey = "object.forest-hare.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "hare"; "forest hare" ]
+                      De, [ "hase"; "waldhase" ] ]
+              DescriptionKey = Some "object.forest-hare.description"
+              LocationId = Some forest.Id
+              Tags = Set.ofList [ "creature"; "thing"; "herbivore" ]
+              Properties = Map.ofList [ "tickSteps", IntegerValue 0L ]
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "CreatureBehavior" }
 
         let fallenLog =
             { Id = "fallen-log"
@@ -70,6 +99,54 @@ module ObjectDatabase =
               References = Map.empty
               BehaviorModuleId = "thing-behaviors"
               BehaviorClassName = "ThingBehavior" }
+
+        let villageCrate =
+            { Id = "village-crate"
+              Name = "wooden crate"
+              NameKey = "object.village-crate.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "wooden crate"; "crate" ]
+                      De, [ "holzkiste"; "kiste" ] ]
+              DescriptionKey = Some "object.village-crate.description"
+              LocationId = Some village.Id
+              Tags = Set.ofList [ "thing"; "container" ]
+              Properties = Map.ofList [ "capacity", IntegerValue 4L ]
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "ContainerBehavior" }
+
+        let villageWorkbench =
+            { Id = "village-workbench"
+              Name = "wooden workbench"
+              NameKey = "object.village-workbench.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "wooden workbench"; "workbench" ]
+                      De, [ "holzwerkbank"; "werkbank" ] ]
+              DescriptionKey = Some "object.village-workbench.description"
+              LocationId = Some village.Id
+              Tags = Set.ofList [ "thing"; "workstation" ]
+              Properties = Map.empty
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "WorkbenchBehavior" }
+
+        let villageFarmer =
+            { Id = "village-farmer"
+              Name = "village farmer"
+              NameKey = "object.village-farmer.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "farmer"; "village farmer" ]
+                      De, [ "bauer"; "dorfbauer" ] ]
+              DescriptionKey = Some "object.village-farmer.description"
+              LocationId = Some village.Id
+              Tags = Set.ofList [ "creature"; "thing"; "humanoid" ]
+              Properties = Map.ofList [ "greetingKey", StringValue "creature.village-farmer.greeting" ]
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "HumanoidCreatureBehavior" }
 
         let prototypeAccount: AccountState =
             { Id = GameSnapshots.PrototypeAccountId
@@ -108,7 +185,11 @@ module ObjectDatabase =
             Map.ofList
                 [ forest.Id, forest
                   village.Id, village
+                  forestHare.Id, forestHare
                   fallenLog.Id, fallenLog
+                  villageCrate.Id, villageCrate
+                  villageWorkbench.Id, villageWorkbench
+                  villageFarmer.Id, villageFarmer
                   prototypePlayer.Id, prototypePlayer
                   prototypeScout.Id, prototypeScout ]
           Accounts = Map.ofList [ prototypeAccount.Id, prototypeAccount ] }
