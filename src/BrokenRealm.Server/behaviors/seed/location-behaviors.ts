@@ -1,3 +1,50 @@
+function countTaggedContents(context: TickContext, tag: string): number {
+  return context.this.contents.filter(object => object.tags.includes(tag)).length;
+}
+
+function countNpcCreatures(context: TickContext): number {
+  return context.this.contents.filter(
+    object => object.tags.includes("creature") && !object.tags.includes("player")
+  ).length;
+}
+
+function countTaggedNpcContents(context: TickContext, tag: string): number {
+  return context.this.contents.filter(
+    object => object.tags.includes(tag) && !object.tags.includes("player")
+  ).length;
+}
+
+function gameValuesEqual(left: GameValue, right: GameValue): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (typeof left === "number" && typeof right === "number") {
+    return left === right;
+  }
+
+  return false;
+}
+
+function syncPropertyIfChanged(context: TickContext, key: string, value: GameValue): ScriptEffect[] {
+  const current = context.this.properties[key] ?? null;
+  if (gameValuesEqual(current, value)) {
+    return [];
+  }
+
+  return [{ type: "replaceValue", path: [key], value }];
+}
+
+function anyContainerStocked(context: TickContext): boolean {
+  return Object.values(context.this.containerStorage).some(items =>
+    Object.values(items).some(quantity => quantity > 0)
+  );
+}
+
+function propertyFlag(context: { this: { properties: Record<string, GameValue> } }, key: string): boolean {
+  return Number(context.this.properties[key] ?? 0) > 0;
+}
+
 class LocationBehavior extends GameBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
@@ -52,7 +99,7 @@ class LocationBehavior extends GameBehavior {
     };
   }
 
-  tick(_context: VerbContext): VerbResult {
+  tick(_context: TickContext): VerbResult {
     return { effects: [] };
   }
 }

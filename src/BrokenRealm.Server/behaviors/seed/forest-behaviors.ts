@@ -29,9 +29,32 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
     };
   }
 
-  override tick(context: VerbContext): VerbResult {
+  override tick(context: TickContext): VerbResult {
     const current = Number(context.this.properties.tickCount ?? 0);
-    return { effects: [{ type: "replaceValue", path: ["tickCount"], value: current + 1 }] };
+    const effects: ScriptEffect[] = [{ type: "replaceValue", path: ["tickCount"], value: current + 1 }];
+    const haresHere = countTaggedNpcContents(context, "herbivore");
+
+    if (haresHere === 0) {
+      effects.push({
+        type: "createObject",
+        locationId: context.this.id,
+        nameKey: "object.forest-hare.name",
+        descriptionKey: "object.forest-hare.description",
+        behaviorModuleId: "thing-behaviors",
+        behaviorClassName: "CreatureBehavior",
+        tags: "creature,thing,herbivore",
+        aliasesEn: "hare,forest hare",
+        aliasesDe: "hase,waldhase",
+        properties: { tickSteps: 0 }
+      });
+    }
+
+    const woodCap = Number(context.this.properties.woodCap ?? 10);
+    const woodYield = Number(context.this.properties.woodYield ?? 0);
+    const regrown = Math.min(woodCap, woodYield + 1);
+    effects.push(...syncPropertyIfChanged(context, "woodYield", regrown));
+
+    return { effects };
   }
 
   gather(context: VerbContext): VerbResult {
@@ -40,9 +63,14 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
       return { effects: [{ type: "message", key: "gather.no_wood_here", args: {} }] };
     }
     const amount = 2;
+    const woodYield = Number(context.this.properties.woodYield ?? 0);
+    if (woodYield < amount) {
+      return { effects: [{ type: "message", key: "gather.depleted", args: {} }] };
+    }
     return {
       effects: [
         { type: "addInventory", itemId: "wood", amount },
+        { type: "replaceValue", path: ["woodYield"], value: woodYield - amount },
         { type: "message", key: "gather.wood.success", args: { amount, item: "wood" } }
       ]
     };
