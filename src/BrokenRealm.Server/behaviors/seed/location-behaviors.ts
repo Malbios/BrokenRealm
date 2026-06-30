@@ -45,6 +45,21 @@ function propertyFlag(context: { this: { properties: Record<string, GameValue> }
   return Number(context.this.properties[key] ?? 0) > 0;
 }
 
+function isCreature(object: VerbObjectSummary): boolean {
+  return object.tags.includes("creature");
+}
+
+function objectIds(objects: VerbObjectSummary[]): string {
+  return objects.map(object => object.id).join(",");
+}
+
+function formatExits(references: Record<string, string>): string {
+  return Object.entries(references)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([direction, destinationId]) => `${direction}:${destinationId}`)
+    .join(",");
+}
+
 class LocationBehavior extends GameBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
@@ -73,13 +88,34 @@ class LocationBehavior extends GameBehavior {
     const effects: ScriptEffect[] = [
       { type: "message", key: context.this.descriptionKey, args: {} }
     ];
-    if (context.this.contents.length > 0) {
+
+    const creatures = context.this.contents.filter(isCreature);
+    if (creatures.length > 0) {
       effects.push({
         type: "message",
-        key: "location.contents",
-        args: { objects: context.this.contents.map(object => object.id).join(",") }
+        key: "location.creatures",
+        args: { objects: objectIds(creatures) }
       });
     }
+
+    const items = context.this.contents.filter(object => !isCreature(object));
+    if (items.length > 0) {
+      effects.push({
+        type: "message",
+        key: "location.items",
+        args: { objects: objectIds(items) }
+      });
+    }
+
+    const exits = formatExits(context.this.references);
+    if (exits.length > 0) {
+      effects.push({
+        type: "message",
+        key: "location.exits",
+        args: { exits }
+      });
+    }
+
     return { effects };
   }
 

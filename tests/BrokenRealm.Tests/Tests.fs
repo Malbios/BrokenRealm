@@ -880,13 +880,35 @@ module KernelTests =
     let ``Look lists visible contents with localized object names`` () =
         let english = Kernel.submitCommand En "look" ObjectDatabase.initialState
         let englishLines = english.Messages |> List.map (ResponseFormatting.localizeMessage english.State En)
-        Assert.Contains(englishLines, fun line -> line.Contains("fallen log"))
+        let englishItems =
+            english.Messages
+            |> List.find (fun message -> message.Key = "location.items")
+            |> ResponseFormatting.localizeMessage english.State En
+
+        Assert.Contains("fallen log", englishItems)
+        Assert.Contains(englishLines, fun line -> line.Contains("forest hare"))
         Assert.DoesNotContain(englishLines, fun line -> line.Contains("prototype player"))
 
         let german = Kernel.submitCommand De "schau" ObjectDatabase.initialState
         let germanLines = german.Messages |> List.map (ResponseFormatting.localizeMessage german.State De)
-        Assert.Contains(germanLines, fun line -> line.Contains("umgestürzten Baumstamm"))
+        let germanItems =
+            german.Messages
+            |> List.find (fun message -> message.Key = "location.items")
+            |> ResponseFormatting.localizeMessage german.State De
+
+        Assert.Contains("umgestürzten Baumstamm", germanItems)
+        Assert.Contains(germanLines, fun line -> line.Contains("Waldhase"))
         Assert.DoesNotContain(germanLines, fun line -> line.Contains("Prototyp-Spieler"))
+
+    [<Fact>]
+    let ``Look lists exits with localized direction and destination names`` () =
+        let result = Kernel.submitCommand En "look" ObjectDatabase.initialState
+        let exits =
+            result.Messages
+            |> List.find (fun message -> message.Key = "location.exits")
+            |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("Exits: north to village.", exits)
 
     [<Fact>]
     let ``Objects outside the current location are not visible or matchable`` () =
@@ -1271,8 +1293,8 @@ module KernelTests =
         let gathered = Kernel.submitCommand En "gather wood" ObjectDatabase.initialState
         let dropped = Kernel.submitCommand En "drop 2 wood" gathered.State
         let result = Kernel.submitCommand En "look" dropped.State
-        let contents = result.Messages |> List.find (fun message -> message.Key = "location.contents")
-        let line = ResponseFormatting.localizeMessage result.State En contents
+        let items = result.Messages |> List.find (fun message -> message.Key = "location.items")
+        let line = ResponseFormatting.localizeMessage result.State En items
 
         Assert.Contains("pile of wood (2)", line)
 
@@ -1286,11 +1308,11 @@ module KernelTests =
                 Objects = ObjectDatabase.initialState.Objects |> Map.add scout.Id scoutInForest }
 
         let result = Kernel.submitCommand En "look" state
-        let contents = result.Messages |> List.find (fun message -> message.Key = "location.contents")
+        let creatures = result.Messages |> List.find (fun message -> message.Key = "location.creatures")
 
-        Assert.Contains("prototype-scout", contents.Args["objects"])
+        Assert.Contains("prototype-scout", creatures.Args["objects"])
 
-        let line = ResponseFormatting.localizeMessage result.State En contents
+        let line = ResponseFormatting.localizeMessage result.State En creatures
         Assert.Contains("prototype scout", line)
 
     [<Fact>]
@@ -1728,9 +1750,10 @@ module BehaviorClassRuntimeTests =
             Scripting.executeBehaviorMethod "ForestBehavior" "look" ObjectDatabase.initialState forest Map.empty testActor compiled
 
         match result with
-        | Ok [ EmitMessage description; EmitMessage atmosphere ] ->
+        | Ok [ EmitMessage description; EmitMessage atmosphere; EmitMessage exits ] ->
             Assert.Equal("location.forest.description", description.Key)
             Assert.Equal("location.forest.atmosphere", atmosphere.Key)
+            Assert.Equal("location.exits", exits.Key)
         | Ok _ -> Assert.True(false, "Expected parent and child message effects.")
         | Error error -> Assert.True(false, error)
 

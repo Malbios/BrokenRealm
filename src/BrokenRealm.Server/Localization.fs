@@ -64,6 +64,12 @@ module Localizer =
         | De, "object.clearing.name" -> "eine grasbewachsene Lichtung"
         | En, "location.contents" -> "You see {objects}."
         | De, "location.contents" -> "Du siehst {objects}."
+        | En, "location.creatures" -> "Also here: {objects}."
+        | De, "location.creatures" -> "Hier sind auch: {objects}."
+        | En, "location.items" -> "You see {objects}."
+        | De, "location.items" -> "Du siehst {objects}."
+        | En, "location.exits" -> "Exits: {exits}."
+        | De, "location.exits" -> "Ausgänge: {exits}."
         | En, "object.forest.name" -> "forest"
         | De, "object.forest.name" -> "Wald"
         | En, "object.village.name" -> "village"
@@ -323,6 +329,20 @@ module ResponseFormatting =
         |> Array.map (Localizer.displayObjectName state culture)
         |> String.concat ", "
 
+    let private formatExits state culture (value: string) =
+        value.Split(',', System.StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (fun entry ->
+            match entry.Split(':', 2) with
+            | [| direction; destinationId |] ->
+                let directionLabel = Localizer.directionName culture direction
+                let destinationLabel = Localizer.objectName state culture destinationId
+
+                match culture with
+                | De -> $"{directionLabel} zum {destinationLabel}"
+                | _ -> $"{directionLabel} to {destinationLabel}"
+            | _ -> entry)
+        |> String.concat ", "
+
     let localizeMessage state culture (message: Message) =
         let args =
             message.Args
@@ -332,6 +352,7 @@ module ResponseFormatting =
                 | "items" -> formatInventoryItems culture value
                 | "direction" -> Localizer.directionName culture value
                 | "objects" -> formatObjects state culture value
+                | "exits" -> formatExits state culture value
                 | "player" -> Localizer.objectName state culture value
                 | "actor" -> Localizer.emoteActorName state culture value
                 | "location" -> Localizer.objectName state culture value

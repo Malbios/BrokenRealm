@@ -21,10 +21,12 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
 
   override look(context: VerbContext): VerbResult {
     const parent = super.look(context);
+    const [description, ...rest] = parent.effects;
     return {
       effects: [
-        ...parent.effects,
-        { type: "message", key: "location.forest.atmosphere", args: {} }
+        description,
+        { type: "message", key: "location.forest.atmosphere", args: {} },
+        ...rest
       ]
     };
   }
