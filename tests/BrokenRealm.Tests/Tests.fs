@@ -1750,11 +1750,12 @@ module BehaviorClassRuntimeTests =
             Scripting.executeBehaviorMethod "ForestBehavior" "look" ObjectDatabase.initialState forest Map.empty testActor compiled
 
         match result with
-        | Ok [ EmitMessage description; EmitMessage atmosphere; EmitMessage exits ] ->
-            Assert.Equal("location.forest.description", description.Key)
-            Assert.Equal("location.forest.atmosphere", atmosphere.Key)
-            Assert.Equal("location.exits", exits.Key)
-        | Ok _ -> Assert.True(false, "Expected parent and child message effects.")
+        | Ok messages ->
+            let keys = messages |> List.choose (function EmitMessage message -> Some message.Key | _ -> None)
+            Assert.Equal("location.forest.description", List.head keys)
+            Assert.Contains("location.forest.atmosphere", keys)
+            Assert.Contains("location.forest.berries", keys)
+            Assert.Contains("location.exits", keys)
         | Error error -> Assert.True(false, error)
 
     [<Fact>]

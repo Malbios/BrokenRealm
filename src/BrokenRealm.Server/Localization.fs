@@ -9,13 +9,15 @@ module Cultures =
 module Localizer =
     let itemAliases culture =
         match culture with
-        | En -> Map.ofList [ "wood", "wood" ]
-        | De -> Map.ofList [ "holz", "wood" ]
+        | En -> Map.ofList [ "wood", "wood"; "berries", "berries" ]
+        | De -> Map.ofList [ "holz", "wood"; "beeren", "berries" ]
 
     let itemName culture itemId =
         match culture, itemId with
         | De, "wood" -> "Holz"
+        | De, "berries" -> "Beeren"
         | _, "wood" -> "wood"
+        | _, "berries" -> "berries"
         | _, unknown -> unknown
 
     let directionAliases culture =
@@ -100,8 +102,18 @@ module Localizer =
         | De, "gather.wood.success" -> "Du sammelst {amount} {item}."
         | En, "gather.no_wood_here" -> "There is no useful wood here."
         | De, "gather.no_wood_here" -> "Hier gibt es kein brauchbares Holz."
-        | En, "gather.depleted" -> "The forest needs time to offer more wood."
-        | De, "gather.depleted" -> "Der Wald braucht Zeit, um mehr Holz anzubieten."
+        | En, "gather.depleted" -> "The forest needs time to offer more {item}."
+        | De, "gather.depleted" -> "Der Wald braucht Zeit, um mehr {item} anzubieten."
+        | En, "gather.no_berries_here" -> "There are no berries to gather here."
+        | De, "gather.no_berries_here" -> "Hier gibt es keine Beeren zum Sammeln."
+        | En, "gather.berries.success" -> "You gather {amount} {item}."
+        | De, "gather.berries.success" -> "Du sammelst {amount} {item}."
+        | En, "gather.unknown_item" -> "You cannot gather {item} here."
+        | De, "gather.unknown_item" -> "Du kannst hier kein {item} sammeln."
+        | En, "location.forest.berries" -> "Wild berries grow along the trail."
+        | De, "location.forest.berries" -> "Wilde Beeren wachsen am Pfad."
+        | En, "item.berries.stack" -> "a handful of berries"
+        | De, "item.berries.stack" -> "eine Handvoll Beeren"
         | En, "player.hungry" -> "You feel hungry."
         | De, "player.hungry" -> "Du hast Hunger."
         | En, "player.starving" -> "You are starving."

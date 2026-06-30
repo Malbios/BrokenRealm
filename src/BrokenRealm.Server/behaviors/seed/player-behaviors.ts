@@ -152,7 +152,7 @@ class PlayerBehavior extends GameBehavior {
   ];
 
   private static readonly edibleItems: Record<string, number> = {
-    wood: 20
+    berries: 35
   };
 
   override tick(context: TickContext): VerbResult {

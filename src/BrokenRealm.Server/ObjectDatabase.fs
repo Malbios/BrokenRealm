@@ -17,11 +17,13 @@ module ObjectDatabase =
               Aliases = Map.ofList [ En, [ "forest" ]; De, [ "wald" ] ]
               DescriptionKey = Some "location.forest.description"
               LocationId = None
-              Tags = Set.ofList [ "forest"; "wood" ]
+              Tags = Set.ofList [ "forest"; "wood"; "forage" ]
               Properties =
                 Map.ofList
                     [ "biome", StringValue "forest"
                       "hareCap", IntegerValue 2L
+                      "berryCap", IntegerValue 8L
+                      "berryYield", IntegerValue 8L
                       "woodCap", IntegerValue 10L
                       "woodYield", IntegerValue 10L
                       "tickCount", IntegerValue 0L
@@ -221,7 +223,7 @@ module ObjectDatabase =
                           [ En, [ "prototype scout"; "scout" ]
                             De, [ "prototyp-späher"; "späher" ] ] }
 
-        { ItemIds = Set.ofList [ "wood" ]
+        { ItemIds = Set.ofList [ "wood"; "berries" ]
           BehaviorModules = behaviorModules
           Objects =
             Map.ofList

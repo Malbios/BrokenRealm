@@ -57,6 +57,18 @@ function appendSettlementLookLines(
   }
 }
 
+function appendActorHungerLines(
+  effects: ScriptEffect[],
+  context: { actor: { properties: Record<string, GameValue> } }
+): void {
+  const hunger = Number(context.actor.properties.hunger ?? 0);
+  if (hunger >= 80) {
+    effects.push({ type: "message", key: "player.starving", args: {} });
+  } else if (hunger >= 50) {
+    effects.push({ type: "message", key: "player.hungry", args: {} });
+  }
+}
+
 function isCreature(object: VerbObjectSummary): boolean {
   return object.tags.includes("creature");
 }
@@ -100,6 +112,8 @@ class LocationBehavior extends GameBehavior {
     const effects: ScriptEffect[] = [
       { type: "message", key: context.this.descriptionKey, args: {} }
     ];
+
+    appendActorHungerLines(effects, context);
 
     const creatures = context.this.contents.filter(isCreature);
     if (creatures.length > 0) {

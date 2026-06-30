@@ -302,10 +302,16 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
           };
         }
 
+        const stockedItem =
+          chooseActiveWeighted(state, [
+            { value: "wood", weight: 60 },
+            { value: "berries", weight: 40 }
+          ]) ?? "wood";
+
         return {
           status: "success",
           effects: [
-            { type: "addInventory", itemId: "wood", amount: 1, objectId: VILLAGE_CRATE_ID },
+            { type: "addInventory", itemId: stockedItem, amount: 1, objectId: VILLAGE_CRATE_ID },
             { type: "replaceValue", path: ["activity"], value: "idle" }
           ]
         };
