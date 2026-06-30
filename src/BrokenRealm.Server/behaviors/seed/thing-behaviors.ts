@@ -1,6 +1,6 @@
 type CraftRecipe = {
   costs: Record<string, number>;
-  placement: {
+  placement?: {
     nameKey: string;
     descriptionKey: string;
     behaviorModuleId: string;
@@ -9,11 +9,23 @@ type CraftRecipe = {
     aliasesEn: string;
     aliasesDe: string;
   };
+  output?: {
+    itemId: string;
+    amount: number;
+  };
   successKey: string;
   roomKey: string;
+  sourceContainerId?: string;
 };
 
 const CRAFT_RECIPES: Record<string, CraftRecipe> = {
+  "strongbox-key": {
+    costs: { wood: 2 },
+    output: { itemId: "strongbox-key", amount: 1 },
+    successKey: "craft.strongbox-key.success",
+    roomKey: "craft.strongbox-key.room",
+    sourceContainerId: "village-crate"
+  },
   stool: {
     costs: { wood: 2 },
     placement: {
@@ -44,27 +56,77 @@ const CRAFT_RECIPES: Record<string, CraftRecipe> = {
   }
 };
 
+function availableCraftMaterials(
+  context: VerbContext,
+  itemId: string,
+  sourceContainerId?: string
+): { inventory: number; container: number } {
+  const container = sourceContainerId ? (context.actor.containerStorage[sourceContainerId]?.[itemId] ?? 0) : 0;
+  return {
+    inventory: context.actor.inventory[itemId] ?? 0,
+    container
+  };
+}
+
+function consumeCraftMaterials(
+  context: VerbContext,
+  itemId: string,
+  amount: number,
+  sourceContainerId?: string
+): ScriptEffect[] {
+  const available = availableCraftMaterials(context, itemId, sourceContainerId);
+  const fromInventory = Math.min(available.inventory, amount);
+  const fromContainer = amount - fromInventory;
+  const effects: ScriptEffect[] = [];
+
+  if (fromInventory > 0) {
+    effects.push({ type: "removeInventory", itemId, amount: fromInventory });
+  }
+
+  if (fromContainer > 0 && sourceContainerId) {
+    effects.push({
+      type: "transferItem",
+      itemId,
+      amount: fromContainer,
+      sourceId: sourceContainerId,
+      destinationId: context.actor.id
+    });
+    effects.push({ type: "removeInventory", itemId, amount: fromContainer });
+  }
+
+  return effects;
+}
+
 function craftFromRecipe(recipeId: string, context: VerbContext): VerbResult {
   const recipe = CRAFT_RECIPES[recipeId];
   if (!recipe) {
     return { effects: [{ type: "message", key: "craft.unknown", args: { recipe: recipeId } }] };
   }
+
   for (const [itemId, amount] of Object.entries(recipe.costs)) {
-    if ((context.actor.inventory[itemId] ?? 0) < amount) {
+    const available = availableCraftMaterials(context, itemId, recipe.sourceContainerId);
+    if (available.inventory + available.container < amount) {
       return {
         effects: [{ type: "message", key: "craft.insufficient", args: { item: itemId, amount: String(amount) } }]
       };
     }
   }
+
   const effects: ScriptEffect[] = [];
   for (const [itemId, amount] of Object.entries(recipe.costs)) {
-    effects.push({ type: "removeInventory", itemId, amount });
+    effects.push(...consumeCraftMaterials(context, itemId, amount, recipe.sourceContainerId));
   }
-  effects.push({
-    type: "createObject",
-    locationId: context.actor.locationId,
-    ...recipe.placement
-  });
+
+  if (recipe.output) {
+    effects.push({ type: "addInventory", itemId: recipe.output.itemId, amount: recipe.output.amount });
+  } else if (recipe.placement) {
+    effects.push({
+      type: "createObject",
+      locationId: context.actor.locationId,
+      ...recipe.placement
+    });
+  }
+
   effects.push({ type: "message", key: recipe.successKey, args: {} });
   effects.push({ type: "message", key: recipe.roomKey, args: { actor: context.actor.id } });
   return { effects };
@@ -167,12 +229,27 @@ class ContainerBehavior extends ThingBehavior {
       return { effects: [{ type: "message", key: "container.locked", args: {} }] };
     }
 
+    const capacity = Number(context.this.properties.capacity ?? 0);
+    const used = Object.values(context.this.storedItems).reduce((sum, quantity) => sum + quantity, 0);
+    const capacityArgs =
+      capacity > 0 ? { used: String(used), capacity: String(capacity) } : {};
+
     const entries = Object.entries(context.this.storedItems);
     if (entries.length === 0) {
-      return { effects: [{ type: "message", key: "container.open.empty", args: {} }] };
+      return {
+        effects: [{
+          type: "message",
+          key: capacity > 0 ? "container.open.empty_with_capacity" : "container.open.empty",
+          args: capacityArgs
+        }]
+      };
     }
     return {
-      effects: [{ type: "message", key: "container.open.items", args: { items: context.this.storedItems } }]
+      effects: [{
+        type: "message",
+        key: capacity > 0 ? "container.open.items_with_capacity" : "container.open.items",
+        args: { items: context.this.storedItems, ...capacityArgs }
+      }]
     };
   }
 }
@@ -344,12 +421,34 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
 
   override talk(context: VerbContext): VerbResult {
     const activity = String(context.this.properties.activity ?? "idle");
+
+    if (activity === "working") {
+      const rawAi = context.this.properties.ai;
+      const ai =
+        rawAi && !Array.isArray(rawAi) && typeof rawAi === "object"
+          ? rawAi as Record<string, GameValue>
+          : {};
+      const resetAi = {
+        rootGoal: typeof ai.rootGoal === "string" ? ai.rootGoal : "farmerLife",
+        stack: [],
+        memory: { ...(typeof ai.memory === "object" && !Array.isArray(ai.memory) ? ai.memory as Record<string, GameValue> : {}), interruptedWork: true },
+        rngState: typeof ai.rngState === "number" ? ai.rngState : 1,
+        nextGoalId: typeof ai.nextGoalId === "number" ? ai.nextGoalId : 1
+      };
+
+      return {
+        effects: [
+          { type: "replaceValue", path: ["activity"], value: "idle" },
+          { type: "replaceValue", path: ["ai"], value: resetAi as unknown as GameValue },
+          { type: "message", key: "creature.village-farmer.talk.interrupted", args: {} }
+        ]
+      };
+    }
+
     const key =
-      activity === "working"
-        ? "creature.village-farmer.talk.working"
-        : activity === "resting"
-          ? "creature.village-farmer.talk.resting"
-          : "creature.village-farmer.greeting";
+      activity === "resting"
+        ? "creature.village-farmer.talk.resting"
+        : "creature.village-farmer.greeting";
 
     return { effects: [{ type: "message", key, args: {} }] };
   }

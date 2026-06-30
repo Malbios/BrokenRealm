@@ -206,6 +206,37 @@ class LocationBehavior extends GameBehavior {
       selfKey: "creature.forest-hare.notice.enter",
       roomKey: "creature.forest-hare.notice.enter.room"
     });
+
+    const destinationId = context.actor.destinationId;
+    const hare = destinationId
+      ? findDestinationObject(context, "forest-hare")
+      : null;
+
+    if (hare && hare.tags.includes("herbivore")) {
+      const fleeDestination = "village";
+      if (fleeDestination) {
+        const rawAi = hare.properties.ai;
+        const ai =
+          rawAi && !Array.isArray(rawAi) && typeof rawAi === "object"
+            ? rawAi as Record<string, GameValue>
+            : {};
+        const resetAi = {
+          rootGoal: typeof ai.rootGoal === "string" ? ai.rootGoal : "hareLife",
+          stack: [],
+          memory: { startled: true },
+          rngState: typeof ai.rngState === "number" ? ai.rngState : 1,
+          nextGoalId: 1
+        };
+
+        effects.push({
+          type: "replaceValue",
+          objectId: "forest-hare",
+          path: ["ai"],
+          value: resetAi as unknown as GameValue
+        });
+        effects.push({ type: "moveObject", objectId: "forest-hare", destinationId: fleeDestination });
+      }
+    }
   }
 
   tick(_context: TickContext): VerbResult {

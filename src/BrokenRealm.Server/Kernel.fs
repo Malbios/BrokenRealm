@@ -45,6 +45,20 @@ module Kernel =
             | Some _ -> Ok id
         | None -> Ok actingCharacterId
 
+    let private resolveReplaceTarget (state: GameState) (actingCharacterId: CharacterId) (objectId: ObjectId option) (defaultTargetId: ObjectId) =
+        match objectId with
+        | None -> Ok defaultTargetId
+        | Some id ->
+            match state.Objects |> Map.tryFind id with
+            | None -> Error $"Unknown replaceValue target object id: {id}"
+            | Some gameObject ->
+                let actingPlayer = PlayerObjects.get state actingCharacterId
+                let actingLocationId = PlayerObjects.locationId actingPlayer
+
+                match gameObject.LocationId with
+                | Some locationId when locationId = actingLocationId -> Ok id
+                | _ -> Error "That object is not here."
+
     let private resolveInventoryTarget (state: GameState) (actingId: ObjectId) (objectId: ObjectId option) =
         match objectId with
         | Some id ->
@@ -302,13 +316,16 @@ module Kernel =
                     match validateLockedContainerAccess state actingCharacterId sourceContainerId with
                     | Error error -> Error error
                     | Ok() -> validateTransferItemRouting state actingCharacterId sourceId destinationId
-        | ReplaceValue(path, replacement) ->
+        | ReplaceValue(objectId, path, replacement) ->
             match validateValueReferences state "replacement" replacement with
             | Error error -> Error error
             | Ok() ->
-                match state.Objects |> Map.tryFind targetId with
-                | None -> Error $"Unknown replaceValue target object id: {targetId}"
-                | Some target -> tryReplaceObjectValue path replacement target |> Result.map ignore
+                match resolveReplaceTarget state actingCharacterId objectId targetId with
+                | Error error -> Error error
+                | Ok resolvedTargetId ->
+                    match state.Objects |> Map.tryFind resolvedTargetId with
+                    | None -> Error $"Unknown replaceValue target object id: {resolvedTargetId}"
+                    | Some target -> tryReplaceObjectValue path replacement target |> Result.map ignore
         | _ -> Ok()
 
     and private validateValueReferences (state: GameState) path value =
@@ -532,10 +549,13 @@ module Kernel =
 
                 CarriedItems.transferItem state sourceContainerId itemId amount destinationId
                 |> Result.map (fun updatedState -> updatedState, messages, remainingInvocations)
-            | ReplaceValue(path, replacement) ->
-                tryReplaceObjectValue path replacement state.Objects[targetId]
-                |> Result.map (fun target ->
-                    { state with Objects = Map.add targetId target state.Objects }, messages, remainingInvocations)
+            | ReplaceValue(objectId, path, replacement) ->
+                match resolveReplaceTarget state characterId objectId targetId with
+                | Error error -> Error error
+                | Ok resolvedTargetId ->
+                    tryReplaceObjectValue path replacement state.Objects[resolvedTargetId]
+                    |> Result.map (fun target ->
+                        { state with Objects = Map.add resolvedTargetId target state.Objects }, messages, remainingInvocations)
             | InvokeAnonymous(path, methodName, args) ->
                 if depth >= maxAnonymousInvocationDepth then
                     Error $"Anonymous behavior invocation depth may not exceed {maxAnonymousInvocationDepth}."

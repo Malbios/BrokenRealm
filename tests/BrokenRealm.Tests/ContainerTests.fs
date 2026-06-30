@@ -7,6 +7,9 @@ module ContainerTests =
     let private withWood state amount =
         CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "wood" amount
 
+    let private withStrongboxKey state =
+        CarriedItems.addInventory state GameSnapshots.PrototypeCharacterId "strongbox-key" 1
+
     let private inVillage state =
         let player = PlayerObjects.get state GameSnapshots.PrototypeCharacterId
         { state with Objects = Map.add player.Id (PlayerObjects.withLocation player "village") state.Objects }
@@ -46,7 +49,7 @@ module ContainerTests =
             |> List.head
             |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("Inside: 1 wood.", line)
+        Assert.Equal("Inside: 1 wood. (1/4)", line)
 
     [<Fact>]
     let ``Take wood from crate moves items back to inventory`` () =
@@ -85,7 +88,7 @@ module ContainerTests =
             |> List.head
             |> ResponseFormatting.localizeMessage openResult.State De
 
-        Assert.Equal("Inhalt: 1 Holz.", openLine)
+        Assert.Equal("Inhalt: 1 Holz. (1/4)", openLine)
 
     [<Fact>]
     let ``Put rejects items when the container is at capacity`` () =
@@ -109,7 +112,7 @@ module ContainerTests =
 
     [<Fact>]
     let ``Locked strongbox opens when the actor carries the key item`` () =
-        let state = inVillage (withWood ObjectDatabase.initialState 1)
+        let state = inVillage (withStrongboxKey ObjectDatabase.initialState)
 
         let result =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "open strongbox" state
@@ -119,7 +122,7 @@ module ContainerTests =
             |> List.head
             |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("It is empty.", line)
+        Assert.Equal("It is empty. (0/2)", line)
 
     [<Fact>]
     let ``Put into locked strongbox is rejected without the key item`` () =

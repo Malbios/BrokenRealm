@@ -18,7 +18,7 @@ module ReactiveNpcTests =
                     state.Objects }
 
     [<Fact>]
-    let ``Talk to working farmer returns working dialogue`` () =
+    let ``Talk to working farmer pauses work and returns interrupted dialogue`` () =
         let state =
             inVillage (farmerWithActivity ObjectDatabase.initialState "working")
 
@@ -30,7 +30,13 @@ module ReactiveNpcTests =
             |> List.head
             |> ResponseFormatting.localizeMessage result.State En
 
-        Assert.Equal("The farmer wipes his brow. \"Let me finish stocking this crate.\"", line)
+        Assert.Equal("The farmer pauses and wipes his brow. \"This can wait.\"", line)
+
+        let farmer = result.State.Objects["village-farmer"]
+
+        match farmer.Properties |> Map.tryFind "activity" with
+        | Some(StringValue "idle") -> Assert.True(true)
+        | _ -> Assert.True(false, "Expected the farmer to stop working after being spoken to.")
 
     [<Fact>]
     let ``Talk to resting farmer returns resting dialogue`` () =
@@ -73,3 +79,4 @@ module ReactiveNpcTests =
             |> List.map (ResponseFormatting.localizeMessage result.State En)
 
         Assert.Contains("A forest hare startles and bounds into the undergrowth.", lines)
+        Assert.Equal(Some "village", result.State.Objects["forest-hare"].LocationId)

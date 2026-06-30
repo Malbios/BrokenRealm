@@ -159,7 +159,7 @@ module ObjectDatabase =
                 Map.ofList
                     [ "capacity", IntegerValue 2L
                       "locked", BooleanValue true
-                      "keyItemId", StringValue "wood" ]
+                      "keyItemId", StringValue "strongbox-key" ]
               References = Map.empty
               BehaviorModuleId = "thing-behaviors"
               BehaviorClassName = "ContainerBehavior" }
@@ -223,7 +223,7 @@ module ObjectDatabase =
                           [ En, [ "prototype scout"; "scout" ]
                             De, [ "prototyp-späher"; "späher" ] ] }
 
-        { ItemIds = Set.ofList [ "wood"; "berries" ]
+        { ItemIds = Set.ofList [ "wood"; "berries"; "strongbox-key" ]
           BehaviorModules = behaviorModules
           Objects =
             Map.ofList

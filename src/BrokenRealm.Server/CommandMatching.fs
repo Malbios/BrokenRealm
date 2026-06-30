@@ -242,13 +242,17 @@ module CommandMatching =
                             [ "hocker", "stool"
                               "holzhocker", "stool"
                               "bank", "bench"
-                              "holzbank", "bench" ]
+                              "holzbank", "bench"
+                              "truhenschlüssel", "strongbox-key"
+                              "truhenschluessel", "strongbox-key" ]
                     | _ ->
                         Map.ofList
                             [ "stool", "stool"
                               "wooden stool", "stool"
                               "bench", "bench"
-                              "wooden bench", "bench" ]
+                              "wooden bench", "bench"
+                              "strongbox-key", "strongbox-key"
+                              "strongbox key", "strongbox-key" ]
 
                 resolveAliasMap aliases normalized
             | "structure" ->

@@ -74,6 +74,37 @@ module CraftTests =
 
         Assert.Equal("You sit on the wooden stool for a moment.", line)
 
+    let private crateWood (state: GameState) =
+        CarriedItems.itemQuantitiesInContainer state "village-crate"
+        |> Map.tryFind "wood"
+        |> Option.defaultValue 0
+
+    [<Fact>]
+    let ``Craft strongbox key can consume wood from the village crate`` () =
+        let stocked =
+            inVillage (withWood ObjectDatabase.initialState 2)
+            |> fun state ->
+                Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "put 2 wood in crate" state
+
+        Assert.Equal(2, crateWood stocked.State)
+
+        let result =
+            Kernel.submitCommandForCharacter
+                GameSnapshots.PrototypeCharacterId
+                En
+                "craft strongbox-key at workbench"
+                stocked.State
+
+        Assert.Equal(0, crateWood result.State)
+        Assert.Equal(1, PlayerObjects.inventory result.State GameSnapshots.PrototypeCharacterId |> Map.tryFind "strongbox-key" |> Option.defaultValue 0)
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.head
+            |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("You carve a strongbox key from spare wood.", line)
+
     [<Fact>]
     let ``Limbo all players clears every seeded player location`` () =
         let state = Limbo.limboAllPlayers ObjectDatabase.initialState

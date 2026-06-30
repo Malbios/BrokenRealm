@@ -262,8 +262,11 @@ module Scripting =
                 Ok(TransferItem(sourceId, itemId, amount, destinationId))
             | _ -> Error "transferItem effects require itemId, destinationId, and an amount from 1 to 100."
         | Some "replaceValue" ->
+            let objectId = readString "objectId" effect
+
             match decodeValuePath effect, effect.TryGetProperty("value") with
-            | Ok path, (true, value) -> decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(path, decoded))
+            | Ok path, (true, value) ->
+                decodeGameValue value |> Result.map (fun decoded -> ReplaceValue(objectId, path, decoded))
             | Error error, _ -> Error error
             | _, (false, _) -> Error "replaceValue effects require a value."
         | Some "invokeAnonymous" ->

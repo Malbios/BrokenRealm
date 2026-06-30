@@ -9,15 +9,17 @@ module Cultures =
 module Localizer =
     let itemAliases culture =
         match culture with
-        | En -> Map.ofList [ "wood", "wood"; "berries", "berries" ]
-        | De -> Map.ofList [ "holz", "wood"; "beeren", "berries" ]
+        | En -> Map.ofList [ "wood", "wood"; "berries", "berries"; "strongbox key", "strongbox-key"; "key", "strongbox-key" ]
+        | De -> Map.ofList [ "holz", "wood"; "beeren", "berries"; "truhenschlüssel", "strongbox-key"; "truhenschluessel", "strongbox-key"; "schlüssel", "strongbox-key" ]
 
     let itemName culture itemId =
         match culture, itemId with
         | De, "wood" -> "Holz"
         | De, "berries" -> "Beeren"
+        | De, "strongbox-key" -> "Truhenschlüssel"
         | _, "wood" -> "wood"
         | _, "berries" -> "berries"
+        | _, "strongbox-key" -> "strongbox key"
         | _, unknown -> unknown
 
     let directionAliases culture =
@@ -131,6 +133,8 @@ module Localizer =
         | En, "creature.village-farmer.greeting" -> "The farmer nods. \"Plenty of work to do around here.\""
         | De, "creature.village-farmer.greeting" -> "Der Bauer nickt. \"Hier gibt es genug zu tun.\""
         | En, "creature.village-farmer.talk.working" -> "The farmer wipes his brow. \"Let me finish stocking this crate.\""
+        | En, "creature.village-farmer.talk.interrupted" -> "The farmer pauses and wipes his brow. \"This can wait.\""
+        | De, "creature.village-farmer.talk.interrupted" -> "Der Bauer hält inne und wischt sich die Stirn. \"Das kann warten.\""
         | De, "creature.village-farmer.talk.working" -> "Der Bauer wischt sich die Stirn. \"Lass mich diese Kiste erst füllen.\""
         | En, "creature.village-farmer.talk.resting" -> "The farmer stretches. \"A moment's rest never hurt.\""
         | De, "creature.village-farmer.talk.resting" -> "Der Bauer streckt sich. \"Eine kurze Pause schadet nicht.\""
@@ -250,8 +254,18 @@ module Localizer =
         | De, "object.village-workbench.description" -> "Eine stabile Werkbank zum Zusammenbauen von Holzmöbeln."
         | En, "container.open.empty" -> "It is empty."
         | De, "container.open.empty" -> "Sie ist leer."
+        | En, "container.open.empty_with_capacity" -> "It is empty. ({used}/{capacity})"
+        | De, "container.open.empty_with_capacity" -> "Sie ist leer. ({used}/{capacity})"
         | En, "container.open.items" -> "Inside: {items}."
         | De, "container.open.items" -> "Inhalt: {items}."
+        | En, "container.open.items_with_capacity" -> "Inside: {items}. ({used}/{capacity})"
+        | De, "container.open.items_with_capacity" -> "Inhalt: {items}. ({used}/{capacity})"
+        | En, "craft.strongbox-key.success" -> "You carve a strongbox key from spare wood."
+        | De, "craft.strongbox-key.success" -> "Du schnitzst einen Truhenschlüssel aus übrigem Holz."
+        | En, "craft.strongbox-key.room" -> "{actor} crafts a strongbox key."
+        | De, "craft.strongbox-key.room" -> "{actor} fertigt einen Truhenschlüssel."
+        | En, "item.strongbox-key.stack" -> "a strongbox key"
+        | De, "item.strongbox-key.stack" -> "ein Truhenschlüssel"
         | En, "container.not_here" -> "You do not see that container here."
         | De, "container.not_here" -> "Diese Behälter siehst du hier nicht."
         | En, "container.capacity.full" -> "That container is full."
@@ -392,6 +406,7 @@ module ResponseFormatting =
                 match key with
                 | "item" -> Localizer.itemName culture value
                 | "items" -> formatInventoryItems culture value
+                | "used" | "capacity" -> value
                 | "direction" -> Localizer.directionName culture value
                 | "objects" -> formatObjects state culture value
                 | "exits" -> formatExits state culture value
