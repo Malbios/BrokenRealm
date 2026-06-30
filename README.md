@@ -65,7 +65,7 @@ Deutsch:
 - `untersuche baumstamm`
 - `nenne pfad grüner weg`
 
-The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. Characters have independent IDs, locations, and inventories; command execution names the acting character explicitly. The unauthenticated endpoint currently selects the seeded `prototype-player`, which starts at `forest` and can follow object references north to `village` and south back to `forest`. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
+The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. Characters have independent IDs, locations, and inventories; command execution names the acting character explicitly. Sessions select an account-owned character. Offline characters remain in limbo until `POST /game/session/enter` restores them at their last safe room; unauthenticated guest sessions do not enter play automatically. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
 Object properties use neutral typed values: null, strings, 64-bit integers, floating-point numbers, booleans, object references, lists, maps, and identity-free anonymous behavior values. They are exposed to behavior methods as ordinary JavaScript values. Nested object and behavior-class references are recursively validated before execution.
 
@@ -94,6 +94,14 @@ Live room feed:
 
 - `GET /game/hub` (SignalR WebSocket)
 - server pushes `roomLine` events to connected characters in the same room for `.room` message keys (say, emote, drop, give, take, move)
+
+World simulation:
+
+- a configurable global tick (`WorldTickSeconds`, default 30) visits every room, even when no player is connected
+- in-world objects tagged `creature` tick after their room in stable object-ID order; limbo players are excluded because they are outside the containment graph
+- scripts receive a dedicated `TickContext` containing the target, room graph, storage summaries, connected players, tick index, and interval
+- the seeded forest regrows wood and contains a wandering hare; players accumulate hunger while in play
+- non-player creature decisions use persistent TypeScript goal stacks with timeouts, deterministic weighted selection, and actor-local memory; AI state and world actions commit atomically
 
 Admin editor transport:
 
@@ -131,7 +139,7 @@ Admin-authored behavior methods run with centralized limits: 4 MB tracked memory
 
 ## Scope
 
-There is no PostgreSQL/Docker setup or SignalR yet. The process uses a revision-checked file-backed storage adapter that writes authoritative JSON snapshots to `data/game-snapshot.json` (override with `BROKENREALM_SNAPSHOT_PATH`). Snapshots retain world objects, player progress, accounts, and TypeScript source while excluding compiled behavior artifacts. Startup hydrates and migrates snapshots forward (currently format version 4) before accepting commands, flushes the seed snapshot on first run, and flushes again on graceful shutdown. Admin snapshot backup and restore endpoints write timestamped copies under `data/backups/`. The durability, transaction, migration, character, and session boundaries are defined in `docs/architecture/0004-persistence-boundaries.md`; no database technology has been selected.
+There is no PostgreSQL or Docker setup. The process uses a revision-checked file-backed storage adapter that writes authoritative JSON snapshots to `data/game-snapshot.json` (override with `BROKENREALM_SNAPSHOT_PATH`). Snapshots retain world objects, player progress, accounts, and TypeScript source while excluding compiled behavior artifacts. Startup requires the current snapshot format, reconciles seed behavior lineage, and puts persisted players into limbo before accepting play. Admin snapshot backup and restore endpoints write timestamped copies under `data/backups/`. SignalR provides live room delivery and connection tracking. The durability, transaction, character, session, and limbo boundaries are defined in the architecture records; no database technology has been selected.
 
 ## Object IDs
 

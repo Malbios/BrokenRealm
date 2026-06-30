@@ -552,6 +552,16 @@ module Kernel =
             |> List.filter WorldObjects.isRoom
             |> List.sortBy _.Id
 
+        let scheduledCreatureIdsByRoom =
+            rooms
+            |> List.map (fun room ->
+                room.Id,
+                (contentsOf state room.Id
+                 |> List.filter WorldObjects.shouldTickCreature
+                 |> List.sortBy _.Id
+                 |> List.map _.Id))
+            |> Map.ofList
+
         rooms
         |> List.fold
             (fun result room ->
@@ -561,20 +571,24 @@ module Kernel =
 
                     tickTarget current current.Objects[roomId] roomId tickIndex tickSeconds isCharacterConnected
                     |> Result.bind (fun afterRoom ->
-                        contentsOf afterRoom roomId
-                        |> List.filter WorldObjects.shouldTickCreature
-                        |> List.sortBy _.Id
+                        scheduledCreatureIdsByRoom[roomId]
                         |> List.fold
-                            (fun creatureResult creature ->
+                            (fun creatureResult creatureId ->
                                 creatureResult
                                 |> Result.bind (fun creatureState ->
-                                    tickTarget
-                                        creatureState
-                                        creature
-                                        roomId
-                                        tickIndex
-                                        tickSeconds
-                                        isCharacterConnected))
+                                    match creatureState.Objects |> Map.tryFind creatureId with
+                                    | Some creature when WorldObjects.shouldTickCreature creature ->
+                                        match creature.LocationId with
+                                        | Some currentRoomId ->
+                                            tickTarget
+                                                creatureState
+                                                creature
+                                                currentRoomId
+                                                tickIndex
+                                                tickSeconds
+                                                isCharacterConnected
+                                        | None -> Ok creatureState
+                                    | _ -> Ok creatureState))
                             (Ok afterRoom))))
             (Ok state)
 

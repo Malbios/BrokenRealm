@@ -7,7 +7,12 @@ module WorldTickTests =
     let private tick state times =
         List.fold
             (fun current _ ->
-                match Kernel.tickWorld current 1 30 (fun _ -> false) with
+                let nextTickIndex =
+                    match current.Objects["forest"].Properties |> Map.tryFind "tickCount" with
+                    | Some(IntegerValue value) -> int value + 1
+                    | _ -> 1
+
+                match Kernel.tickWorld current nextTickIndex 30 (fun _ -> false) with
                 | Ok updated -> updated
                 | Error error -> Assert.True(false, error); current)
             state
@@ -46,13 +51,13 @@ module WorldTickTests =
         | _ -> Assert.True(false, "Expected forest hare tickSteps to advance during autonomous world tick.")
 
     [<Fact>]
-    let ``Hare wanders north to the village on the second world tick`` () =
+    let ``Hare waits and then wanders north on the third world tick`` () =
         let limboState =
             match Limbo.enterLimbo ObjectDatabase.initialState GameSnapshots.PrototypeCharacterId with
             | Ok state -> state
             | Error error -> Assert.True(false, error); ObjectDatabase.initialState
 
-        let updated = tick limboState 2
+        let updated = tick limboState 3
         let hare = updated.Objects["forest-hare"]
 
         Assert.Equal(Some "village", hare.LocationId)
@@ -77,7 +82,7 @@ module WorldTickTests =
             | Ok state -> state
             | Error error -> Assert.True(false, error); ObjectDatabase.initialState
 
-        let afterWander = tick limboState 2
+        let afterWander = tick limboState 3
         Assert.Empty(herbivoresIn afterWander "forest")
 
         let repopulated = tick afterWander 1
@@ -97,8 +102,7 @@ module WorldTickTests =
             | Ok state -> state
             | Error error -> Assert.True(false, error); ObjectDatabase.initialState
 
-        let afterWander = tick limboState 2
-        let synced = tick afterWander 1
+        let synced = tick limboState 3
         let village = synced.Objects["village"]
 
         match village.Properties |> Map.tryFind "wildlife" with
@@ -107,8 +111,7 @@ module WorldTickTests =
 
     [<Fact>]
     let ``Village look mentions wildlife when a creature is present`` () =
-        let afterWander = tick ObjectDatabase.initialState 2
-        let synced = tick afterWander 1
+        let synced = tick ObjectDatabase.initialState 3
 
         let inVillage =
             Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" synced
@@ -128,3 +131,90 @@ module WorldTickTests =
 
         Assert.Contains("creature", player.Tags)
         Assert.Equal(Some "forest", player.LocationId)
+
+    [<Fact>]
+    let ``Creature AI persists an active goal and deterministic random state`` () =
+        let first = tick ObjectDatabase.initialState 1
+        let second = tick ObjectDatabase.initialState 1
+
+        Assert.Equal(first.Objects["forest-hare"].Properties["ai"], second.Objects["forest-hare"].Properties["ai"])
+
+        match first.Objects["forest-hare"].Properties["ai"] with
+        | MapValue ai ->
+            match ai["stack"], ai["rngState"] with
+            | ListValue [ MapValue frame ], IntegerValue rngState ->
+                Assert.Equal(StringValue "wait", frame["kind"])
+                Assert.Equal(1015568748L, rngState)
+            | _ -> Assert.True(false, "Expected one persisted wait goal and deterministic RNG state.")
+        | _ -> Assert.True(false, "Expected the hare to persist an AI state map.")
+
+    [<Fact>]
+    let ``Expired creature goal fails and clears its root stack`` () =
+        let started = tick ObjectDatabase.initialState 1
+        let hare = started.Objects["forest-hare"]
+
+        let expiredAi =
+            match hare.Properties["ai"] with
+            | MapValue ai ->
+                match ai["stack"] with
+                | ListValue [ MapValue frame ] ->
+                    MapValue(Map.add "stack" (ListValue [ MapValue(Map.add "deadlineTick" (IntegerValue 0L) frame) ]) ai)
+                | _ -> failwith "Expected an active goal."
+            | _ -> failwith "Expected AI state."
+
+        let expiredState =
+            { started with
+                Objects =
+                    Map.add
+                        hare.Id
+                        { hare with Properties = Map.add "ai" expiredAi hare.Properties }
+                        started.Objects }
+
+        let updated = tick expiredState 1
+
+        match updated.Objects["forest-hare"].Properties["ai"] with
+        | MapValue ai ->
+            Assert.Equal(ListValue [], ai["stack"])
+            match ai["memory"] with
+            | MapValue memory -> Assert.Equal(StringValue "failure", memory["lastStatus"])
+            | _ -> Assert.True(false, "Expected AI memory map.")
+        | _ -> Assert.True(false, "Expected AI state map.")
+
+    [<Fact>]
+    let ``Persisted goal deadline is rebased when the process tick index restarts`` () =
+        let started = tick ObjectDatabase.initialState 1
+        let hare = started.Objects["forest-hare"]
+
+        let persistedAi =
+            match hare.Properties["ai"] with
+            | MapValue ai ->
+                match ai["stack"], ai["memory"] with
+                | ListValue [ MapValue frame ], MapValue memory ->
+                    MapValue(
+                        ai
+                        |> Map.add "stack" (ListValue [ MapValue(frame |> Map.add "enteredTick" (IntegerValue 50L) |> Map.add "deadlineTick" (IntegerValue 51L)) ])
+                        |> Map.add "memory" (MapValue(Map.add "lastUpdatedTick" (IntegerValue 50L) memory)))
+                | _ -> failwith "Expected an active goal and memory."
+            | _ -> failwith "Expected AI state."
+
+        let restored =
+            { started with
+                Objects =
+                    Map.add
+                        hare.Id
+                        { hare with Properties = Map.add "ai" persistedAi hare.Properties }
+                        started.Objects }
+
+        let updated =
+            match Kernel.tickWorld restored 1 30 (fun _ -> false) with
+            | Ok state -> state
+            | Error error -> failwith error
+
+        match updated.Objects["forest-hare"].Properties["ai"] with
+        | MapValue ai ->
+            match ai["stack"], ai["memory"] with
+            | ListValue [ MapValue frame ], MapValue memory ->
+                Assert.Equal(IntegerValue 2L, frame["deadlineTick"])
+                Assert.Equal(IntegerValue 50L, memory["lastRebasedFromTick"])
+            | _ -> Assert.True(false, "Expected the rebased goal to remain active.")
+        | _ -> Assert.True(false, "Expected AI state map.")

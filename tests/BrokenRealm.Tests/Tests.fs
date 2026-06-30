@@ -585,7 +585,7 @@ module KernelTests =
         let modules = Kernel.listAdminBehaviorModules ObjectDatabase.initialState snapshot serverRoot
 
         Assert.Equal<string list>(
-            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "active-entity-behaviors"; "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules |> List.map _.moduleId)
 
         let forest = modules |> List.find (fun behaviorModule -> behaviorModule.moduleId = "forest-behaviors")
@@ -597,7 +597,7 @@ module KernelTests =
         let modules, objects = Kernel.behaviorImpact "core-behaviors" ObjectDatabase.initialState
 
         Assert.Equal<string list>(
-            [ "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
+            [ "active-entity-behaviors"; "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
         Assert.Equal<string list>(
             [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],
@@ -627,7 +627,7 @@ module KernelTests =
         match result with
         | Ok(Some update) ->
             Assert.Equal<string list>(
-                [ "core-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
+                [ "core-behaviors"; "active-entity-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
             Assert.Equal<string list>(
                 [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],

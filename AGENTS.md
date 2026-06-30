@@ -82,19 +82,21 @@ Current server modules:
 - `CommandMatching.fs`: localized command text to behavior-method match.
 - `Scripting.fs`: Jint execution and script effect decoding.
 - `ScriptCompiler.fs`: TypeScript validation/compilation for admin-edited behavior modules.
-- `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update, limbo-safe `tickWorld`.
+- `Kernel.fs`: command submission, behavior-method dispatch, effect application, behavior-module update, room growth, and autonomous `tickWorld`.
 - `WorldObjects.fs`: permanent object create/destroy/move helpers used by kernel effects.
-- `Program.fs`: minimal HTTP/static host; background world tick every 30 seconds for occupied rooms.
+- `Program.fs`: HTTP/static/SignalR host; configurable background world tick (`WorldTickSeconds`, default 30 seconds) for all rooms and in-world creatures.
 
 Current object model:
 
 - Stable object ID: `forest`.
-- The seeded `prototype-player` character starts at `forest`; the unauthenticated command endpoint selects it explicitly until sessions exist.
+- Sessions select account-owned characters. The seeded prototype account owns `prototype-player` and `prototype-scout`; persisted and disconnected players enter limbo and must explicitly re-enter play. Unauthenticated guest sessions do not auto-enter the shared prototype character.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.
-- `village` references `forest` to the south, uses `village-behaviors:VillageBehavior`, and seeds `comfort: 0` (synced from stool contents on `tick`).
-- `forest` seeds `tickCount: 0` (incremented on `tick` when a connected in-play player occupies the room).
+- `village` references `forest` to the south, uses `village-behaviors:VillageBehavior`, and derives `comfort`, `stocked`, and `wildlife` from contained objects on `tick`.
+- `forest` seeds `tickCount: 0`, renewable wood properties, and a hare population cap. It advances and regrows on every world tick, including with no connected players.
+- `forest-hare` is a permanent `creature` using `CreatureBehavior`; it advances actor-local state and wanders through room exits on autonomous ticks.
+- `village-farmer` is a humanoid creature with localized `talk` behavior. `village-crate` and `village-workbench` demonstrate container storage and workstation-owned crafting.
 - `fallen-log` is a permanent object located in `forest` and uses `thing-behaviors:ThingBehavior`.
 - `forest.properties.trailToken` is an identity-free anonymous behavior value using `anonymous-behaviors:TrailTokenBehavior`.
 - Anonymous behavior values embed recursive typed properties, live by reachability from permanent state, and have no ID, location, contents, aliases, tags, or direct command matching. The decision is recorded in `docs/architecture/0003-anonymous-behavior-values.md`.
@@ -103,9 +105,13 @@ Current object model:
 - Object IDs are stable identifiers. Tags are semantic metadata and should not be confused with IDs.
 - Seeded objects may use reserved semantic IDs. Future runtime-created objects use `obj_` plus a UUIDv7. IDs are immutable and follow the contract in `docs/architecture/0001-object-ids.md`.
 - Live command dispatch reads localized command metadata from compiled behavior classes and invokes class methods through Jint. `ForestBehavior.look()` uses native `super.look()`. `LocationBehavior.tick()` is a no-op base; `ForestBehavior.tick()` advances `tickCount`, and `VillageBehavior.tick()` syncs `comfort` from stool contents. `VillageBehavior.look()` adds seating/comfort messages when stools or `comfort > 0` are present.
-- `player-behaviors` defines `CRAFT_RECIPES` and `craftFromRecipe()`; `PlayerBehavior.craft()` delegates to that table.
-- `Kernel.tickWorld` ticks only rooms with connected, in-play players; limbo characters skip world ticks.
-- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`, plus `core-behaviors <- thing-behaviors` and `core-behaviors <- anonymous-behaviors`.
+- `thing-behaviors` defines `CRAFT_RECIPES` and `craftFromRecipe()`; `WorkbenchBehavior.craft()` owns workstation crafting. Current recipes include stools and benches.
+- `Kernel.tickWorld` ticks every room, then its `creature` contents in stable object-ID order. Connection status is context only; limbo players skip ticks because they have no world location.
+- `TickContext` is separate from player-command `VerbContext` and exposes tick metadata, the executing object, room state, floor/container storage, and connected players without fabricating an actor.
+- `active-entity-behaviors` defines `ActiveEntityBehavior`, persistent goal-stack helpers, deadlines, failure unwinding, and deterministic weighted selection. AI data lives under `properties.ai`; the kernel does not interpret goal kinds.
+- A world-tick pulse snapshots its creature schedule before execution, so moving entities tick at most once and newly created entities begin on the next pulse.
+- Room growth uses the generic `growRoomExit` effect to create a linked room with validated map placement. The browser exposes a localized map/minimap derived from room properties and references.
+- The behavior graph contains `core-behaviors <- location-behaviors <- forest-behaviors|village-behaviors`, `core-behaviors <- active-entity-behaviors <- thing-behaviors`, and `core-behaviors <- anonymous-behaviors`.
 - Module dependencies are compiled in deterministic topological order. Missing dependencies and cycles are rejected.
 - Updating a module recompiles all transitive dependents and atomically activates the complete affected graph. Admin responses report affected modules and objects.
 - Checked-in seed behavior modules live in `src/BrokenRealm.Server/behaviors/seed/*.ts`. `BehaviorSources.fs` loads those files and builds the seed hash manifest; it does not embed game logic.
@@ -258,6 +264,7 @@ Known effects:
 - `{ type: "removeInventory", itemId: string, amount: number, objectId?: string }`
 - `{ type: "transferItem", itemId: string, amount: number, destinationId: string, sourceId?: string }`
 - `{ type: "createObject", locationId: string, nameKey: string, descriptionKey?: string, behaviorModuleId: string, behaviorClassName: string, tags: string, aliasesEn?: string, aliasesDe?: string, properties?: GameValue map }` (kernel assigns a new `obj_` id)
+- `{ type: "growRoomExit", direction: string, reverseDirection: string, nameKey: string, descriptionKey?: string, behaviorModuleId: string, behaviorClassName: string, tags: string, aliasesEn?: string, aliasesDe?: string, properties?: GameValue map }` (creates a room and reciprocal exits with validated map coordinates)
 - `{ type: "destroyObject", objectId?: string }` (defaults to the executing permanent object; rejects players, room roots, and objects with contents)
 - `{ type: "moveObject", destinationId: string, objectId?: string }` (omitted `objectId` moves the acting player; legacy decode alias: `movePlayer`; permanent things must be in the actor's room)
 - `{ type: "replaceValue", path: (string | number)[], value: GameValue }`
@@ -347,12 +354,10 @@ The browser TypeScript source lives in `src/BrokenRealm.Client`. Do not run clie
 
 ## Near-Term Next Steps
 
-1. Hold a planning session for the next singleplayer empire/sandbox mechanics slice (recipes, structures, timed systems).
-2. Extend crafting/placement beyond the wooden-stool proof (`createObject` templates, recipe tables, destructible or movable furniture).
+1. Design the next mechanics slice around active-entity decision making, building on `CreatureBehavior`, autonomous ticks, and typed object properties.
+2. Keep extending settlement mechanics through object tags, containment, workstation behaviors, and neutral effects rather than kernel-specific rules.
 3. Select and implement a durable database adapter only after the file-backed JSON snapshot contract has proven insufficient in development.
 
-## Planned Later
+## Offline character limbo
 
-### Offline character limbo
-
-Implemented per `docs/architecture/0008-offline-character-limbo.md`. Disconnect/logout clears live-world presence (`LocationId = None`, `lastSafeLocationId` persisted), commands return `limbo.not_in_play`, and `POST /game/session/enter` restores play with `move.arrive.room`. The browser auto-calls enter after session load when the selected character is in limbo. `GameStoreBootstrap` also limbos every player on process startup before the first snapshot flush.
+Implemented per `docs/architecture/0008-offline-character-limbo.md`. Disconnect/logout clears live-world presence (`LocationId = None`, `lastSafeLocationId` persisted), commands return `limbo.not_in_play`, and `POST /game/session/enter` restores play with `move.arrive.room`. Authenticated browser sessions explicitly enter after session load; unauthenticated guests remain in limbo. `GameStoreBootstrap` also limbos every player on process startup before the first snapshot flush.

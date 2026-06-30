@@ -79,7 +79,17 @@ module ObjectDatabase =
               DescriptionKey = Some "object.forest-hare.description"
               LocationId = Some forest.Id
               Tags = Set.ofList [ "creature"; "thing"; "herbivore" ]
-              Properties = Map.ofList [ "tickSteps", IntegerValue 0L ]
+              Properties =
+                Map.ofList
+                    [ "tickSteps", IntegerValue 0L
+                      "ai",
+                      MapValue(
+                          Map.ofList
+                              [ "rootGoal", StringValue "hareLife"
+                                "stack", ListValue []
+                                "memory", MapValue Map.empty
+                                "rngState", IntegerValue 1L
+                                "nextGoalId", IntegerValue 1L ]) ]
               References = Map.empty
               BehaviorModuleId = "thing-behaviors"
               BehaviorClassName = "CreatureBehavior" }

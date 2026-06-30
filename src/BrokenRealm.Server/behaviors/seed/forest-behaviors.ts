@@ -45,7 +45,16 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
         tags: "creature,thing,herbivore",
         aliasesEn: "hare,forest hare",
         aliasesDe: "hase,waldhase",
-        properties: { tickSteps: 0 }
+        properties: {
+          tickSteps: 0,
+          ai: {
+            rootGoal: "hareLife",
+            stack: [],
+            memory: {},
+            rngState: 1,
+            nextGoalId: 1
+          }
+        }
       });
     }
 

@@ -185,7 +185,7 @@ class WorkbenchBehavior extends ThingBehavior {
   }
 }
 
-class CreatureBehavior extends GameBehavior {
+class CreatureBehavior extends ActiveEntityBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
     {
@@ -199,21 +199,21 @@ class CreatureBehavior extends GameBehavior {
     }
   ];
 
-  override tick(context: TickContext): VerbResult {
-    const steps = Number(context.this.properties.tickSteps ?? 0);
-    const nextSteps = steps + 1;
-    const effects: ScriptEffect[] = [{ type: "replaceValue", path: ["tickSteps"], value: nextSteps }];
+  protected override defaultRootGoal(): string {
+    return "creatureLife";
+  }
 
-    if (nextSteps % 2 === 0) {
-      const directions = Object.keys(context.room.references).sort();
-      const direction = directions[0];
-      const destinationId = direction ? context.room.references[direction] : undefined;
-      if (destinationId) {
-        effects.push({ type: "moveObject", destinationId });
-      }
+  protected override activateRoot(context: TickContext, state: ActiveEntityState): ActiveGoalFrame[] {
+    const selected = chooseActiveWeighted(state, [
+      { value: "wait", weight: 25 },
+      { value: "graze", weight: 10 },
+      { value: "wander", weight: 65 }
+    ]) ?? "wait";
+    state.memory.lastChoice = selected;
+    if (selected === "graze") {
+      return [createActiveGoal(state, context, "wait", 2, { activity: "graze" })];
     }
-
-    return { effects };
+    return [createActiveGoal(state, context, selected, selected === "wait" ? 1 : 2)];
   }
 
   examine(context: VerbContext): VerbResult {

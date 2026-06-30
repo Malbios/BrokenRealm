@@ -7,7 +7,12 @@ module WorldEcologyTests =
     let private tick state times =
         List.fold
             (fun current _ ->
-                match Kernel.tickWorld current 1 30 (fun _ -> false) with
+                let nextTickIndex =
+                    match current.Objects["forest"].Properties |> Map.tryFind "tickCount" with
+                    | Some(IntegerValue value) -> int value + 1
+                    | _ -> 1
+
+                match Kernel.tickWorld current nextTickIndex 30 (fun _ -> false) with
                 | Ok updated -> updated
                 | Error error -> Assert.True(false, error); current)
             state

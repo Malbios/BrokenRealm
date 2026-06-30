@@ -44,6 +44,25 @@ declare interface TickContext {
   };
 }
 
+declare type ActiveGoalStatus = "continue" | "success" | "failure";
+
+declare interface ActiveGoalFrame {
+  id: string;
+  kind: string;
+  parentId: string | null;
+  enteredTick: number;
+  deadlineTick: number;
+  parameters: Record<string, GameValue>;
+}
+
+declare interface ActiveEntityState {
+  rootGoal: string;
+  stack: ActiveGoalFrame[];
+  memory: Record<string, GameValue>;
+  rngState: number;
+  nextGoalId: number;
+}
+
 declare interface VerbContext {
   args: Record<string, string>;
   this: VerbObjectSummary & {
