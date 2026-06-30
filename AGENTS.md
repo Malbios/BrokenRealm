@@ -91,6 +91,7 @@ Current object model:
 - Stable object ID: `forest`.
 - Sessions select account-owned characters. The seeded prototype account owns `prototype-player` and `prototype-scout`; persisted and disconnected players enter limbo and must explicitly re-enter play. Unauthenticated guest sessions do not auto-enter the shared prototype character.
 - Multiple tabs may authenticate the same account while independently selecting different owned characters. HTTP player requests carry `X-BrokenRealm-Session`; SignalR uses its `accessTokenFactory` because browser WebSocket upgrades cannot reliably carry custom headers. The client leases each tab session ID through a live `localStorage` owner record because browsers copy `sessionStorage` when duplicating a tab. Tab-header responses must not overwrite the shared fallback cookie. Do not replace this with one-account-per-character coupling.
+- Selecting a character mutates only that session; the selection endpoint must never put its previously selected character into limbo. `GameHub.SyncCharacter` updates the connection registry first and only limbos the old character when no other live connection still controls it.
 - `forest` has tags including `forest` and `wood`.
 - `forest` has typed properties including strings, integers, booleans, lists, maps, floating-point values, and an object reference.
 - `forest` references `village` to the north and uses `forest-behaviors:ForestBehavior`.

@@ -91,13 +91,17 @@ type GameHub() =
         | None -> Task.CompletedTask
 
     member this.SyncCharacter() =
+        let services = GameHubServices.current()
+
         match this.Context.GetHttpContext() |> GameHubServices.tryResolveSession with
         | Some session ->
             let connectionId = this.Context.ConnectionId
             let groupId = RoomBroadcast.characterGroup session.SelectedCharacterId
 
-            match GameHubServices.current().Connections.Set(connectionId, session.SelectedCharacterId) with
+            match services.Connections.Set(connectionId, session.SelectedCharacterId) with
             | Some oldCharacterId ->
+                services.EnterLimboIfDisconnected oldCharacterId
+
                 this.Groups.RemoveFromGroupAsync(connectionId, RoomBroadcast.characterGroup oldCharacterId)
                     .ContinueWith(fun _ -> this.Groups.AddToGroupAsync(connectionId, groupId))
                     .Unwrap()

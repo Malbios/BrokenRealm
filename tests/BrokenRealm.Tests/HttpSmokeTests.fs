@@ -192,16 +192,22 @@ module HttpSmokeTests =
                 Assert.True(playerLogin.IsSuccessStatusCode)
                 Assert.True(scoutLogin.IsSuccessStatusCode)
 
+                let! playerEnter = playerClient.PostAsync("/game/session/enter?culture=en", null)
+                Assert.True(playerEnter.IsSuccessStatusCode)
+
                 let! selectScout =
                     scoutClient.PostAsJsonAsync(
                         "/game/session/character?culture=en",
                         { characterId = GameSnapshots.PrototypeScoutCharacterId })
                 Assert.True(selectScout.IsSuccessStatusCode)
 
-                let! playerEnter = playerClient.PostAsync("/game/session/enter?culture=en", null)
                 let! scoutEnter = scoutClient.PostAsync("/game/session/enter?culture=en", null)
-                Assert.True(playerEnter.IsSuccessStatusCode)
                 Assert.True(scoutEnter.IsSuccessStatusCode)
+
+                let! playerLookResponse, playerLook = postCommand playerClient "look"
+                Assert.True(playerLookResponse.IsSuccessStatusCode)
+                Assert.DoesNotContain(playerLook.lines, fun line -> line.Contains("not in the world"))
+                Assert.Contains(playerLook.lines, fun line -> line.Contains("forest"))
 
                 let! northResponse, _ = postCommand playerClient "go north"
                 let! southResponse, _ = postCommand playerClient "go south"

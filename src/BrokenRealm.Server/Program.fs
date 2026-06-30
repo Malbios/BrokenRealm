@@ -222,14 +222,10 @@ module Program =
                     let culture = sessionCulture ctx
                     let session = resolveSession ctx
                     let state = gameStore.Read().State
-                    let previousCharacterId = session.SelectedCharacterId
 
                     match sessionStore.SelectCharacter(session.Id, request.characterId, state) with
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
-                        if previousCharacterId <> updated.SelectedCharacterId then
-                            enterLimboIfDisconnected previousCharacterId
-
                         appendSessionCookieIfNeeded ctx updated.Id
                         Results.Json(authResponse culture updated (gameStore.Read().State)))))
         |> ignore
