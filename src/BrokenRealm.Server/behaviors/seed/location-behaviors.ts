@@ -84,6 +84,38 @@ function formatExits(references: Record<string, string>): string {
     .join(",");
 }
 
+function findDestinationObject(context: VerbContext, objectId: string): VerbObjectSummary | null {
+  return context.actor.destinationContents.find(object => object.id === objectId) ?? null;
+}
+
+function appendArrivalReaction(
+  effects: ScriptEffect[],
+  context: VerbContext,
+  objectId: string,
+  options: { activity?: string; tag?: string; selfKey: string; roomKey: string }
+): void {
+  const destinationId = context.actor.destinationId;
+  if (!destinationId) {
+    return;
+  }
+
+  const object = findDestinationObject(context, objectId);
+  if (!object) {
+    return;
+  }
+
+  if (options.activity && String(object.properties.activity ?? "idle") !== options.activity) {
+    return;
+  }
+
+  if (options.tag && !object.tags.includes(options.tag)) {
+    return;
+  }
+
+  effects.push({ type: "message", key: options.selfKey, args: {} });
+  effects.push({ type: "message", key: options.roomKey, args: { roomId: destinationId } });
+}
+
 class LocationBehavior extends GameBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
@@ -151,14 +183,29 @@ class LocationBehavior extends GameBehavior {
     if (!destinationId) {
       return { effects: [{ type: "message", key: "move.no_exit", args: {} }] };
     }
-    return {
-      effects: [
-        { type: "message", key: "move.leave.room", args: { actor: context.actor.id, direction, roomId: context.actor.locationId } },
-        { type: "moveObject", destinationId },
-        { type: "message", key: "move.success", args: { direction } },
-        { type: "message", key: "move.arrive.room", args: { actor: context.actor.id, roomId: destinationId } }
-      ]
-    };
+    const effects: ScriptEffect[] = [
+      { type: "message", key: "move.leave.room", args: { actor: context.actor.id, direction, roomId: context.actor.locationId } },
+      { type: "moveObject", destinationId },
+      { type: "message", key: "move.success", args: { direction } },
+      { type: "message", key: "move.arrive.room", args: { actor: context.actor.id, roomId: destinationId } }
+    ];
+
+    this.appendMoveArrivalReactions(effects, context);
+
+    return { effects };
+  }
+
+  protected appendMoveArrivalReactions(effects: ScriptEffect[], context: VerbContext): void {
+    appendArrivalReaction(effects, context, "village-farmer", {
+      activity: "working",
+      selfKey: "creature.village-farmer.notice.enter",
+      roomKey: "creature.village-farmer.notice.enter.room"
+    });
+    appendArrivalReaction(effects, context, "forest-hare", {
+      tag: "herbivore",
+      selfKey: "creature.forest-hare.notice.enter",
+      roomKey: "creature.forest-hare.notice.enter.room"
+    });
   }
 
   tick(_context: TickContext): VerbResult {

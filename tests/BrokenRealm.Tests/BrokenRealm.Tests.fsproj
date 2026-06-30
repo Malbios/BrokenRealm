@@ -20,6 +20,7 @@
     <Compile Include="WorldTickTests.fs" />
     <Compile Include="WorldEcologyTests.fs" />
     <Compile Include="FarmerRoutineTests.fs" />
+    <Compile Include="ReactiveNpcTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

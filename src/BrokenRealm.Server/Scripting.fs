@@ -373,17 +373,26 @@ module Scripting =
         |> List.map (fun container -> container.Id, CarriedItems.itemQuantitiesInContainer state container.Id)
         |> Map.ofList
 
-    let private actorSummary (state: GameState) (actor: GameObject) =
+    let private contentsSummariesForRoom (state: GameState) (roomId: ObjectId) (excludeId: ObjectId) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject -> gameObject.LocationId = Some roomId && gameObject.Id <> excludeId)
+        |> List.sortBy _.Id
+        |> List.map objectSummary
+
+    let private actorSummary (state: GameState) (actor: GameObject) (args: Map<string, string>) =
         let locationId = PlayerObjects.locationId actor
         let location = state.Objects[locationId]
+        let locationContents = contentsSummariesForRoom state locationId actor.Id
 
-        let locationContents =
-            state.Objects
-            |> Map.toList
-            |> List.map snd
-            |> List.filter (fun gameObject -> gameObject.LocationId = Some locationId && gameObject.Id <> actor.Id)
-            |> List.sortBy _.Id
-            |> List.map objectSummary
+        let destinationId, destinationContents =
+            match args |> Map.tryFind "direction" with
+            | Some direction ->
+                match location.References |> Map.tryFind direction with
+                | Some destId -> Some destId, contentsSummariesForRoom state destId actor.Id
+                | None -> None, []
+            | None -> None, []
 
         {| id = actor.Id
            name = actor.Name
@@ -395,6 +404,8 @@ module Scripting =
            inventory = PlayerObjects.inventory state actor.Id
            locationId = locationId
            locationContents = locationContents |> List.toArray
+           destinationId = destinationId |> Option.defaultValue null
+           destinationContents = destinationContents |> List.toArray
            floorItems = CarriedItems.itemQuantitiesInContainer state locationId
            containerStorage = containerStorageMap state locationId |}
 
@@ -411,7 +422,7 @@ module Scripting =
                    contents = contents |> List.map objectSummary |> List.toArray
                    storedItems = CarriedItems.itemQuantitiesInContainer state target.Id
                    containerStorage = containerStorageMap state target.Id |}
-               actor = actorSummary state actor |}
+               actor = actorSummary state actor args |}
 
         executeContextWithinLimits limits invocation context source
 
@@ -511,7 +522,7 @@ module Scripting =
         else
             let properties = Dictionary<string, obj>()
             value.Properties |> Map.iter (fun key property -> properties[key] <- gameValueToObject property)
-            let context = {| args = args; this = {| storagePath = storagePath; properties = properties |}; actor = actorSummary state actor |}
+            let context = {| args = args; this = {| storagePath = storagePath; properties = properties |}; actor = actorSummary state actor args |}
             let invocation contextJson = $"(new {className}()).{methodName}({contextJson})"
             executeContextWithinLimits defaultLimits invocation context source
 

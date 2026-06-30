@@ -80,6 +80,8 @@ declare interface VerbContext {
     inventory: Record<string, number>;
     locationId: string;
     locationContents: VerbObjectSummary[];
+    destinationId: string | null;
+    destinationContents: VerbObjectSummary[];
     floorItems: Record<string, number>;
     containerStorage: Record<string, Record<string, number>>;
   };

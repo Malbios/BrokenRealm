@@ -342,6 +342,18 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
     return super.updateGoal(context, state, frame);
   }
 
+  override talk(context: VerbContext): VerbResult {
+    const activity = String(context.this.properties.activity ?? "idle");
+    const key =
+      activity === "working"
+        ? "creature.village-farmer.talk.working"
+        : activity === "resting"
+          ? "creature.village-farmer.talk.resting"
+          : "creature.village-farmer.greeting";
+
+    return { effects: [{ type: "message", key, args: {} }] };
+  }
+
   override examine(context: VerbContext): VerbResult {
     const activity = String(context.this.properties.activity ?? "idle");
     const key =
