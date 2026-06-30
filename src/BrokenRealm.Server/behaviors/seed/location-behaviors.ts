@@ -45,6 +45,18 @@ function propertyFlag(context: { this: { properties: Record<string, GameValue> }
   return Number(context.this.properties[key] ?? 0) > 0;
 }
 
+function appendSettlementLookLines(
+  effects: ScriptEffect[],
+  context: { this: { properties: Record<string, GameValue> } },
+  lines: { key: string; property: string }[]
+): void {
+  for (const line of lines) {
+    if (propertyFlag(context, line.property)) {
+      effects.push({ type: "message", key: line.key, args: {} });
+    }
+  }
+}
+
 function isCreature(object: VerbObjectSummary): boolean {
   return object.tags.includes("creature");
 }

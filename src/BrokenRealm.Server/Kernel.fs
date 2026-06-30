@@ -45,6 +45,60 @@ module Kernel =
             | Some _ -> Ok id
         | None -> Ok actingCharacterId
 
+    let private resolveInventoryTarget (state: GameState) (actingId: ObjectId) (objectId: ObjectId option) =
+        match objectId with
+        | Some id ->
+            match PlayerObjects.tryGet state id with
+            | Some _ -> Ok id
+            | None ->
+                match state.Objects |> Map.tryFind id with
+                | Some container when WorldObjects.isItemContainer container -> Ok id
+                | Some _ -> Error $"Inventory effect target must be a player or item container: {id}"
+                | None -> Error $"Unknown inventory effect target id: {id}"
+        | None ->
+            match PlayerObjects.tryGet state actingId with
+            | Some _ -> Ok actingId
+            | None -> Error "Inventory effects require an explicit objectId for non-player actors."
+
+    let private validateInventoryEffectAccess (state: GameState) (actingId: ObjectId) (targetId: ObjectId) =
+        match PlayerObjects.tryGet state actingId with
+        | Some _ -> Ok()
+        | None ->
+            match state.Objects |> Map.tryFind actingId, state.Objects |> Map.tryFind targetId with
+            | Some actor, Some target when WorldObjects.isItemContainer target ->
+                match actor.LocationId, target.LocationId with
+                | Some actorRoom, Some targetRoom when actorRoom = targetRoom -> Ok()
+                | _ -> Error "Creatures may only supply item containers in their current room."
+            | _ -> Error "Invalid inventory effect for non-player actor."
+
+    let private isContainerLocked (container: GameObject) =
+        match container.Properties |> Map.tryFind "locked" with
+        | Some(BooleanValue true) -> true
+        | Some(IntegerValue value) when value <> 0L -> true
+        | _ -> false
+
+    let private containerKeyItemId (container: GameObject) =
+        match container.Properties |> Map.tryFind "keyItemId" with
+        | Some(StringValue itemId) -> Some itemId
+        | _ -> None
+
+    let private actorHasContainerKey (state: GameState) (actorId: ObjectId) (container: GameObject) =
+        match containerKeyItemId container with
+        | None -> false
+        | Some itemId ->
+            CarriedItems.inventoryMap state actorId
+            |> Map.tryFind itemId
+            |> Option.exists (fun quantity -> quantity >= 1)
+
+    let private validateLockedContainerAccess (state: GameState) (actingId: ObjectId) (containerId: ObjectId) =
+        match state.Objects |> Map.tryFind containerId with
+        | Some container when isContainerLocked container ->
+            match PlayerObjects.tryGet state actingId with
+            | Some _ when actorHasContainerKey state actingId container -> Ok()
+            | Some _ -> Error "container_locked"
+            | None -> Ok()
+        | _ -> Ok()
+
     let private resolveMobileObject
         (state: GameState)
         (actingCharacterId: CharacterId)
@@ -124,10 +178,16 @@ module Kernel =
             Error("Unknown item id: " + itemId)
         | AddInventory(objectId, _, amount) when amount <= 0 || amount > 100 ->
             Error "addInventory effects require an amount from 1 to 100."
-        | AddInventory(objectId, _, _) ->
-            match resolvePlayerTarget state actingCharacterId objectId with
+        | AddInventory(objectId, _, amount) ->
+            match resolveInventoryTarget state actingCharacterId objectId with
             | Error error -> Error error
-            | Ok _ -> Ok()
+            | Ok targetId ->
+                match validateInventoryEffectAccess state actingCharacterId targetId with
+                | Error error -> Error error
+                | Ok() ->
+                    match WorldObjects.validateContainerCapacity state targetId amount with
+                    | Error error -> Error error
+                    | Ok() -> Ok()
         | RemoveInventory(objectId, itemId, amount) when not (state.ItemIds.Contains itemId) ->
             Error("Unknown item id: " + itemId)
         | RemoveInventory(objectId, _, amount) when amount <= 0 || amount > 100 ->
@@ -230,7 +290,18 @@ module Kernel =
                     Ok()
             with
             | Error error -> Error error
-            | Ok() -> validateTransferItemRouting state actingCharacterId sourceId destinationId
+            | Ok() ->
+                match validateLockedContainerAccess state actingCharacterId destinationId with
+                | Error error -> Error error
+                | Ok() ->
+                    let sourceContainerId =
+                        match sourceId with
+                        | Some id -> id
+                        | None -> actingCharacterId
+
+                    match validateLockedContainerAccess state actingCharacterId sourceContainerId with
+                    | Error error -> Error error
+                    | Ok() -> validateTransferItemRouting state actingCharacterId sourceId destinationId
         | ReplaceValue(path, replacement) ->
             match validateValueReferences state "replacement" replacement with
             | Error error -> Error error
@@ -395,10 +466,10 @@ module Kernel =
         | Ok() ->
             match effect with
             | AddInventory(objectId, itemId, amount) ->
-                match resolvePlayerTarget state characterId objectId with
+                match resolveInventoryTarget state characterId objectId with
                 | Error error -> Error error
-                | Ok playerId ->
-                    Ok(CarriedItems.addInventory state playerId itemId amount, messages, remainingInvocations)
+                | Ok targetId ->
+                    Ok(CarriedItems.addInventory state targetId itemId amount, messages, remainingInvocations)
             | RemoveInventory(objectId, itemId, amount) ->
                 match resolvePlayerTarget state characterId objectId with
                 | Error error -> Error error
@@ -644,6 +715,10 @@ module Kernel =
             | Error "container_capacity_exceeded" ->
                 { State = state
                   Messages = [ message "container.capacity.full" Map.empty ]
+                  PendingDisambiguation = None }
+            | Error "container_locked" ->
+                { State = state
+                  Messages = [ message "container.locked" Map.empty ]
                   PendingDisambiguation = None }
             | Error error ->
                 { State = state

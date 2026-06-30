@@ -1,5 +1,5 @@
 declare type ScriptEffect =
-  | { type: "addInventory"; itemId: "wood"; amount: number; objectId?: string }
+  | { type: "addInventory"; itemId: string; amount: number; objectId?: string }
   | { type: "removeInventory"; itemId: string; amount: number; objectId?: string }
   | { type: "transferItem"; itemId: string; amount: number; destinationId: string; sourceId?: string }
   | { type: "createObject"; locationId: string; nameKey: string; descriptionKey?: string; behaviorModuleId: string; behaviorClassName: string; tags: string; aliasesEn?: string; aliasesDe?: string; properties?: Record<string, GameValue> }
@@ -19,6 +19,7 @@ declare interface VerbObjectSummary {
   name: string;
   descriptionKey: string;
   tags: string[];
+  properties: Record<string, GameValue>;
 }
 
 declare interface TickContext {

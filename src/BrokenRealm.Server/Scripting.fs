@@ -360,7 +360,8 @@ module Scripting =
         {| id = gameObject.Id
            name = gameObject.Name
            descriptionKey = gameObject.DescriptionKey |> Option.defaultValue ""
-           tags = gameObject.Tags |> Set.toArray |}
+           tags = gameObject.Tags |> Set.toArray
+           properties = objectProperties gameObject |}
 
     let private containerStorageMap (state: GameState) (locationId: ObjectId) =
         state.Objects

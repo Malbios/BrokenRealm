@@ -21,6 +21,23 @@ function findContainer(context: VerbContext, objectId: string) {
   return object;
 }
 
+function isContainerLocked(container: { properties: Record<string, GameValue> }): boolean {
+  const locked = container.properties.locked;
+  return locked === true || Number(locked ?? 0) > 0;
+}
+
+function actorCanAccessLockedContainer(context: VerbContext, container: { properties: Record<string, GameValue> }): boolean {
+  const keyItemId = String(container.properties.keyItemId ?? "");
+  if (!keyItemId) {
+    return false;
+  }
+  return (context.actor.inventory[keyItemId] ?? 0) >= 1;
+}
+
+function lockedContainerMessage(context: VerbContext, container: { properties: Record<string, GameValue> }): VerbResult {
+  return { effects: [{ type: "message", key: "container.locked", args: {} }] };
+}
+
 class PlayerBehavior extends GameBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
@@ -123,8 +140,20 @@ class PlayerBehavior extends GameBehavior {
         { culture: "en", pattern: "map" },
         { culture: "de", pattern: "karte" }
       ]
+    },
+    {
+      methodName: "eat",
+      patterns: [
+        { culture: "en", pattern: "eat {item}" },
+        { culture: "de", pattern: "iss {item}" },
+        { culture: "de", pattern: "esse {item}" }
+      ]
     }
   ];
+
+  private static readonly edibleItems: Record<string, number> = {
+    wood: 20
+  };
 
   override tick(context: TickContext): VerbResult {
     const hunger = Number(context.this.properties.hunger ?? 0);
@@ -141,10 +170,36 @@ class PlayerBehavior extends GameBehavior {
       ? [{ type: "message", key: "inventory.empty", args: {} }]
       : [{ type: "message", key: "inventory.list", args: { items: context.actor.inventory } }];
     const hunger = Number(context.actor.properties.hunger ?? 0);
-    if (hunger >= 50) {
+    if (hunger >= 80) {
+      effects.push({ type: "message", key: "player.starving", args: {} });
+    } else if (hunger >= 50) {
       effects.push({ type: "message", key: "player.hungry", args: {} });
     }
     return { effects };
+  }
+
+  eat(context: VerbContext): VerbResult {
+    const itemId = context.args.item;
+    const restore = PlayerBehavior.edibleItems[itemId];
+    if (!restore) {
+      return { effects: [{ type: "message", key: "eat.not_edible", args: { item: itemId } }] };
+    }
+
+    const available = context.actor.inventory[itemId] ?? 0;
+    if (available < 1) {
+      return { effects: [{ type: "message", key: "eat.none", args: { item: itemId } }] };
+    }
+
+    const hunger = Number(context.actor.properties.hunger ?? 0);
+    const nextHunger = Math.max(0, hunger - restore);
+
+    return {
+      effects: [
+        { type: "removeInventory", itemId, amount: 1 },
+        { type: "replaceValue", path: ["hunger"], value: nextHunger },
+        { type: "message", key: "eat.success", args: { item: itemId } }
+      ]
+    };
   }
 
   drop(context: VerbContext): VerbResult {
@@ -212,6 +267,9 @@ class PlayerBehavior extends GameBehavior {
       if (!container) {
         return { effects: [{ type: "message", key: "container.not_here", args: {} }] };
       }
+      if (isContainerLocked(container) && !actorCanAccessLockedContainer(context, container)) {
+        return lockedContainerMessage(context, container);
+      }
       const available = context.actor.containerStorage[containerId]?.[itemId] ?? 0;
       if (available < 1) {
         return { effects: [{ type: "message", key: "container.take.none", args: { item: itemId } }] };
@@ -264,6 +322,9 @@ class PlayerBehavior extends GameBehavior {
     const container = findContainer(context, containerId);
     if (!container) {
       return { effects: [{ type: "message", key: "container.not_here", args: {} }] };
+    }
+    if (isContainerLocked(container) && !actorCanAccessLockedContainer(context, container)) {
+      return lockedContainerMessage(context, container);
     }
     const available = context.actor.inventory[itemId] ?? 0;
     const requested = parseRequestedAmount(context.args.amount);

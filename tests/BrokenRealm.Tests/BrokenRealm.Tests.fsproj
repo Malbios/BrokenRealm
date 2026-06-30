@@ -19,6 +19,7 @@
     <Compile Include="DisambiguationTests.fs" />
     <Compile Include="WorldTickTests.fs" />
     <Compile Include="WorldEcologyTests.fs" />
+    <Compile Include="FarmerRoutineTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

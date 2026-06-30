@@ -142,6 +142,26 @@ module ObjectDatabase =
               BehaviorModuleId = "thing-behaviors"
               BehaviorClassName = "WorkbenchBehavior" }
 
+        let villageStrongbox =
+            { Id = "village-strongbox"
+              Name = "iron strongbox"
+              NameKey = "object.village-strongbox.name"
+              Aliases =
+                Map.ofList
+                    [ En, [ "iron strongbox"; "strongbox" ]
+                      De, [ "eiserne truhe"; "truhe" ] ]
+              DescriptionKey = Some "object.village-strongbox.description"
+              LocationId = Some village.Id
+              Tags = Set.ofList [ "thing"; "container" ]
+              Properties =
+                Map.ofList
+                    [ "capacity", IntegerValue 2L
+                      "locked", BooleanValue true
+                      "keyItemId", StringValue "wood" ]
+              References = Map.empty
+              BehaviorModuleId = "thing-behaviors"
+              BehaviorClassName = "ContainerBehavior" }
+
         let villageFarmer =
             { Id = "village-farmer"
               Name = "village farmer"
@@ -153,10 +173,22 @@ module ObjectDatabase =
               DescriptionKey = Some "object.village-farmer.description"
               LocationId = Some village.Id
               Tags = Set.ofList [ "creature"; "thing"; "humanoid" ]
-              Properties = Map.ofList [ "greetingKey", StringValue "creature.village-farmer.greeting" ]
+              Properties =
+                Map.ofList
+                    [ "greetingKey", StringValue "creature.village-farmer.greeting"
+                      "activity", StringValue "idle"
+                      "tickSteps", IntegerValue 0L
+                      "ai",
+                      MapValue(
+                          Map.ofList
+                              [ "rootGoal", StringValue "farmerLife"
+                                "stack", ListValue []
+                                "memory", MapValue Map.empty
+                                "rngState", IntegerValue 7L
+                                "nextGoalId", IntegerValue 1L ]) ]
               References = Map.empty
               BehaviorModuleId = "thing-behaviors"
-              BehaviorClassName = "HumanoidCreatureBehavior" }
+              BehaviorClassName = "FarmerCreatureBehavior" }
 
         let prototypeAccount: AccountState =
             { Id = GameSnapshots.PrototypeAccountId
@@ -198,6 +230,7 @@ module ObjectDatabase =
                   forestHare.Id, forestHare
                   fallenLog.Id, fallenLog
                   villageCrate.Id, villageCrate
+                  villageStrongbox.Id, villageStrongbox
                   villageWorkbench.Id, villageWorkbench
                   villageFarmer.Id, villageFarmer
                   prototypePlayer.Id, prototypePlayer

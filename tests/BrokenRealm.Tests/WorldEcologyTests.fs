@@ -64,7 +64,7 @@ module WorldEcologyTests =
         | CommandMatching.Matched matched ->
             Assert.Equal("village-farmer", matched.ObjectId)
             Assert.Equal("talk", matched.MethodName)
-            Assert.Equal("HumanoidCreatureBehavior", matched.BehaviorClassName)
+            Assert.Equal("FarmerCreatureBehavior", matched.BehaviorClassName)
         | CommandMatching.Ambiguous _ -> Assert.True(false, "Expected a direct talk match.")
         | CommandMatching.MatchedSequence _ -> Assert.True(false, "Expected a direct talk match.")
         | CommandMatching.NoMatch -> Assert.True(false, "Expected talk to farmer to match.")
@@ -112,6 +112,52 @@ module WorldEcologyTests =
             |> List.map (ResponseFormatting.localizeMessage result.State En)
 
         Assert.Contains("You feel hungry.", lines)
+
+    [<Fact>]
+    let ``Inventory reports starvation at high hunger`` () =
+        let starving =
+            { ObjectDatabase.initialState.Objects[GameSnapshots.PrototypeCharacterId] with
+                Properties =
+                    ObjectDatabase.initialState.Objects[GameSnapshots.PrototypeCharacterId].Properties
+                    |> Map.add "hunger" (IntegerValue 85L) }
+            |> fun player ->
+                { ObjectDatabase.initialState with
+                    Objects = Map.add GameSnapshots.PrototypeCharacterId player ObjectDatabase.initialState.Objects }
+
+        let result =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "inventory" starving
+
+        let lines =
+            result.Messages
+            |> List.map (ResponseFormatting.localizeMessage result.State En)
+
+        Assert.Contains("You are starving.", lines)
+
+    [<Fact>]
+    let ``Eat wood reduces hunger`` () =
+        let hungry =
+            CarriedItems.addInventory ObjectDatabase.initialState GameSnapshots.PrototypeCharacterId "wood" 2
+            |> fun state ->
+                let player = state.Objects[GameSnapshots.PrototypeCharacterId]
+
+                { state with
+                    Objects =
+                        Map.add
+                            player.Id
+                            { player with
+                                Properties = player.Properties |> Map.add "hunger" (IntegerValue 60L) }
+                            state.Objects }
+
+        let result =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "eat wood" hungry
+
+        let player = result.State.Objects[GameSnapshots.PrototypeCharacterId]
+
+        match player.Properties |> Map.tryFind "hunger" with
+        | Some(IntegerValue 40L) -> Assert.True(true)
+        | _ -> Assert.True(false, "Expected eating wood to reduce hunger by 20.")
+
+        Assert.Equal(1, PlayerObjects.inventory result.State GameSnapshots.PrototypeCharacterId |> Map.tryFind "wood" |> Option.defaultValue 0)
 
     [<Fact>]
     let ``Limbo players do not gain hunger on world tick`` () =

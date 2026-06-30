@@ -644,7 +644,7 @@ module KernelTests =
             [ "active-entity-behaviors"; "anonymous-behaviors"; "core-behaviors"; "forest-behaviors"; "location-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
             modules)
         Assert.Equal<string list>(
-            [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],
+            [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-strongbox"; "village-workbench" ],
             objects)
 
     [<Fact>]
@@ -674,7 +674,7 @@ module KernelTests =
                 [ "core-behaviors"; "active-entity-behaviors"; "anonymous-behaviors"; "location-behaviors"; "forest-behaviors"; "player-behaviors"; "thing-behaviors"; "village-behaviors" ],
                 update.AffectedModules)
             Assert.Equal<string list>(
-                [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-workbench" ],
+                [ "fallen-log"; "forest"; "forest-hare"; "prototype-player"; "prototype-scout"; "village"; "village-crate"; "village-farmer"; "village-strongbox"; "village-workbench" ],
                 update.AffectedObjects)
             Assert.Equal(editedCore, update.State.BehaviorModules["core-behaviors"].Source)
             Assert.Contains(editedCore, update.State.BehaviorModules["forest-behaviors"].CompiledSource)

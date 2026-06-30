@@ -70,17 +70,11 @@ class VillageBehavior extends LocationBehavior {
     const parent = super.look(context);
     const effects = [...parent.effects];
 
-    if (propertyFlag(context, "comfort")) {
-      effects.push({ type: "message", key: "location.village.comfortable", args: {} });
-    }
-
-    if (propertyFlag(context, "stocked")) {
-      effects.push({ type: "message", key: "location.village.stocked", args: {} });
-    }
-
-    if (propertyFlag(context, "wildlife")) {
-      effects.push({ type: "message", key: "location.village.wildlife", args: {} });
-    }
+    appendSettlementLookLines(effects, context, [
+      { property: "comfort", key: "location.village.comfortable" },
+      { property: "stocked", key: "location.village.stocked" },
+      { property: "wildlife", key: "location.village.wildlife" }
+    ]);
 
     return { effects };
   }

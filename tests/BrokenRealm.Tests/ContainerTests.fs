@@ -99,6 +99,38 @@ module ContainerTests =
         Assert.Equal(0, crateItems result.State |> Map.tryFind "wood" |> Option.defaultValue 0)
 
     [<Fact>]
+    let ``Locked strongbox rejects open without a key item`` () =
+        let state = inVillage ObjectDatabase.initialState
+
+        let result =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "open strongbox" state
+
+        Assert.Equal("container.locked", result.Messages |> List.head |> fun message -> message.Key)
+
+    [<Fact>]
+    let ``Locked strongbox opens when the actor carries the key item`` () =
+        let state = inVillage (withWood ObjectDatabase.initialState 1)
+
+        let result =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "open strongbox" state
+
+        let line =
+            RoomBroadcast.actorMessages result.Messages
+            |> List.head
+            |> ResponseFormatting.localizeMessage result.State En
+
+        Assert.Equal("It is empty.", line)
+
+    [<Fact>]
+    let ``Put into locked strongbox is rejected without the key item`` () =
+        let state = inVillage ObjectDatabase.initialState
+
+        let result =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "put wood in strongbox" state
+
+        Assert.Equal("container.locked", result.Messages |> List.head |> fun message -> message.Key)
+
+    [<Fact>]
     let ``Put from another room does not match a distant crate`` () =
         let state = withWood ObjectDatabase.initialState 1
 

@@ -136,6 +136,19 @@ class PlaceableBehavior extends ThingBehavior {
   }
 }
 
+function isContainerLocked(container: { properties: Record<string, GameValue> }): boolean {
+  const locked = container.properties.locked;
+  return locked === true || Number(locked ?? 0) > 0;
+}
+
+function actorCanAccessLockedContainer(context: VerbContext, container: { properties: Record<string, GameValue> }): boolean {
+  const keyItemId = String(container.properties.keyItemId ?? "");
+  if (!keyItemId) {
+    return false;
+  }
+  return (context.actor.inventory[keyItemId] ?? 0) >= 1;
+}
+
 class ContainerBehavior extends ThingBehavior {
   static override commands: CommandDefinition[] = [
     ...super.commands,
@@ -150,6 +163,10 @@ class ContainerBehavior extends ThingBehavior {
   ];
 
   open(context: VerbContext): VerbResult {
+    if (isContainerLocked(context.this) && !actorCanAccessLockedContainer(context, context.this)) {
+      return { effects: [{ type: "message", key: "container.locked", args: {} }] };
+    }
+
     const entries = Object.entries(context.this.storedItems);
     if (entries.length === 0) {
       return { effects: [{ type: "message", key: "container.open.empty", args: {} }] };
@@ -235,14 +252,105 @@ class HumanoidCreatureBehavior extends CreatureBehavior {
     }
   ];
 
-  override tick(_context: TickContext): VerbResult {
-    return { effects: [] };
-  }
-
   talk(context: VerbContext): VerbResult {
     const greetingKey = String(context.this.properties.greetingKey ?? "creature.talk.generic");
     return { effects: [{ type: "message", key: greetingKey, args: {} }] };
   }
+}
+
+const VILLAGE_CRATE_ID = "village-crate";
+const VILLAGE_CRATE_CAPACITY = 4;
+
+function containerUsedInRoom(context: TickContext, containerId: string): number {
+  const items = context.room.containerStorage[containerId] ?? {};
+  return Object.values(items).reduce((sum, quantity) => sum + quantity, 0);
+}
+
+class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
+  protected override defaultRootGoal(): string {
+    return "farmerLife";
+  }
+
+  protected override activateRoot(context: TickContext, state: ActiveEntityState): ActiveGoalFrame[] {
+    const selected = chooseActiveWeighted(state, [
+      { value: "idle", weight: 20 },
+      { value: "work", weight: 55 },
+      { value: "rest", weight: 25 }
+    ]) ?? "idle";
+
+    state.memory.activity = selected;
+
+    if (selected === "work") {
+      return [createActiveGoal(state, context, "work", 2, { targetContainer: VILLAGE_CRATE_ID })];
+    }
+
+    if (selected === "rest") {
+      return [createActiveGoal(state, context, "rest", 2)];
+    }
+
+    return [createActiveGoal(state, context, "wait", 1)];
+  }
+
+  protected override updateGoal(context: TickContext, state: ActiveEntityState, frame: ActiveGoalFrame): ActiveGoalUpdate {
+    if (frame.kind === "work") {
+      if (context.tick.index >= frame.deadlineTick) {
+        if (!crateHasSpace(context)) {
+          state.memory.lastWork = "full";
+          return {
+            status: "success",
+            effects: [{ type: "replaceValue", path: ["activity"], value: "idle" }]
+          };
+        }
+
+        return {
+          status: "success",
+          effects: [
+            { type: "addInventory", itemId: "wood", amount: 1, objectId: VILLAGE_CRATE_ID },
+            { type: "replaceValue", path: ["activity"], value: "idle" }
+          ]
+        };
+      }
+
+      return {
+        status: "continue",
+        frame,
+        effects: [{ type: "replaceValue", path: ["activity"], value: "working" }]
+      };
+    }
+
+    if (frame.kind === "rest") {
+      if (context.tick.index >= frame.deadlineTick) {
+        return {
+          status: "success",
+          effects: [{ type: "replaceValue", path: ["activity"], value: "idle" }]
+        };
+      }
+
+      return {
+        status: "continue",
+        frame,
+        effects: [{ type: "replaceValue", path: ["activity"], value: "resting" }]
+      };
+    }
+
+    return super.updateGoal(context, state, frame);
+  }
+
+  override examine(context: VerbContext): VerbResult {
+    const activity = String(context.this.properties.activity ?? "idle");
+    const key =
+      activity === "working"
+        ? "creature.village-farmer.working"
+        : activity === "resting"
+          ? "creature.village-farmer.resting"
+          : context.this.descriptionKey;
+
+    return { effects: [{ type: "message", key, args: {} }] };
+  }
+}
+
+function crateHasSpace(context: TickContext): boolean {
+  return containerUsedInRoom(context, VILLAGE_CRATE_ID) < VILLAGE_CRATE_CAPACITY;
 }
 
 const thingBehaviorClasses = {
@@ -251,5 +359,6 @@ const thingBehaviorClasses = {
   ContainerBehavior,
   WorkbenchBehavior,
   CreatureBehavior,
-  HumanoidCreatureBehavior
+  HumanoidCreatureBehavior,
+  FarmerCreatureBehavior
 };
