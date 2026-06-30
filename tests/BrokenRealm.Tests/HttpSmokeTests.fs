@@ -146,6 +146,7 @@ module HttpSmokeTests =
                           password = "prototype" })
 
                 Assert.True(loginResponse.IsSuccessStatusCode)
+                Assert.False(loginResponse.Headers.Contains("Set-Cookie"))
 
                 let! enterResponse = client.PostAsync("/game/session/enter?culture=en", null)
                 Assert.True(enterResponse.IsSuccessStatusCode)

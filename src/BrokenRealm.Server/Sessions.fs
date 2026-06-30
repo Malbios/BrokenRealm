@@ -32,6 +32,15 @@ module Sessions =
             | true, cookieId -> tryParseSessionId cookieId
             | false, _ -> None
 
+    let tryReadHubSessionId (httpContext: Microsoft.AspNetCore.Http.HttpContext) =
+        match httpContext.Request.Query.TryGetValue "access_token" with
+        | true, values when values.Count > 0 ->
+            values
+            |> Seq.tryHead
+            |> Option.bind (fun value -> tryParseSessionId(value.ToString()))
+            |> Option.orElseWith (fun () -> tryReadSessionId httpContext)
+        | _ -> tryReadSessionId httpContext
+
     let ownedCharacters culture (accountId: AccountId) (state: GameState) =
         PlayerObjects.playersByAccount state accountId
         |> List.map (fun player ->

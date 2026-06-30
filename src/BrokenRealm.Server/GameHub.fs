@@ -51,7 +51,7 @@ module GameHubServices =
     let tryResolveSession (httpContext: HttpContext) =
         let services = current ()
 
-        match Sessions.tryReadSessionId httpContext with
+        match Sessions.tryReadHubSessionId httpContext with
         | Some sessionId ->
             match services.SessionStore.TryGet sessionId with
             | Some existing -> Some(services.SessionStore.Touch existing)

@@ -807,7 +807,7 @@ async function connectRoomHub() {
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/game/hub", {
             withCredentials: true,
-            headers: { "X-BrokenRealm-Session": getTabSessionId() },
+            accessTokenFactory: () => getTabSessionId(),
         })
             .withAutomaticReconnect()
             .build();

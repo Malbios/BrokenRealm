@@ -47,6 +47,10 @@ module Program =
             options.Path <- "/"
             options
 
+        let appendSessionCookieIfNeeded (ctx: HttpContext) sessionId =
+            if not (ctx.Request.Headers.ContainsKey Sessions.HeaderName) then
+                ctx.Response.Cookies.Append(Sessions.CookieName, sessionId, sessionCookieOptions)
+
         let resolveSession (ctx: HttpContext) =
             let usesTabHeader = ctx.Request.Headers.ContainsKey Sessions.HeaderName
 
@@ -59,7 +63,7 @@ module Program =
                 | None -> sessionStore.GetOrCreate()
 
             if not usesTabHeader then
-                ctx.Response.Cookies.Append(Sessions.CookieName, session.Id, sessionCookieOptions)
+                appendSessionCookieIfNeeded ctx session.Id
 
             session
 
@@ -172,7 +176,7 @@ module Program =
                     | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                     | Ok updated ->
                         let stateAfterLogin = gameStore.Read().State
-                        ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+                        appendSessionCookieIfNeeded ctx updated.Id
                         Results.Json(authResponse culture updated stateAfterLogin))))
         |> ignore
 
@@ -193,7 +197,7 @@ module Program =
                         | Error error -> Results.BadRequest({ lines = [ error ] } : CommandResponse)
                         | Ok updated ->
                             let stateAfterRegister = gameStore.Read().State
-                            ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+                            appendSessionCookieIfNeeded ctx updated.Id
                             Results.Json(authResponse culture updated stateAfterRegister))))
         |> ignore
 
@@ -226,7 +230,7 @@ module Program =
                         if previousCharacterId <> updated.SelectedCharacterId then
                             enterLimboIfDisconnected previousCharacterId
 
-                        ctx.Response.Cookies.Append(Sessions.CookieName, updated.Id, sessionCookieOptions)
+                        appendSessionCookieIfNeeded ctx updated.Id
                         Results.Json(authResponse culture updated (gameStore.Read().State)))))
         |> ignore
 

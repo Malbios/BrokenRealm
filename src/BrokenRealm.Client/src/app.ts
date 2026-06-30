@@ -156,7 +156,10 @@ type HubConnection = {
 };
 
 type HubConnectionBuilder = {
-  withUrl(url: string, options?: { withCredentials?: boolean; headers?: Record<string, string> }): HubConnectionBuilder;
+  withUrl(url: string, options?: {
+    withCredentials?: boolean;
+    accessTokenFactory?: () => string;
+  }): HubConnectionBuilder;
   withAutomaticReconnect(): HubConnectionBuilder;
   build(): HubConnection;
 };
@@ -1068,7 +1071,7 @@ async function connectRoomHub(): Promise<void> {
     const connection = new signalR.HubConnectionBuilder()
       .withUrl("/game/hub", {
         withCredentials: true,
-        headers: { "X-BrokenRealm-Session": getTabSessionId() },
+        accessTokenFactory: () => getTabSessionId(),
       })
       .withAutomaticReconnect()
       .build();

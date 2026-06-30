@@ -1,6 +1,7 @@
 namespace BrokenRealm.Tests
 
 open BrokenRealm.Server
+open Microsoft.AspNetCore.Http
 open Xunit
 
 module SessionTests =
@@ -53,6 +54,16 @@ module SessionTests =
             | None -> failwith "Expected player tab session to exist."
 
         Assert.Equal(GameSnapshots.PrototypeCharacterId, refreshedPlayer.SelectedCharacterId)
+
+    [<Fact>]
+    let ``Hub access token takes precedence over shared cookie session`` () =
+        let context = DefaultHttpContext()
+        context.Request.QueryString <- QueryString("?access_token=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        context.Request.Headers.Cookie <- $"{Sessions.CookieName}=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+        Assert.Equal(
+            Some "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Sessions.tryReadHubSessionId context)
 
     [<Fact>]
     let ``Session selection switches the acting character`` () =
