@@ -9,9 +9,17 @@
 <body>
   <main class="shell">
     <section class="terminal" aria-label="BrokenRealm">
-      <div class="topbar">
-        <h1>BrokenRealm</h1>
-        <div class="toolbar">
+      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="chrome-menu">
+        <span id="menu-toggle-label">Menu</span>
+      </button>
+
+      <div id="chrome-backdrop" class="chrome-backdrop" hidden></div>
+      <aside id="chrome-menu" class="chrome-menu" hidden aria-label="Game menu">
+        <div class="chrome-menu-header">
+          <span id="menu-title" class="chrome-menu-title">Menu</span>
+          <button id="menu-close" class="menu-close" type="button" aria-label="Close menu">&times;</button>
+        </div>
+        <div class="chrome-menu-body">
           <div class="tabs" role="tablist" aria-label="Mode">
             <button id="player-tab" class="tab active" type="button"><span id="player-tab-label">Player</span></button>
             <button id="admin-tab" class="tab" type="button">Admin</button>
@@ -20,38 +28,40 @@
             <span id="account-display" class="account-display">Guest</span>
             <button id="logout-button" class="secondary-button" type="button" hidden><span id="logout-button-label">Logout</span></button>
           </div>
-          <label id="character-label" class="language" hidden>
+          <label id="character-label" class="menu-field" hidden>
             <span id="character-label-text">Character</span>
             <select id="character"></select>
           </label>
-          <label class="language">
+          <label class="menu-field">
             <span id="language-label-text">Language</span>
             <select id="culture">
               <option value="en">English</option>
               <option value="de">Deutsch</option>
             </select>
           </label>
+          <div id="auth-panel" class="auth-panel">
+            <form id="login-form" class="auth-form">
+              <label class="menu-field">
+                <span id="account-label-text">Account</span>
+                <input id="login-account" name="accountId" autocomplete="username" value="prototype-account">
+              </label>
+              <label class="menu-field">
+                <span id="password-label-text">Password</span>
+                <input id="login-password" name="password" type="password" autocomplete="current-password">
+              </label>
+              <div class="auth-actions">
+                <button type="submit"><span id="login-button-label">Login</span></button>
+                <button id="register-button" class="secondary-button" type="button"><span id="register-button-label">Register</span></button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      </aside>
+
       <div id="player-panel" class="panel active">
-        <div id="auth-panel" class="auth-panel">
-          <form id="login-form" class="auth-form">
-            <label>
-              <span id="account-label-text">Account</span>
-              <input id="login-account" name="accountId" autocomplete="username" value="prototype-account">
-            </label>
-            <label>
-              <span id="password-label-text">Password</span>
-              <input id="login-password" name="password" type="password" autocomplete="current-password">
-            </label>
-            <button type="submit"><span id="login-button-label">Login</span></button>
-            <button id="register-button" class="secondary-button" type="button"><span id="register-button-label">Register</span></button>
-          </form>
-        </div>
         <div class="player-body">
           <div id="log" class="log" aria-live="polite"></div>
-          <aside id="minimap" class="minimap" aria-label="Area map" hidden>
-            <div id="minimap-title" class="minimap-title">Map</div>
+          <aside id="minimap" class="map-rail" aria-label="Area map">
             <pre id="minimap-grid" class="minimap-grid"></pre>
           </aside>
         </div>

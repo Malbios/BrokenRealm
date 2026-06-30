@@ -12,10 +12,13 @@ type PlayerUiStrings = {
   sendButton: string;
   logoutButton: string;
   guestLabel: (accountId: string) => string;
-  mapTitle: string;
   mapAriaLabel: string;
   terminalAriaLabel: string;
   modeTabsAriaLabel: string;
+  menuToggle: string;
+  menuTitle: string;
+  chromeMenuAriaLabel: string;
+  closeMenu: string;
   welcome: string;
   limboLocation: string;
   signedInAs: (name: string) => string;
@@ -45,10 +48,13 @@ const PLAYER_UI: Record<Culture, PlayerUiStrings> = {
     sendButton: "Send",
     logoutButton: "Logout",
     guestLabel: (accountId) => `Guest (${accountId})`,
-    mapTitle: "Map",
     mapAriaLabel: "Area map",
     terminalAriaLabel: "BrokenRealm",
     modeTabsAriaLabel: "Mode",
+    menuToggle: "Menu",
+    menuTitle: "Menu",
+    chromeMenuAriaLabel: "Game menu",
+    closeMenu: "Close menu",
     welcome: "BrokenRealm awaits.",
     limboLocation: "limbo",
     signedInAs: (name) => `Signed in as ${name}.`,
@@ -77,10 +83,13 @@ const PLAYER_UI: Record<Culture, PlayerUiStrings> = {
     sendButton: "Senden",
     logoutButton: "Abmelden",
     guestLabel: (accountId) => `Gast (${accountId})`,
-    mapTitle: "Karte",
     mapAriaLabel: "Gebietskarte",
     terminalAriaLabel: "BrokenRealm",
     modeTabsAriaLabel: "Modus",
+    menuToggle: "Menü",
+    menuTitle: "Menü",
+    chromeMenuAriaLabel: "Spielmenü",
+    closeMenu: "Menü schließen",
     welcome: "BrokenRealm wartet.",
     limboLocation: "Limbo",
     signedInAs: (name) => `Angemeldet als ${name}.`,
@@ -375,8 +384,13 @@ const loginPassword = document.querySelector<HTMLInputElement>("#login-password"
 const registerButton = document.querySelector<HTMLButtonElement>("#register-button");
 const log = document.querySelector<HTMLDivElement>("#log");
 const minimap = document.querySelector<HTMLElement>("#minimap");
-const minimapTitle = document.querySelector<HTMLDivElement>("#minimap-title");
 const minimapGrid = document.querySelector<HTMLPreElement>("#minimap-grid");
+const menuToggle = document.querySelector<HTMLButtonElement>("#menu-toggle");
+const menuClose = document.querySelector<HTMLButtonElement>("#menu-close");
+const chromeMenu = document.querySelector<HTMLElement>("#chrome-menu");
+const chromeBackdrop = document.querySelector<HTMLDivElement>("#chrome-backdrop");
+const menuToggleLabel = document.querySelector<HTMLSpanElement>("#menu-toggle-label");
+const menuTitle = document.querySelector<HTMLSpanElement>("#menu-title");
 const playerTab = document.querySelector<HTMLButtonElement>("#player-tab");
 const adminTab = document.querySelector<HTMLButtonElement>("#admin-tab");
 const playerPanel = document.querySelector<HTMLDivElement>("#player-panel");
@@ -656,6 +670,18 @@ function sessionUrl(): string {
   return `/game/session?culture=${encodeURIComponent(selectedCulture())}`;
 }
 
+function setChromeMenuOpen(open: boolean): void {
+  if (open) {
+    chromeMenu?.removeAttribute("hidden");
+    chromeBackdrop?.removeAttribute("hidden");
+  } else {
+    chromeMenu?.setAttribute("hidden", "");
+    chromeBackdrop?.setAttribute("hidden", "");
+  }
+  menuToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+  document.body.classList.toggle("menu-open", open);
+}
+
 function applyPlayerLocale(selectedCulture: Culture): void {
   const ui = playerUi(selectedCulture);
   document.documentElement.lang = selectedCulture;
@@ -669,10 +695,13 @@ function applyPlayerLocale(selectedCulture: Culture): void {
   if (registerButtonLabel) registerButtonLabel.textContent = ui.registerButton;
   if (sendButtonLabel) sendButtonLabel.textContent = ui.sendButton;
   if (logoutButtonLabel) logoutButtonLabel.textContent = ui.logoutButton;
-  if (minimapTitle) minimapTitle.textContent = ui.mapTitle;
+  if (menuToggleLabel) menuToggleLabel.textContent = ui.menuToggle;
+  if (menuTitle) menuTitle.textContent = ui.menuTitle;
+  if (menuClose) menuClose.setAttribute("aria-label", ui.closeMenu);
   if (minimap) minimap.setAttribute("aria-label", ui.mapAriaLabel);
   if (terminalSection) terminalSection.setAttribute("aria-label", ui.terminalAriaLabel);
   if (modeTabs) modeTabs.setAttribute("aria-label", ui.modeTabsAriaLabel);
+  if (chromeMenu) chromeMenu.setAttribute("aria-label", ui.chromeMenuAriaLabel);
 
   if (currentSession) {
     updateAuthUi(currentSession, selectedCulture);
@@ -704,33 +733,31 @@ function focusCommandInput(): void {
   requestAnimationFrame(() => input?.focus());
 }
 
-function renderMinimap(map: GameMapResponse, culture: Culture): void {
-  if (!minimap || !minimapGrid || !minimapTitle) return;
+function clearMinimap(): void {
+  if (!minimapGrid) return;
+  minimapGrid.textContent = "··";
+  minimapGrid.classList.add("is-empty");
+}
+
+function renderMinimap(map: GameMapResponse, _culture: Culture): void {
+  if (!minimapGrid) return;
 
   if (map.cells.length === 0) {
-    minimap.hidden = true;
-    minimapGrid.textContent = "";
+    clearMinimap();
     return;
   }
 
-  minimap.hidden = false;
-  minimapTitle.textContent = playerUi(culture).mapTitle;
-
   const rows: string[] = [];
   for (let y = map.minY; y <= map.maxY; y += 1) {
-    const row: string[] = [];
     for (let x = map.minX; x <= map.maxX; x += 1) {
       const cell = map.cells.find((entry) => entry.x === x && entry.y === y);
-      if (!cell) {
-        row.push("  ");
-        continue;
-      }
-      row.push(cell.current ? `[${cell.label}]` : cell.label);
+      if (!cell) continue;
+      rows.push(cell.current ? `*${cell.label}` : cell.label);
     }
-    rows.push(row.join(" "));
   }
 
-  minimapGrid.textContent = rows.join("\n");
+  minimapGrid.textContent = rows.length > 0 ? rows.join("\n") : "··";
+  minimapGrid.classList.toggle("is-empty", rows.length === 0);
 }
 
 async function reloadSession(): Promise<GameSessionResponse | null> {
@@ -747,26 +774,26 @@ async function reloadSession(): Promise<GameSessionResponse | null> {
 
 async function refreshMinimap(selectedCulture: Culture = (culture?.value === "de" ? "de" : "en") as Culture): Promise<void> {
   if (!currentSession) {
-    if (minimap) minimap.hidden = true;
+    clearMinimap();
     return;
   }
 
   const selected = currentSession.characters.find((character) => character.id === currentSession?.selectedCharacterId);
   if (!selected?.inPlay) {
-    if (minimap) minimap.hidden = true;
+    clearMinimap();
     return;
   }
 
   try {
     const response = await fetch(`/game/map?culture=${encodeURIComponent(selectedCulture)}`, gameFetchInit());
     if (!response.ok) {
-      if (minimap) minimap.hidden = true;
+      clearMinimap();
       return;
     }
 
     renderMinimap((await response.json()) as GameMapResponse, selectedCulture);
   } catch {
-    if (minimap) minimap.hidden = true;
+    clearMinimap();
   }
 }
 
@@ -778,6 +805,7 @@ function showPanel(panel: Panel): void {
   playerPanel?.classList.toggle("active", !isAdmin);
   adminPanel?.classList.toggle("active", isAdmin);
   updateCharacterSelectorVisibility(panel);
+  setChromeMenuOpen(false);
 
   if (isAdmin) {
     void loadScript();
@@ -1136,6 +1164,8 @@ async function loadSession(): Promise<void> {
     await ensureInPlay(payload);
     await connectRoomHub();
   }
+
+  await refreshMinimap();
 }
 
 async function login(accountId: string, password: string): Promise<void> {
@@ -1468,6 +1498,27 @@ form?.addEventListener("submit", async (event) => {
   }
 });
 
+menuToggle?.addEventListener("click", () => {
+  const isOpen = chromeMenu?.hasAttribute("hidden") === false;
+  setChromeMenuOpen(!isOpen);
+});
+
+menuClose?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  setChromeMenuOpen(false);
+});
+
+chromeBackdrop?.addEventListener("click", () => {
+  setChromeMenuOpen(false);
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && chromeMenu?.hasAttribute("hidden") === false) {
+    setChromeMenuOpen(false);
+  }
+});
+
 playerTab?.addEventListener("click", () => {
   if (canLeaveModule(activeModuleId)) showPanel("player");
 });
@@ -1515,5 +1566,6 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 applyPlayerLocale(selectedCulture());
+clearMinimap();
 appendLine(playerUi(selectedCulture()).welcome);
 void loadSession();
