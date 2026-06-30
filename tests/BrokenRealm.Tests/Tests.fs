@@ -280,6 +280,50 @@ module SnapshotPersistenceTests =
         | Error error -> Assert.True(false, error)
 
     [<Fact>]
+    let ``Snapshot loading restores a missing transitively referenced seed module`` () =
+        let snapshot = createSnapshot ()
+
+        let legacySnapshot =
+            { snapshot with
+                World =
+                    { snapshot.World with
+                        BehaviorModules = snapshot.World.BehaviorModules |> Map.remove "active-entity-behaviors" } }
+
+        match SnapshotLoading.prepare legacySnapshot with
+        | Ok repaired ->
+            Assert.True(repaired.World.BehaviorModules.ContainsKey "active-entity-behaviors")
+            Assert.Contains("active-entity-behaviors", repaired.World.BehaviorModules["thing-behaviors"].Dependencies)
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Snapshot loading repairs seed dependency metadata without replacing admin source`` () =
+        let snapshot = createSnapshot ()
+        let thingModule = snapshot.World.BehaviorModules["thing-behaviors"]
+        let adminSource = thingModule.Source + "\n// retained admin edit"
+
+        let legacySnapshot =
+            { snapshot with
+                World =
+                    { snapshot.World with
+                        BehaviorModules =
+                            snapshot.World.BehaviorModules
+                            |> Map.remove "active-entity-behaviors"
+                            |> Map.add
+                                "thing-behaviors"
+                                { thingModule with
+                                    Source = adminSource
+                                    Dependencies = [ "core-behaviors" ]
+                                    Provenance = AdminEdited } } }
+
+        match SnapshotLoading.prepare legacySnapshot with
+        | Ok repaired ->
+            let repairedThing = repaired.World.BehaviorModules["thing-behaviors"]
+            Assert.Equal(adminSource, repairedThing.Source)
+            Assert.Equal<string list>([ "core-behaviors"; "active-entity-behaviors" ], repairedThing.Dependencies)
+            Assert.True(repaired.World.BehaviorModules.ContainsKey "active-entity-behaviors")
+        | Error error -> Assert.True(false, error)
+
+    [<Fact>]
     let ``Hydration restores missing seed behavior modules required by stored objects`` () =
         let snapshot = createSnapshot ()
 

@@ -129,12 +129,6 @@ module BehaviorGraph =
           Provenance = SeedSynced
           SyncedSeedHash = lookupCurrentSeedHash serverRoot seedModule.Id }
 
-    let private referencedBehaviorModuleIds (objects: Map<ObjectId, GameObject>) =
-        objects
-        |> Map.toList
-        |> List.collect (fun (_, gameObject) -> objectBehaviorModuleIds gameObject)
-        |> Set.ofList
-
     let private missingReferencedClasses moduleId (referenced: Set<string * string>) (declared: Set<string>) =
         referenced
         |> Set.filter (fun (referencedModuleId, className) -> referencedModuleId = moduleId)
@@ -183,7 +177,6 @@ module BehaviorGraph =
         let seedModules = BehaviorSources.loadSeedModules serverRoot
         let seedById = seedModules |> List.map (fun seedModule -> seedModule.Id, seedModule) |> Map.ofList
         let seedSnapshots = seedModules |> List.map (seedModuleSnapshot serverRoot activatedAt) |> List.map (fun s -> s.Id, s) |> Map.ofList
-        let referencedModuleIds = referencedBehaviorModuleIds snapshot.World.Objects
         let referenced = collectBehaviorGraphReferences snapshot
 
         let repairedModules =
@@ -196,17 +189,17 @@ module BehaviorGraph =
                         if shouldUpgradeFromSeed serverRoot moduleSnapshot seedModule.Source referenced then
                             upgradeFromSeed serverRoot moduleSnapshot seedModule
                         else
-                            moduleSnapshot)
+                            { moduleSnapshot with
+                                RegistryName = seedModule.RegistryName
+                                Dependencies = seedModule.Dependencies })
 
-            referencedModuleIds
-            |> Set.fold
-                (fun modules moduleId ->
+            seedSnapshots
+            |> Map.fold
+                (fun modules moduleId seedSnapshot ->
                     if Map.containsKey moduleId modules then
                         modules
-                    elif Map.containsKey moduleId seedSnapshots then
-                        Map.add moduleId seedSnapshots[moduleId] modules
                     else
-                        modules)
+                        Map.add moduleId seedSnapshot modules)
                 existing
 
         { snapshot with

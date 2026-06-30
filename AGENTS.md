@@ -335,6 +335,14 @@ Avoid:
 
 ## Verification Commands
 
+Every implementation task must pass the complete verification gate before it is considered finished:
+
+1. Build the solution.
+2. Run the full unit/integration test suite.
+3. Type-check the browser client.
+4. Start the real server against the configured development snapshot and verify an HTTP endpoint responds. A build or test-only check is insufficient because startup hydration and seed reconciliation failures occur only while constructing the application.
+5. After all checks pass, commit the task with a specific message and push the current branch. Do not leave completed, verified work uncommitted unless the user explicitly asks for that.
+
 From repo root:
 
 ```powershell
@@ -342,6 +350,8 @@ dotnet build BrokenRealm.slnx
 dotnet test BrokenRealm.slnx
 dotnet run --project src/BrokenRealm.Server
 ```
+
+For an automated startup smoke test, launch the server, wait for its configured URL to respond (for example `GET /game/session?culture=en`), then stop it cleanly. Use the normal development snapshot rather than substituting an empty temporary snapshot unless the task specifically tests first-run behavior.
 
 From `src/BrokenRealm.Client`:
 
