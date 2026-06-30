@@ -216,6 +216,7 @@ type AuthResponse = GameSessionResponse;
 type SelectCharacterResponse = AuthResponse;
 
 const TAB_SESSION_STORAGE_KEY = "brokenrealmSessionId";
+const TAB_SESSION_OWNER_PREFIX = "brokenrealmSessionOwner:";
 
 function createTabSessionId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -225,25 +226,71 @@ function createTabSessionId(): string {
   return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.padEnd(32, "0").slice(0, 32);
 }
 
-function getTabSessionId(): string {
-  let sessionId = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+const tabInstanceId = createTabSessionId();
 
-  if (!sessionId) {
-    sessionId = createTabSessionId();
-    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
+function tabSessionOwnerKey(sessionId: string): string {
+  return `${TAB_SESSION_OWNER_PREFIX}${sessionId}`;
+}
+
+function claimTabSessionId(sessionId: string): boolean {
+  try {
+    const ownerKey = tabSessionOwnerKey(sessionId);
+    const owner = localStorage.getItem(ownerKey);
+    if (owner && owner !== tabInstanceId) return false;
+    localStorage.setItem(ownerKey, tabInstanceId);
+    return true;
+  } catch {
+    return true;
   }
+}
 
+function releaseTabSessionId(sessionId: string): void {
+  try {
+    const ownerKey = tabSessionOwnerKey(sessionId);
+    if (localStorage.getItem(ownerKey) === tabInstanceId) {
+      localStorage.removeItem(ownerKey);
+    }
+  } catch {
+    // Storage can be disabled; the server still validates every session ID.
+  }
+}
+
+function initializeTabSessionId(): string {
+  const storedSessionId = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+
+  // Browsers copy sessionStorage when a tab is duplicated. The owner record is
+  // shared across tabs, so a duplicate detects the live owner and rotates the
+  // copied ID. A normal reload releases the owner during pagehide and reclaims it.
+  const sessionId = storedSessionId && claimTabSessionId(storedSessionId)
+    ? storedSessionId
+    : createTabSessionId();
+  claimTabSessionId(sessionId);
+  sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
   return sessionId;
+}
+
+let tabSessionId = initializeTabSessionId();
+
+function getTabSessionId(): string {
+  return tabSessionId;
 }
 
 function rememberTabSessionId(sessionId: string): void {
   if (!sessionId) return;
+  if (sessionId !== tabSessionId) releaseTabSessionId(tabSessionId);
+  tabSessionId = sessionId;
+  claimTabSessionId(sessionId);
   sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, sessionId);
 }
 
 function resetTabSessionId(): void {
-  sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
+  releaseTabSessionId(tabSessionId);
+  tabSessionId = createTabSessionId();
+  claimTabSessionId(tabSessionId);
+  sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, tabSessionId);
 }
+
+window.addEventListener("pagehide", () => releaseTabSessionId(tabSessionId));
 
 function gameFetchInit(init: RequestInit = {}): RequestInit {
   const headers = new Headers(init.headers ?? {});

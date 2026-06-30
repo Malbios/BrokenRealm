@@ -163,3 +163,65 @@ module HttpSmokeTests =
                 if Directory.Exists directory then
                     Directory.Delete(directory, true)
         }
+
+    [<Fact>]
+    let ``HTTP tab sessions command independently selected characters`` () : Task =
+        task {
+            let directory, snapshotPath = createTempSnapshotDirectory()
+
+            try
+                use factory = new SmokeTestWebApplicationFactory(snapshotPath)
+
+                let clientOptions =
+                    new WebApplicationFactoryClientOptions(
+                        HandleCookies = false,
+                        AllowAutoRedirect = false)
+
+                use playerClient = factory.CreateClient(clientOptions)
+                use scoutClient = factory.CreateClient(clientOptions)
+                withTabSession playerClient "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                withTabSession scoutClient "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+                let loginRequest =
+                    { accountId = GameSnapshots.PrototypeAccountId
+                      password = "prototype" }
+
+                let! playerLogin = playerClient.PostAsJsonAsync("/game/auth/login?culture=en", loginRequest)
+                let! scoutLogin = scoutClient.PostAsJsonAsync("/game/auth/login?culture=en", loginRequest)
+                Assert.True(playerLogin.IsSuccessStatusCode)
+                Assert.True(scoutLogin.IsSuccessStatusCode)
+
+                let! selectScout =
+                    scoutClient.PostAsJsonAsync(
+                        "/game/session/character?culture=en",
+                        { characterId = GameSnapshots.PrototypeScoutCharacterId })
+                Assert.True(selectScout.IsSuccessStatusCode)
+
+                let! playerEnter = playerClient.PostAsync("/game/session/enter?culture=en", null)
+                let! scoutEnter = scoutClient.PostAsync("/game/session/enter?culture=en", null)
+                Assert.True(playerEnter.IsSuccessStatusCode)
+                Assert.True(scoutEnter.IsSuccessStatusCode)
+
+                let! northResponse, _ = postCommand playerClient "go north"
+                let! southResponse, _ = postCommand playerClient "go south"
+                Assert.True(northResponse.IsSuccessStatusCode)
+                Assert.True(southResponse.IsSuccessStatusCode)
+
+                let! playerMapResponse = playerClient.GetAsync("/game/map?culture=en")
+                let! scoutMapResponse = scoutClient.GetAsync("/game/map?culture=en")
+                let! playerMap = playerMapResponse.Content.ReadFromJsonAsync<GameMapResponse>()
+                let! scoutMap = scoutMapResponse.Content.ReadFromJsonAsync<GameMapResponse>()
+
+                Assert.Equal("forest", playerMap.currentRoomId)
+                Assert.Equal("village", scoutMap.currentRoomId)
+
+                let! _, scoutLook = postCommand scoutClient "look"
+                Assert.Contains(scoutLook.lines, fun line -> line.Contains("village"))
+                Assert.DoesNotContain(scoutLook.lines, fun line -> line.Contains("forest stretches"))
+            finally
+                RoomBroadcast.setConnectionFilter (fun _ -> true)
+                Environment.SetEnvironmentVariable("BROKENREALM_SNAPSHOT_PATH", null)
+
+                if Directory.Exists directory then
+                    Directory.Delete(directory, true)
+        }

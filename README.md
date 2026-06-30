@@ -65,7 +65,7 @@ Deutsch:
 - `untersuche baumstamm`
 - `nenne pfad grüner weg`
 
-The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. Characters have independent IDs, locations, and inventories; command execution names the acting character explicitly. Sessions select an account-owned character. Offline characters remain in limbo until `POST /game/session/enter` restores them at their last safe room; unauthenticated guest sessions do not enter play automatically. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
+The kernel matches localized input against command patterns declared by the current object's TypeScript behavior class. Characters have independent IDs, locations, and inventories; command execution names the acting character explicitly. Sessions select an account-owned character, and separate browser tabs can independently control different characters on the same account. Offline characters remain in limbo until `POST /game/session/enter` restores them at their last safe room; unauthenticated guest sessions do not enter play automatically. Behavior methods return neutral effects that the F# kernel validates and applies atomically.
 
 Object properties use neutral typed values: null, strings, 64-bit integers, floating-point numbers, booleans, object references, lists, maps, and identity-free anonymous behavior values. They are exposed to behavior methods as ordinary JavaScript values. Nested object and behavior-class references are recursively validated before execution.
 
