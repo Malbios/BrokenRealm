@@ -43,30 +43,45 @@ class ForestBehavior extends LocationBehavior implements Gatherable {
   override tick(context: TickContext): VerbResult {
     const current = Number(context.this.properties.tickCount ?? 0);
     const effects: ScriptEffect[] = [{ type: "replaceValue", path: ["tickCount"], value: current + 1 }];
+    const hareCap = Number(context.this.properties.hareCap ?? 2);
+    const hareRecoveryTicks = Number(context.this.properties.hareRecoveryTicks ?? 3);
     const haresHere = countTaggedNpcContents(context, "herbivore");
+    let recoveryRemaining = Number(context.this.properties.hareRecoveryRemaining ?? 0);
 
-    if (haresHere === 0) {
-      effects.push({
-        type: "createObject",
-        locationId: context.this.id,
-        nameKey: "object.forest-hare.name",
-        descriptionKey: "object.forest-hare.description",
-        behaviorModuleId: "thing-behaviors",
-        behaviorClassName: "CreatureBehavior",
-        tags: "creature,thing,herbivore",
-        aliasesEn: "hare,forest hare",
-        aliasesDe: "hase,waldhase",
-        properties: {
-          tickSteps: 0,
-          ai: {
-            rootGoal: "hareLife",
-            stack: [],
-            memory: {},
-            rngState: 1,
-            nextGoalId: 1
-          }
+    if (haresHere < hareCap) {
+      if (recoveryRemaining > 0) {
+        const nextRecovery = recoveryRemaining - 1;
+        effects.push(...syncPropertyIfChanged(context, "hareRecoveryRemaining", nextRecovery));
+
+        if (nextRecovery === 0) {
+          effects.push({
+            type: "createObject",
+            locationId: context.this.id,
+            nameKey: "object.forest-hare.name",
+            descriptionKey: "object.forest-hare.description",
+            behaviorModuleId: "thing-behaviors",
+            behaviorClassName: "CreatureBehavior",
+            tags: "creature,thing,herbivore",
+            aliasesEn: "hare,forest hare",
+            aliasesDe: "hase,waldhase",
+            properties: {
+              tickSteps: 0,
+              ai: {
+                rootGoal: "hareLife",
+                stack: [],
+                memory: {},
+                rngState: 1,
+                nextGoalId: 1
+              }
+            }
+          });
+          effects.push(...syncPropertyIfChanged(context, "hareRecoveryRemaining", hareRecoveryTicks));
         }
-      });
+      } else {
+        effects.push(...syncPropertyIfChanged(context, "hareRecoveryRemaining", hareRecoveryTicks));
+      }
+    } else if (recoveryRemaining !== 0) {
+      effects.push(...syncPropertyIfChanged(context, "hareRecoveryRemaining", 0));
     }
 
     const woodCap = Number(context.this.properties.woodCap ?? 10);

@@ -349,6 +349,12 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
   }
 
   protected override activateRoot(context: TickContext, state: ActiveEntityState): ActiveGoalFrame[] {
+    if (state.memory.interruptedWork === true) {
+      delete state.memory.interruptedWork;
+      state.memory.activity = "work";
+      return [createActiveGoal(state, context, "work", 2, { targetContainer: VILLAGE_CRATE_ID })];
+    }
+
     const selected = chooseActiveWeighted(state, [
       { value: "idle", weight: 20 },
       { value: "work", weight: 55 },

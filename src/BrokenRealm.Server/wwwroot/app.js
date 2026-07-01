@@ -20,6 +20,9 @@ const PLAYER_UI = {
         closeMenu: "Close menu",
         welcome: "BrokenRealm awaits.",
         limboLocation: "limbo",
+        statusHunger: (value) => `Hunger: ${value}`,
+        statusInventoryEmpty: "Carrying nothing",
+        statusInventoryGuest: "—",
         signedInAs: (name) => `Signed in as ${name}.`,
         registeredAs: (name) => `Registered and signed in as ${name}.`,
         loggedOutGuest: "Logged out. Continuing as guest.",
@@ -54,6 +57,9 @@ const PLAYER_UI = {
         closeMenu: "Menü schließen",
         welcome: "BrokenRealm wartet.",
         limboLocation: "Limbo",
+        statusHunger: (value) => `Hunger: ${value}`,
+        statusInventoryEmpty: "Nichts bei dir",
+        statusInventoryGuest: "—",
         signedInAs: (name) => `Angemeldet als ${name}.`,
         registeredAs: (name) => `Registriert und angemeldet als ${name}.`,
         loggedOutGuest: "Abgemeldet. Es geht weiter als Gast.",
@@ -207,6 +213,8 @@ const minimap = document.querySelector("#minimap");
 const minimapGrid = document.querySelector("#minimap-grid");
 const statusCharacter = document.querySelector("#status-character");
 const statusLocation = document.querySelector("#status-location");
+const statusHunger = document.querySelector("#status-hunger");
+const statusInventory = document.querySelector("#status-inventory");
 const menuToggle = document.querySelector("#menu-toggle");
 const adminMenuToggle = document.querySelector("#admin-menu-toggle");
 const menuClose = document.querySelector("#menu-close");
@@ -556,25 +564,54 @@ function focusCommandInput() {
         return;
     requestAnimationFrame(() => input?.focus());
 }
+function formatInventorySummary(inventory) {
+    const entries = Object.entries(inventory).filter(([, amount]) => amount > 0);
+    if (entries.length === 0) {
+        return "";
+    }
+    return entries
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([itemId, amount]) => `${itemId} ×${amount}`)
+        .join(", ");
+}
 function updatePlayerStatus(culture = selectedCulture()) {
-    if (!statusCharacter || !statusLocation)
+    if (!statusCharacter || !statusLocation || !statusHunger || !statusInventory)
         return;
     const ui = playerUi(culture);
+    statusHunger.classList.remove("is-hungry", "is-starving");
     if (!currentSession?.authenticated) {
         statusCharacter.textContent = ui.guestLabel(currentSession?.accountId ?? "guest");
         statusLocation.textContent = "—";
+        statusHunger.textContent = "—";
+        statusInventory.textContent = ui.statusInventoryGuest;
         return;
     }
     const selected = currentSession.characters.find((character) => character.id === currentSession?.selectedCharacterId);
     if (!selected) {
         statusCharacter.textContent = "—";
         statusLocation.textContent = "—";
+        statusHunger.textContent = "—";
+        statusInventory.textContent = "—";
         return;
     }
     statusCharacter.textContent = selected.displayName;
     statusLocation.textContent = selected.inPlay
         ? (selected.locationId ?? "?")
         : ui.limboLocation;
+    if (selected.inPlay) {
+        statusHunger.textContent = ui.statusHunger(selected.hunger ?? 0);
+        if (selected.hunger >= 80) {
+            statusHunger.classList.add("is-starving");
+        }
+        else if (selected.hunger >= 50) {
+            statusHunger.classList.add("is-hungry");
+        }
+    }
+    else {
+        statusHunger.textContent = "—";
+    }
+    const inventorySummary = formatInventorySummary(selected.inventory ?? {});
+    statusInventory.textContent = inventorySummary || ui.statusInventoryEmpty;
 }
 function clearMinimap() {
     if (!minimapGrid)

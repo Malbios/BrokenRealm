@@ -78,3 +78,34 @@ module FarmerRoutineTests =
             |> ResponseFormatting.localizeMessage result.State En
 
         Assert.Equal("The farmer works at a wooden crate.", line)
+
+    [<Fact>]
+    let ``Farmer resumes work after an interrupted conversation`` () =
+        let inVillage =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "go north" (farmerWithWorkGoal ObjectDatabase.initialState)
+
+        let interrupted =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "talk to farmer" inVillage.State
+
+        let farmer = interrupted.State.Objects["village-farmer"]
+
+        match farmer.Properties |> Map.tryFind "activity" with
+        | Some(StringValue "idle") -> Assert.True(true)
+        | _ -> Assert.True(false, "Expected the farmer to return to idle after being interrupted.")
+
+        match farmer.Properties |> Map.tryFind "ai" with
+        | Some(MapValue ai) ->
+            match ai |> Map.tryFind "memory" with
+            | Some(MapValue memory) ->
+                match memory |> Map.tryFind "interruptedWork" with
+                | Some(BooleanValue true) -> Assert.True(true)
+                | _ -> Assert.True(false, "Expected interruptedWork to be stored in farmer AI memory.")
+            | _ -> Assert.True(false, "Expected farmer AI memory after interruption.")
+        | _ -> Assert.True(false, "Expected farmer AI state after interruption.")
+
+        let resumed = tick interrupted.State 1
+        let resumedFarmer = resumed.Objects["village-farmer"]
+
+        match resumedFarmer.Properties |> Map.tryFind "activity" with
+        | Some(StringValue "working") -> Assert.True(true)
+        | _ -> Assert.True(false, "Expected the farmer to resume working on the next tick.")

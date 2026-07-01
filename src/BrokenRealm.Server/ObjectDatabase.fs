@@ -22,6 +22,8 @@ module ObjectDatabase =
                 Map.ofList
                     [ "biome", StringValue "forest"
                       "hareCap", IntegerValue 2L
+                      "hareRecoveryTicks", IntegerValue 3L
+                      "hareRecoveryRemaining", IntegerValue 0L
                       "berryCap", IntegerValue 8L
                       "berryYield", IntegerValue 8L
                       "woodCap", IntegerValue 10L

@@ -206,7 +206,9 @@ type SessionCharacterResponse =
       displayName: string
       inPlay: bool
       locationId: string option
-      lastSafeLocationId: string option }
+      lastSafeLocationId: string option
+      hunger: int
+      inventory: Map<string, int> }
 
 [<CLIMutable>]
 type GameSessionResponse =

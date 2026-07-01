@@ -22,6 +22,13 @@ module WorldTickTests =
         Kernel.contentsOf state locationId
         |> List.filter (fun gameObject -> gameObject.Tags.Contains "herbivore")
 
+    let private herbivoreCount (state: GameState) =
+        state.Objects
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun gameObject -> gameObject.Tags.Contains "herbivore")
+        |> List.length
+
     [<Fact>]
     let ``World tick advances forest without connected players`` () =
         let limboState =
@@ -85,15 +92,25 @@ module WorldTickTests =
         let afterWander = tick limboState 3
         Assert.Empty(herbivoresIn afterWander "forest")
 
-        let repopulated = tick afterWander 1
+        let waiting = tick afterWander 1
+        let recoveryAfterStart =
+            match waiting.Objects["forest"].Properties |> Map.tryFind "hareRecoveryRemaining" with
+            | Some(IntegerValue value) -> int value
+            | _ -> 0
+
+        Assert.True(recoveryAfterStart > 0, "Expected the forest to start a hare recovery timer when empty.")
+
+        let repopulated = tick waiting 3
+
+        Assert.True(
+            herbivoreCount repopulated >= 2,
+            "Expected the forest recovery timer to spawn a new hare after the seeded hare left.")
+
         let forestHares = herbivoresIn repopulated "forest"
 
         Assert.True(
-            forestHares.Length >= 1,
-            "Expected the forest to repopulate at least one hare when none remain.")
-        Assert.True(
             forestHares.Length <= 2,
-            $"Expected at most two hares in the forest (hare returned from village), got {forestHares.Length}.")
+            $"Expected at most two hares in the forest, got {forestHares.Length}.")
 
     [<Fact>]
     let ``Village wildlife property syncs when a creature is present`` () =

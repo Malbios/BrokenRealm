@@ -49,7 +49,9 @@ module Sessions =
               displayName = Localizer.objectName state culture player.Id
               inPlay = not (PlayerObjects.isInLimbo player)
               locationId = PlayerObjects.tryLocationId player
-              lastSafeLocationId = PlayerObjects.lastSafeLocationId player })
+              lastSafeLocationId = PlayerObjects.lastSafeLocationId player
+              hunger = PlayerObjects.hunger player
+              inventory = PlayerObjects.inventory state player.Id })
 
     let toResponse culture (session: GameSession) (state: GameState) =
         let account = state.Accounts[session.AccountId]

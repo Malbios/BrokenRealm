@@ -344,6 +344,27 @@ select {
   text-transform: lowercase;
 }
 
+.status-hunger {
+  color: #c9b27d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.status-hunger.is-hungry {
+  color: #e0b35c;
+}
+
+.status-hunger.is-starving {
+  color: #e07a5f;
+}
+
+.status-inventory {
+  color: #9eb0a4;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .log {
   display: flex;
   flex-direction: column;

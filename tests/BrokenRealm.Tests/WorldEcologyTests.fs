@@ -60,6 +60,8 @@ module WorldEcologyTests =
             |> Map.remove "berryCap"
             |> Map.remove "tickCount"
             |> Map.remove "hareCap"
+            |> Map.remove "hareRecoveryTicks"
+            |> Map.remove "hareRecoveryRemaining"
 
         let trimmedForest =
             { forest with

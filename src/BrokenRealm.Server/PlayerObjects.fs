@@ -62,6 +62,11 @@ module PlayerObjects =
 
     let inventory (state: GameState) (playerId: CharacterId) = CarriedItems.inventoryMap state playerId
 
+    let hunger (gameObject: GameObject) =
+        match gameObject.Properties |> Map.tryFind "hunger" with
+        | Some(IntegerValue value) -> int value
+        | _ -> 0
+
     let accountId (gameObject: GameObject) =
         accountIdFromProperties gameObject.Properties
         |> Option.defaultWith (fun () -> failwith $"Player object {gameObject.Id} is missing accountId.")

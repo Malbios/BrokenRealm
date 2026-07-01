@@ -11,6 +11,22 @@ module SessionTests =
         RoomBroadcast.setConnectionFilter (fun _ -> true)
 
     [<Fact>]
+    let ``Session response includes hunger and inventory for owned characters`` () =
+        let store = InMemoryGameStore(ObjectDatabase.initialState)
+        let sessionStore = SessionStore()
+        let session = sessionStore.GetOrCreate()
+
+        let state = (store.Read()).State
+        let response = Sessions.toResponse En session state
+
+        let player =
+            response.characters
+            |> List.find (fun character -> character.id = GameSnapshots.PrototypeCharacterId)
+
+        Assert.Equal(0, player.hunger)
+        Assert.Equal(0, Map.count player.inventory)
+
+    [<Fact>]
     let ``Prototype account owns both seeded characters`` () =
         let state = ObjectDatabase.initialState
 
