@@ -23,6 +23,68 @@ module WorldEcologyTests =
         | Some(IntegerValue value) -> int value
         | _ -> 0
 
+    let private createSnapshot () =
+        (InMemoryGameStore(ObjectDatabase.initialState)).GetSnapshot()
+
+    let private mockCompile (source: string) =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.filter (fun (moduleId, _) -> source.Contains(BehaviorSources.moduleMarkerPrefix + moduleId))
+        |> List.sortByDescending (fun (_, behaviorModule) -> behaviorModule.Dependencies.Length)
+        |> List.tryHead
+        |> function
+        | Some(_, behaviorModule) -> Ok behaviorModule.CompiledSource
+        | None -> Error [ { message = "Unknown compilation unit."; file = ""; line = 0; column = 0 } ]
+
+    let private mockInspect registryName _compiled =
+        ObjectDatabase.initialState.BehaviorModules
+        |> Map.toList
+        |> List.tryPick (fun (_, behaviorModule) ->
+            if behaviorModule.RegistryName = registryName then
+                Some behaviorModule.Classes
+            else
+                None)
+        |> function
+        | Some classes -> Ok classes
+        | None -> Error { message = "Unknown registry."; file = ""; line = 0; column = 0 }
+
+    [<Fact>]
+    let ``Hydration restores missing forest ecology properties`` () =
+        let forest = ObjectDatabase.initialState.Objects["forest"]
+
+        let withoutEcologyProperties properties =
+            properties
+            |> Map.remove "woodYield"
+            |> Map.remove "woodCap"
+            |> Map.remove "berryYield"
+            |> Map.remove "berryCap"
+            |> Map.remove "tickCount"
+            |> Map.remove "hareCap"
+
+        let trimmedForest =
+            { forest with
+                Tags = forest.Tags |> Set.remove "forage"
+                Properties = withoutEcologyProperties forest.Properties }
+
+        let baseSnapshot = createSnapshot ()
+
+        let snapshot =
+            { baseSnapshot with
+                World =
+                    { baseSnapshot.World with
+                        Objects = baseSnapshot.World.Objects |> Map.add "forest" trimmedForest } }
+
+        match SnapshotHydration.hydrate mockCompile mockInspect snapshot with
+        | Ok(state, _) ->
+            let hydratedForest = state.Objects["forest"]
+
+            Assert.True(hydratedForest.Tags.Contains "forage")
+
+            match hydratedForest.Properties |> Map.tryFind "woodYield" with
+            | Some(IntegerValue 10L) -> Assert.True(true)
+            | _ -> Assert.True(false, "Expected hydration to restore forest woodYield from seed.")
+        | Error error -> Assert.True(false, error)
+
     [<Fact>]
     let ``Forest wood yield regrows on world tick`` () =
         let depleted =
