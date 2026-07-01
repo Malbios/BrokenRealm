@@ -153,14 +153,86 @@ class PlayerBehavior extends GameBehavior {
       methodName: "help",
       patterns: [
         { culture: "en", pattern: "help" },
+        { culture: "en", pattern: "help {cmd}" },
         { culture: "en", pattern: "h" },
         { culture: "en", pattern: "?" },
         { culture: "de", pattern: "hilfe" },
+        { culture: "de", pattern: "hilfe {cmd}" },
         { culture: "de", pattern: "h" },
         { culture: "de", pattern: "?" }
       ]
     }
   ];
+
+  private static readonly helpTopics: Record<string, string> = {
+    look: "help.topic.look",
+    l: "help.topic.look",
+    schau: "help.topic.look",
+    umsehen: "help.topic.look",
+    go: "help.topic.go",
+    walk: "help.topic.go",
+    move: "help.topic.go",
+    gehe: "help.topic.go",
+    geh: "help.topic.go",
+    map: "help.topic.map",
+    karte: "help.topic.map",
+    gather: "help.topic.gather",
+    collect: "help.topic.gather",
+    sammle: "help.topic.gather",
+    sammeln: "help.topic.gather",
+    build: "help.topic.build",
+    baue: "help.topic.build",
+    trail: "help.topic.trail",
+    rename: "help.topic.trail",
+    nenne: "help.topic.trail",
+    pfad: "help.topic.trail",
+    inventory: "help.topic.inventory",
+    inv: "help.topic.inventory",
+    inventar: "help.topic.inventory",
+    take: "help.topic.take",
+    nimm: "help.topic.take",
+    hebe: "help.topic.take",
+    drop: "help.topic.drop",
+    ab: "help.topic.drop",
+    put: "help.topic.put",
+    place: "help.topic.put",
+    stecke: "help.topic.put",
+    give: "help.topic.give",
+    gib: "help.topic.give",
+    eat: "help.topic.eat",
+    iss: "help.topic.eat",
+    esse: "help.topic.eat",
+    examine: "help.topic.examine",
+    x: "help.topic.examine",
+    untersuche: "help.topic.examine",
+    betrachte: "help.topic.examine",
+    open: "help.topic.open",
+    öffne: "help.topic.open",
+    oeffne: "help.topic.open",
+    use: "help.topic.use",
+    benutze: "help.topic.use",
+    sit: "help.topic.use",
+    craft: "help.topic.craft",
+    make: "help.topic.craft",
+    fertige: "help.topic.craft",
+    dismantle: "help.topic.dismantle",
+    zerlege: "help.topic.dismantle",
+    push: "help.topic.push",
+    schiebe: "help.topic.push",
+    relocate: "help.topic.relocate",
+    verschiebe: "help.topic.relocate",
+    say: "help.topic.say",
+    sag: "help.topic.say",
+    sage: "help.topic.say",
+    emote: "help.topic.emote",
+    talk: "help.topic.talk",
+    sprich: "help.topic.talk",
+    rede: "help.topic.talk",
+    help: "help.topic.help",
+    hilfe: "help.topic.help",
+    h: "help.topic.help",
+    "?": "help.topic.help"
+  };
 
   private static readonly helpMessageKeys = [
     "help.title",
@@ -429,10 +501,20 @@ class PlayerBehavior extends GameBehavior {
     };
   }
 
-  help(_context: VerbContext): VerbResult {
-    return {
-      effects: PlayerBehavior.helpMessageKeys.map(key => ({ type: "message", key, args: {} }))
-    };
+  help(context: VerbContext): VerbResult {
+    const raw = context.args.cmd?.trim();
+    if (!raw) {
+      return {
+        effects: PlayerBehavior.helpMessageKeys.map(key => ({ type: "message", key, args: {} }))
+      };
+    }
+
+    const topicKey = PlayerBehavior.helpTopics[raw.toLowerCase()];
+    if (!topicKey) {
+      return { effects: [{ type: "message", key: "help.unknown", args: { cmd: raw } }] };
+    }
+
+    return { effects: [{ type: "message", key: topicKey, args: {} }] };
   }
 }
 

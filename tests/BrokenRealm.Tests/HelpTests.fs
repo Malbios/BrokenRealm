@@ -21,7 +21,7 @@ module HelpTests =
 
         Assert.Contains("Available commands (angle brackets show placeholders):", lines)
         Assert.Contains("look, l — Look around the current room.", lines)
-        Assert.Contains("help, h, ? — Show this command reference.", lines)
+        Assert.Contains("help [command] — Explain one command, or show this full reference.", lines)
 
     [<Fact>]
     let ``Help command lists localized command reference in German`` () =
@@ -29,7 +29,7 @@ module HelpTests =
 
         Assert.Contains("Verfügbare Befehle (spitze Klammern zeigen Platzhalter):", lines)
         Assert.Contains("schau, l — Schau dich im aktuellen Raum um.", lines)
-        Assert.Contains("hilfe, h, ? — Zeige diese Befehlsübersicht.", lines)
+        Assert.Contains("hilfe [befehl] — Erkläre einen Befehl oder zeige diese Übersicht.", lines)
 
     [<Fact>]
     let ``Question mark alias shows help`` () =
@@ -43,3 +43,29 @@ module HelpTests =
             |> RoomBroadcast.actorResponseLines result.State En
 
         Assert.Equal<string list>(lines, questionLines)
+
+    [<Fact>]
+    let ``Help with a topic explains that command in English`` () =
+        let lines =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "help gather" ObjectDatabase.initialState
+            |> fun result -> RoomBroadcast.actorResponseLines result.State En result.Messages
+
+        Assert.Contains("gather <item>, collect <item>", lines)
+        Assert.Contains("Gather renewable resources in the forest, such as wood or berries. Yields recover over time.", lines)
+
+    [<Fact>]
+    let ``Help with a topic explains that command in German`` () =
+        let lines =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId De "hilfe sammeln" ObjectDatabase.initialState
+            |> fun result -> RoomBroadcast.actorResponseLines result.State De result.Messages
+
+        Assert.Contains("sammle <item>, <item> sammeln", lines)
+        Assert.Contains("Sammle erneuerbare Ressourcen im Wald, z. B. Holz oder Beeren. Vorräte erholen sich mit der Zeit.", lines)
+
+    [<Fact>]
+    let ``Help with an unknown topic reports missing help`` () =
+        let lines =
+            Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "help juggle" ObjectDatabase.initialState
+            |> fun result -> RoomBroadcast.actorResponseLines result.State En result.Messages
+
+        Assert.Equal("No help topic for 'juggle'. Type help alone for the full command list.", lines |> List.exactlyOne)

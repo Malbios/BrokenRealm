@@ -187,7 +187,7 @@ module CommandMatching =
             | objectIds -> AllTargets objectIds
 
     let private isFreeTextPlaceholder name =
-        name = "label" || name = "text"
+        name = "label" || name = "text" || name = "cmd"
 
     let private isTargetPlaceholder name =
         name = "object" || name = "destination" || name = "player"

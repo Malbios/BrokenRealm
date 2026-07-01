@@ -386,8 +386,148 @@ module Localizer =
             "sag <text>, sage <text> — Sprich zu allen im Raum.\n"
             + "emote <text>, * <text> — Führe eine Geste aus.\n"
             + "sprich mit <object>, rede mit <object> — Sprich mit einem NPC."
-        | En, "help.section.meta" -> "help, h, ? — Show this command reference."
-        | De, "help.section.meta" -> "hilfe, h, ? — Zeige diese Befehlsübersicht."
+        | En, "help.section.meta" -> "help [command] — Explain one command, or show this full reference."
+        | De, "help.section.meta" -> "hilfe [befehl] — Erkläre einen Befehl oder zeige diese Übersicht."
+        | En, "help.unknown" -> "No help topic for '{cmd}'. Type help alone for the full command list."
+        | De, "help.unknown" -> "Keine Hilfe für '{cmd}'. Gib nur hilfe ein für die vollständige Liste."
+        | En, "help.topic.look" ->
+            "look, l\n"
+            + "Look around the current room. Lists creatures, items, exits, and hunger hints."
+        | De, "help.topic.look" ->
+            "schau, l, umsehen\n"
+            + "Schau dich im aktuellen Raum um. Zeigt Wesen, Gegenstände, Ausgänge und Hungerhinweise."
+        | En, "help.topic.go" ->
+            "go <direction>, walk <direction>\n"
+            + "Travel through an exit. Directions include north, south, east, and west."
+        | De, "help.topic.go" ->
+            "gehe nach <direction>, geh nach <direction>\n"
+            + "Reise durch einen Ausgang. Richtungen sind z. B. norden, süden, osten und westen."
+        | En, "help.topic.map" ->
+            "map\n"
+            + "Show the explored area map. Unvisited rooms appear as fog."
+        | De, "help.topic.map" ->
+            "karte\n"
+            + "Zeige die erkundete Gebietskarte. Unbesuchte Räume erscheinen als Nebel."
+        | En, "help.topic.gather" ->
+            "gather <item>, collect <item>\n"
+            + "Gather renewable resources in the forest, such as wood or berries. Yields recover over time."
+        | De, "help.topic.gather" ->
+            "sammle <item>, <item> sammeln\n"
+            + "Sammle erneuerbare Ressourcen im Wald, z. B. Holz oder Beeren. Vorräte erholen sich mit der Zeit."
+        | En, "help.topic.build" ->
+            "build clearing <direction>\n"
+            + "From the village, spend 4 wood to carve a new clearing in that direction."
+        | De, "help.topic.build" ->
+            "baue clearing nach <direction>\n"
+            + "Vom Dorf aus: 4 Holz ausgeben, um in diese Richtung eine Lichtung zu schlagen."
+        | En, "help.topic.trail" ->
+            "name trail <label>\n"
+            + "Rename the forest trail token. Only works in the forest."
+        | De, "help.topic.trail" ->
+            "nenne pfad <label>\n"
+            + "Benenne das Waldwege-Token um. Funktioniert nur im Wald."
+        | En, "help.topic.inventory" ->
+            "inventory, inv\n"
+            + "List carried items and report hunger when you are hungry."
+        | De, "help.topic.inventory" ->
+            "inventar, inv\n"
+            + "Liste getragene Gegenstände und melde Hunger, wenn du hungrig bist."
+        | En, "help.topic.take" ->
+            "take <item> [from <object>], pick up <item>\n"
+            + "Pick up items from the room floor or from an open container."
+        | De, "help.topic.take" ->
+            "nimm <item> [aus <object>], hebe <item> auf\n"
+            + "Hebe Gegenstände vom Boden oder aus einem offenen Behälter auf."
+        | En, "help.topic.drop" ->
+            "drop <item> [amount]\n"
+            + "Drop carried items onto the ground in your current room."
+        | De, "help.topic.drop" ->
+            "lege <item> ab [amount]\n"
+            + "Lege getragene Gegenstände im aktuellen Raum ab."
+        | En, "help.topic.put" ->
+            "put <item> in <object>, place <item> in <object>\n"
+            + "Store carried items inside a container in the room."
+        | De, "help.topic.put" ->
+            "lege <item> in <object>, stecke <item> in <object>\n"
+            + "Lege getragene Gegenstände in einen Behälter im Raum."
+        | En, "help.topic.give" ->
+            "give <item> to <player>\n"
+            + "Transfer carried items to another player in the room."
+        | De, "help.topic.give" ->
+            "gib <item> an <player>\n"
+            + "Übergebe getragene Gegenstände an einen anderen Spieler im Raum."
+        | En, "help.topic.eat" ->
+            "eat <item>\n"
+            + "Eat edible food you carry, such as berries, to reduce hunger."
+        | De, "help.topic.eat" ->
+            "iss <item>, esse <item>\n"
+            + "Iss mitgeführte Nahrung wie Beeren, um Hunger zu senken."
+        | En, "help.topic.examine" ->
+            "examine <object>, x <object>\n"
+            + "Inspect a nearby thing, creature, or fixture."
+        | De, "help.topic.examine" ->
+            "untersuche <object>, x <object>\n"
+            + "Untersuche einen nahen Gegenstand, ein Wesen oder eine Einrichtung."
+        | En, "help.topic.open" ->
+            "open <object>\n"
+            + "Look inside a container. Locked containers need the matching key in your inventory."
+        | De, "help.topic.open" ->
+            "öffne <object>, oeffne <object>\n"
+            + "Sieh in einen Behälter. Verschlossene Truhen brauchen den passenden Schlüssel."
+        | En, "help.topic.use" ->
+            "use <object>, sit on <object>\n"
+            + "Use furniture or other placeable fixtures in the room."
+        | De, "help.topic.use" ->
+            "benutze <object>, setz dich auf <object>\n"
+            + "Benutze Möbel oder andere platzierbare Einrichtungen im Raum."
+        | En, "help.topic.craft" ->
+            "craft <recipe> at <object>, make <recipe> at <object>\n"
+            + "Craft at a workbench. Recipes include stool, bench, and strongbox-key."
+        | De, "help.topic.craft" ->
+            "fertige <recipe> an <object>, baue <recipe> an <object>\n"
+            + "Fertige an einer Werkbank. Rezepte: Hocker, Bank, Truhenschlüssel."
+        | En, "help.topic.dismantle" ->
+            "dismantle <object>, take apart <object>\n"
+            + "Break down placeable furniture and recover some wood."
+        | De, "help.topic.dismantle" ->
+            "zerlege <object>\n"
+            + "Baue platzierbare Möbel zurück und gewinne etwas Holz."
+        | En, "help.topic.push" ->
+            "push <object> <direction>\n"
+            + "Push a movable object toward an exit in that direction."
+        | De, "help.topic.push" ->
+            "schiebe <object> nach <direction>\n"
+            + "Schiebe einen beweglichen Gegenstand zu einem Ausgang in diese Richtung."
+        | En, "help.topic.relocate" ->
+            "move <object> to <destination>\n"
+            + "Relocate an object from the room to another room by name."
+        | De, "help.topic.relocate" ->
+            "verschiebe <object> nach <destination>\n"
+            + "Verlege einen Gegenstand aus dem Raum in einen anderen Raum."
+        | En, "help.topic.say" ->
+            "say <text>\n"
+            + "Speak to everyone currently in the room."
+        | De, "help.topic.say" ->
+            "sag <text>, sage <text>\n"
+            + "Sprich zu allen, die gerade im Raum sind."
+        | En, "help.topic.emote" ->
+            "emote <text>, : <text>\n"
+            + "Perform an emote visible to everyone in the room."
+        | De, "help.topic.emote" ->
+            "emote <text>, * <text>\n"
+            + "Führe eine Geste aus, die alle im Raum sehen."
+        | En, "help.topic.talk" ->
+            "talk to <object>, speak to <object>\n"
+            + "Speak with an NPC creature in the room."
+        | De, "help.topic.talk" ->
+            "sprich mit <object>, rede mit <object>\n"
+            + "Sprich mit einem NPC im Raum."
+        | En, "help.topic.help" ->
+            "help [command], h, ?\n"
+            + "Show the full command list, or explain one command such as help gather."
+        | De, "help.topic.help" ->
+            "hilfe [befehl], h, ?\n"
+            + "Zeige die vollständige Befehlsliste oder erkläre einen Befehl, z. B. hilfe sammeln."
         | En, "map.unavailable" -> "No map is available here."
         | De, "map.unavailable" -> "Hier ist keine Karte verfügbar."
         | En, "command.unknown" -> "I do not understand that command."
