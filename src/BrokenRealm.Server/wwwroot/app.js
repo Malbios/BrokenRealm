@@ -164,7 +164,10 @@ const registerButton = document.querySelector("#register-button");
 const log = document.querySelector("#log");
 const minimap = document.querySelector("#minimap");
 const minimapGrid = document.querySelector("#minimap-grid");
+const statusCharacter = document.querySelector("#status-character");
+const statusLocation = document.querySelector("#status-location");
 const menuToggle = document.querySelector("#menu-toggle");
+const adminMenuToggle = document.querySelector("#admin-menu-toggle");
 const menuClose = document.querySelector("#menu-close");
 const chromeMenu = document.querySelector("#chrome-menu");
 const chromeBackdrop = document.querySelector("#chrome-backdrop");
@@ -446,6 +449,7 @@ function setChromeMenuOpen(open) {
         chromeBackdrop?.setAttribute("hidden", "");
     }
     menuToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+    adminMenuToggle?.setAttribute("aria-expanded", open ? "true" : "false");
     document.body.classList.toggle("menu-open", open);
 }
 function applyPlayerLocale(selectedCulture) {
@@ -485,6 +489,7 @@ function applyPlayerLocale(selectedCulture) {
         chromeMenu.setAttribute("aria-label", ui.chromeMenuAriaLabel);
     if (currentSession) {
         updateAuthUi(currentSession, selectedCulture);
+        updatePlayerStatus(selectedCulture);
     }
 }
 function updateAuthUi(session, culture = selectedCulture()) {
@@ -510,9 +515,32 @@ function focusCommandInput() {
         return;
     requestAnimationFrame(() => input?.focus());
 }
+function updatePlayerStatus(culture = selectedCulture()) {
+    if (!statusCharacter || !statusLocation)
+        return;
+    const ui = playerUi(culture);
+    if (!currentSession?.authenticated) {
+        statusCharacter.textContent = ui.guestLabel(currentSession?.accountId ?? "guest");
+        statusLocation.textContent = "—";
+        return;
+    }
+    const selected = currentSession.characters.find((character) => character.id === currentSession?.selectedCharacterId);
+    if (!selected) {
+        statusCharacter.textContent = "—";
+        statusLocation.textContent = "—";
+        return;
+    }
+    statusCharacter.textContent = selected.displayName;
+    statusLocation.textContent = selected.inPlay
+        ? (selected.locationId ?? "?")
+        : ui.limboLocation;
+}
 function clearMinimap() {
     if (!minimapGrid)
         return;
+    minimapGrid.replaceChildren();
+    minimapGrid.style.removeProperty("grid-template-columns");
+    minimapGrid.style.removeProperty("grid-template-rows");
     minimapGrid.textContent = "··";
     minimapGrid.classList.add("is-empty");
 }
@@ -523,17 +551,31 @@ function renderMinimap(map, _culture) {
         clearMinimap();
         return;
     }
-    const rows = [];
+    const width = map.maxX - map.minX + 1;
+    const height = map.maxY - map.minY + 1;
+    minimapGrid.classList.remove("is-empty");
+    minimapGrid.textContent = "";
+    minimapGrid.style.gridTemplateColumns = `repeat(${width}, minmax(0, 1fr))`;
+    minimapGrid.style.gridTemplateRows = `repeat(${height}, minmax(0, 1fr))`;
+    minimapGrid.replaceChildren();
     for (let y = map.minY; y <= map.maxY; y += 1) {
         for (let x = map.minX; x <= map.maxX; x += 1) {
             const cell = map.cells.find((entry) => entry.x === x && entry.y === y);
-            if (!cell)
-                continue;
-            rows.push(cell.current ? `*${cell.label}` : cell.label);
+            const element = document.createElement("div");
+            element.className = "minimap-cell";
+            if (!cell) {
+                element.classList.add("is-empty-cell");
+            }
+            else {
+                if (!cell.visited)
+                    element.classList.add("is-fog");
+                if (cell.current)
+                    element.classList.add("is-current");
+                element.textContent = cell.label;
+            }
+            minimapGrid.appendChild(element);
         }
     }
-    minimapGrid.textContent = rows.length > 0 ? rows.join("\n") : "··";
-    minimapGrid.classList.toggle("is-empty", rows.length === 0);
 }
 async function reloadSession() {
     const response = await fetch(sessionUrl(), gameFetchInit());
@@ -546,7 +588,7 @@ async function reloadSession() {
     return payload;
 }
 async function refreshMinimap(selectedCulture = (culture?.value === "de" ? "de" : "en")) {
-    if (!currentSession) {
+    if (!currentSession?.authenticated) {
         clearMinimap();
         return;
     }
@@ -816,6 +858,7 @@ function renderCharacterSelector(session) {
     currentSession = session;
     updateAuthUi(session);
     updateCharacterSelectorVisibility(activePanel);
+    updatePlayerStatus();
 }
 async function connectRoomHub() {
     const signalR = window.signalR;
@@ -978,6 +1021,7 @@ async function sendCommand(command, selectedCulture) {
     }
     const payload = (await response.json());
     payload.lines.forEach((line) => appendLine(line));
+    await reloadSession();
     await refreshMinimap(selectedCulture);
 }
 async function loadScript() {
@@ -1175,10 +1219,12 @@ form?.addEventListener("submit", async (event) => {
         input?.focus();
     }
 });
-menuToggle?.addEventListener("click", () => {
+function toggleChromeMenu() {
     const isOpen = chromeMenu?.hasAttribute("hidden") === false;
     setChromeMenuOpen(!isOpen);
-});
+}
+menuToggle?.addEventListener("click", toggleChromeMenu);
+adminMenuToggle?.addEventListener("click", toggleChromeMenu);
 menuClose?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();

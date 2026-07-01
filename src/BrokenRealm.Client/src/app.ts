@@ -384,8 +384,11 @@ const loginPassword = document.querySelector<HTMLInputElement>("#login-password"
 const registerButton = document.querySelector<HTMLButtonElement>("#register-button");
 const log = document.querySelector<HTMLDivElement>("#log");
 const minimap = document.querySelector<HTMLElement>("#minimap");
-const minimapGrid = document.querySelector<HTMLPreElement>("#minimap-grid");
+const minimapGrid = document.querySelector<HTMLDivElement>("#minimap-grid");
+const statusCharacter = document.querySelector<HTMLDivElement>("#status-character");
+const statusLocation = document.querySelector<HTMLDivElement>("#status-location");
 const menuToggle = document.querySelector<HTMLButtonElement>("#menu-toggle");
+const adminMenuToggle = document.querySelector<HTMLButtonElement>("#admin-menu-toggle");
 const menuClose = document.querySelector<HTMLButtonElement>("#menu-close");
 const chromeMenu = document.querySelector<HTMLElement>("#chrome-menu");
 const chromeBackdrop = document.querySelector<HTMLDivElement>("#chrome-backdrop");
@@ -679,6 +682,7 @@ function setChromeMenuOpen(open: boolean): void {
     chromeBackdrop?.setAttribute("hidden", "");
   }
   menuToggle?.setAttribute("aria-expanded", open ? "true" : "false");
+  adminMenuToggle?.setAttribute("aria-expanded", open ? "true" : "false");
   document.body.classList.toggle("menu-open", open);
 }
 
@@ -705,6 +709,7 @@ function applyPlayerLocale(selectedCulture: Culture): void {
 
   if (currentSession) {
     updateAuthUi(currentSession, selectedCulture);
+    updatePlayerStatus(selectedCulture);
   }
 }
 
@@ -733,8 +738,35 @@ function focusCommandInput(): void {
   requestAnimationFrame(() => input?.focus());
 }
 
+function updatePlayerStatus(culture: Culture = selectedCulture()): void {
+  if (!statusCharacter || !statusLocation) return;
+
+  const ui = playerUi(culture);
+
+  if (!currentSession?.authenticated) {
+    statusCharacter.textContent = ui.guestLabel(currentSession?.accountId ?? "guest");
+    statusLocation.textContent = "—";
+    return;
+  }
+
+  const selected = currentSession.characters.find((character) => character.id === currentSession?.selectedCharacterId);
+  if (!selected) {
+    statusCharacter.textContent = "—";
+    statusLocation.textContent = "—";
+    return;
+  }
+
+  statusCharacter.textContent = selected.displayName;
+  statusLocation.textContent = selected.inPlay
+    ? (selected.locationId ?? "?")
+    : ui.limboLocation;
+}
+
 function clearMinimap(): void {
   if (!minimapGrid) return;
+  minimapGrid.replaceChildren();
+  minimapGrid.style.removeProperty("grid-template-columns");
+  minimapGrid.style.removeProperty("grid-template-rows");
   minimapGrid.textContent = "··";
   minimapGrid.classList.add("is-empty");
 }
@@ -747,17 +779,32 @@ function renderMinimap(map: GameMapResponse, _culture: Culture): void {
     return;
   }
 
-  const rows: string[] = [];
+  const width = map.maxX - map.minX + 1;
+  const height = map.maxY - map.minY + 1;
+
+  minimapGrid.classList.remove("is-empty");
+  minimapGrid.textContent = "";
+  minimapGrid.style.gridTemplateColumns = `repeat(${width}, minmax(0, 1fr))`;
+  minimapGrid.style.gridTemplateRows = `repeat(${height}, minmax(0, 1fr))`;
+  minimapGrid.replaceChildren();
+
   for (let y = map.minY; y <= map.maxY; y += 1) {
     for (let x = map.minX; x <= map.maxX; x += 1) {
       const cell = map.cells.find((entry) => entry.x === x && entry.y === y);
-      if (!cell) continue;
-      rows.push(cell.current ? `*${cell.label}` : cell.label);
+      const element = document.createElement("div");
+      element.className = "minimap-cell";
+
+      if (!cell) {
+        element.classList.add("is-empty-cell");
+      } else {
+        if (!cell.visited) element.classList.add("is-fog");
+        if (cell.current) element.classList.add("is-current");
+        element.textContent = cell.label;
+      }
+
+      minimapGrid.appendChild(element);
     }
   }
-
-  minimapGrid.textContent = rows.length > 0 ? rows.join("\n") : "··";
-  minimapGrid.classList.toggle("is-empty", rows.length === 0);
 }
 
 async function reloadSession(): Promise<GameSessionResponse | null> {
@@ -773,7 +820,7 @@ async function reloadSession(): Promise<GameSessionResponse | null> {
 }
 
 async function refreshMinimap(selectedCulture: Culture = (culture?.value === "de" ? "de" : "en") as Culture): Promise<void> {
-  if (!currentSession) {
+  if (!currentSession?.authenticated) {
     clearMinimap();
     return;
   }
@@ -1079,6 +1126,7 @@ function renderCharacterSelector(session: GameSessionResponse): void {
   currentSession = session;
   updateAuthUi(session);
   updateCharacterSelectorVisibility(activePanel);
+  updatePlayerStatus();
 }
 
 async function connectRoomHub(): Promise<void> {
@@ -1282,6 +1330,7 @@ async function sendCommand(command: string, selectedCulture: Culture): Promise<v
 
   const payload = (await response.json()) as CommandResponse;
   payload.lines.forEach((line) => appendLine(line));
+  await reloadSession();
   await refreshMinimap(selectedCulture);
 }
 
@@ -1498,10 +1547,13 @@ form?.addEventListener("submit", async (event) => {
   }
 });
 
-menuToggle?.addEventListener("click", () => {
+function toggleChromeMenu(): void {
   const isOpen = chromeMenu?.hasAttribute("hidden") === false;
   setChromeMenuOpen(!isOpen);
-});
+}
+
+menuToggle?.addEventListener("click", toggleChromeMenu);
+adminMenuToggle?.addEventListener("click", toggleChromeMenu);
 
 menuClose?.addEventListener("click", (event) => {
   event.preventDefault();

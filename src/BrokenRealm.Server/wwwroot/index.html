@@ -9,10 +9,6 @@
 <body>
   <main class="shell">
     <section class="terminal" aria-label="BrokenRealm">
-      <button id="menu-toggle" class="menu-toggle" type="button" aria-expanded="false" aria-controls="chrome-menu">
-        <span id="menu-toggle-label">Menu</span>
-      </button>
-
       <div id="chrome-backdrop" class="chrome-backdrop" hidden></div>
       <aside id="chrome-menu" class="chrome-menu" hidden aria-label="Game menu">
         <div class="chrome-menu-header">
@@ -59,10 +55,20 @@
       </aside>
 
       <div id="player-panel" class="panel active">
-        <div class="player-body">
+        <div class="player-main">
           <div id="log" class="log" aria-live="polite"></div>
-          <aside id="minimap" class="map-rail" aria-label="Area map">
-            <pre id="minimap-grid" class="minimap-grid"></pre>
+          <aside class="player-sidebar" aria-label="Player tools">
+            <button id="menu-toggle" class="menu-toggle menu-toggle-icon" type="button" aria-expanded="false" aria-controls="chrome-menu">
+              <span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span id="menu-toggle-label" class="visually-hidden">Menu</span>
+            </button>
+            <section id="minimap" class="map-panel" aria-label="Area map">
+              <div id="minimap-grid" class="minimap-grid"></div>
+            </section>
+            <section id="player-status" class="player-status" aria-live="polite">
+              <div id="status-character" class="status-character">—</div>
+              <div id="status-location" class="status-location">—</div>
+            </section>
           </aside>
         </div>
         <form id="command-form" class="command-row">
@@ -72,6 +78,12 @@
         </form>
       </div>
       <div id="admin-panel" class="panel admin-panel">
+        <div class="admin-chrome">
+          <button id="admin-menu-toggle" class="menu-toggle menu-toggle-icon" type="button" aria-expanded="false" aria-controls="chrome-menu">
+            <span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="visually-hidden">Menu</span>
+          </button>
+        </div>
         <div class="editor-head">
           <div>
             <h2 id="verb-title">Behavior class editor</h2>
