@@ -151,6 +151,47 @@ function gameFetchInit(init = {}) {
 }
 const form = document.querySelector("#command-form");
 const input = document.querySelector("#command");
+const commandHistory = [];
+let commandHistoryIndex = -1;
+let commandDraftBeforeHistory = "";
+function pushCommandHistory(command) {
+    if (!command)
+        return;
+    const previous = commandHistory[commandHistory.length - 1];
+    if (previous === command)
+        return;
+    commandHistory.push(command);
+    if (commandHistory.length > 100) {
+        commandHistory.shift();
+    }
+    commandHistoryIndex = -1;
+    commandDraftBeforeHistory = "";
+}
+function navigateCommandHistory(direction) {
+    if (!input || commandHistory.length === 0)
+        return;
+    if (direction === -1) {
+        if (commandHistoryIndex === -1) {
+            commandDraftBeforeHistory = input.value;
+            commandHistoryIndex = commandHistory.length;
+        }
+        if (commandHistoryIndex > 0) {
+            commandHistoryIndex -= 1;
+            input.value = commandHistory[commandHistoryIndex] ?? "";
+        }
+        return;
+    }
+    if (commandHistoryIndex === -1)
+        return;
+    commandHistoryIndex += 1;
+    if (commandHistoryIndex >= commandHistory.length) {
+        commandHistoryIndex = -1;
+        input.value = commandDraftBeforeHistory;
+    }
+    else {
+        input.value = commandHistory[commandHistoryIndex] ?? "";
+    }
+}
 const culture = document.querySelector("#culture");
 const characterLabel = document.querySelector("#character-label");
 const characterSelect = document.querySelector("#character");
@@ -1201,12 +1242,23 @@ characterSelect?.addEventListener("change", () => {
         return;
     void selectCharacter(characterId);
 });
+input?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowUp") {
+        event.preventDefault();
+        navigateCommandHistory(-1);
+    }
+    else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        navigateCommandHistory(1);
+    }
+});
 form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const command = input?.value.trim() ?? "";
     const selectedCulture = (culture?.value === "de" ? "de" : "en");
     if (!command)
         return;
+    pushCommandHistory(command);
     if (input)
         input.value = "";
     try {

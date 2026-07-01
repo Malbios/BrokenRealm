@@ -1,5 +1,7 @@
 namespace BrokenRealm.Server
 
+open System
+
 module RoomBroadcast =
     let private roomSuffix = ".room"
 
@@ -45,12 +47,26 @@ module RoomBroadcast =
                   for recipientId in recipients do
                       recipientId, ResponseFormatting.localizeMessage state culture message ]
 
+    let private expandMultiline (text: string) =
+        text.Split([| '\r'; '\n' |], StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
+
+    let private responseLinesForMessage (message: Message) (text: string) =
+        if message.Key.StartsWith("help.", StringComparison.Ordinal) then
+            expandMultiline text
+        elif message.Key = "map.display" then
+            expandMultiline text
+        else
+            [ text ]
+
     let actorResponseLines (state: GameState) (culture: Culture) (messages: Message list) : string list =
         actorMessages messages
-        |> List.map (fun message ->
-            if message.Key = "map.display" then
-                match message.Args |> Map.tryFind "actor" with
-                | Some characterId -> RoomMap.formatDisplayMessage state culture characterId
-                | None -> Localizer.text culture { Key = "map.unavailable"; Args = Map.empty }
-            else
-                ResponseFormatting.localizeMessage state culture message)
+        |> List.collect (fun message ->
+            let text =
+                if message.Key = "map.display" then
+                    match message.Args |> Map.tryFind "actor" with
+                    | Some characterId -> RoomMap.formatDisplayMessage state culture characterId
+                    | None -> Localizer.text culture { Key = "map.unavailable"; Args = Map.empty }
+                else
+                    ResponseFormatting.localizeMessage state culture message
+
+            responseLinesForMessage message text)

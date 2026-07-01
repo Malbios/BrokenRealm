@@ -41,7 +41,7 @@ module MapTests =
         Kernel.submitCommandForCharacter GameSnapshots.PrototypeCharacterId En "map" state
         |> fun result ->
             RoomBroadcast.actorResponseLines result.State En result.Messages
-            |> List.exactlyOne
+            |> String.concat System.Environment.NewLine
 
     [<Fact>]
     let ``Hydration restores missing map layout properties on seeded rooms`` () =

@@ -148,7 +148,28 @@ class PlayerBehavior extends GameBehavior {
         { culture: "de", pattern: "iss {item}" },
         { culture: "de", pattern: "esse {item}" }
       ]
+    },
+    {
+      methodName: "help",
+      patterns: [
+        { culture: "en", pattern: "help" },
+        { culture: "en", pattern: "h" },
+        { culture: "en", pattern: "?" },
+        { culture: "de", pattern: "hilfe" },
+        { culture: "de", pattern: "h" },
+        { culture: "de", pattern: "?" }
+      ]
     }
+  ];
+
+  private static readonly helpMessageKeys = [
+    "help.title",
+    "help.section.movement",
+    "help.section.places",
+    "help.section.inventory",
+    "help.section.objects",
+    "help.section.social",
+    "help.section.meta"
   ];
 
   private static readonly edibleItems: Record<string, number> = {
@@ -405,6 +426,12 @@ class PlayerBehavior extends GameBehavior {
   map(context: VerbContext): VerbResult {
     return {
       effects: [{ type: "message", key: "map.display", args: { actor: context.actor.id } }]
+    };
+  }
+
+  help(_context: VerbContext): VerbResult {
+    return {
+      effects: PlayerBehavior.helpMessageKeys.map(key => ({ type: "message", key, args: {} }))
     };
   }
 }
