@@ -232,6 +232,20 @@ module GameStoreBootstrap =
         |> Option.map Path.GetFullPath
         |> Option.defaultValue (defaultSnapshotPath contentRoot)
 
+    let resolveSessionPath (contentRoot: string) (snapshotPath: string) =
+        Environment.GetEnvironmentVariable("BROKENREALM_SESSIONS_PATH")
+        |> Option.ofObj
+        |> Option.map Path.GetFullPath
+        |> Option.defaultWith (fun () ->
+            let snapshotDirectory = Path.GetDirectoryName snapshotPath
+            let directory =
+                if String.IsNullOrWhiteSpace snapshotDirectory then
+                    Path.Combine(contentRoot, "data")
+                else
+                    snapshotDirectory
+
+            Path.Combine(directory, "sessions.json"))
+
     let tryLoad contentRoot snapshotPath =
         SnapshotCodec.tryReadFile snapshotPath
         |> Result.bind SnapshotLoading.prepare

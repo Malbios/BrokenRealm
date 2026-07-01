@@ -2,6 +2,7 @@ namespace BrokenRealm.Server
 
 open System
 open System.Collections.Generic
+open System.IO
 open System.Text.RegularExpressions
 
 module Sessions =
@@ -73,10 +74,27 @@ module Sessions =
         |> Option.map _.Id
         |> Option.defaultValue GameSnapshots.PrototypeCharacterId
 
-type SessionStore(?clock: unit -> DateTimeOffset) =
+type SessionStore(?clock: unit -> DateTimeOffset, ?persistPath: string) =
     let clock = defaultArg clock (fun () -> DateTimeOffset.UtcNow)
+    let persistPath = persistPath |> Option.map Path.GetFullPath
     let gate = obj()
     let sessions = Dictionary<SessionId, GameSession>()
+
+    let persist () =
+        match persistPath with
+        | None -> ()
+        | Some path ->
+            sessions.Values
+            |> Seq.filter _.Authenticated
+            |> SessionPersistence.write path
+
+    do
+        match persistPath with
+        | None -> ()
+        | Some path -> SessionPersistence.loadInto path sessions
+
+    member _.Flush() =
+        lock gate persist
 
     member _.TryGet(sessionId: SessionId) =
         lock gate (fun () ->
@@ -115,7 +133,9 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
             updated)
 
     member _.Logout(sessionId: SessionId) =
-        lock gate (fun () -> sessions.Remove sessionId |> ignore)
+        lock gate (fun () ->
+            sessions.Remove sessionId |> ignore
+            persist ())
 
     member _.Login(sessionId: SessionId, accountId: AccountId, password: string, state: GameState) =
         lock gate (fun () ->
@@ -148,6 +168,7 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                                     LastSeenAt = clock () }
 
                             sessions[sessionId] <- updated
+                            persist ()
                             Ok updated)
 
     member _.BindRegisteredAccount(sessionId: SessionId, accountId: AccountId, state: GameState) =
@@ -168,6 +189,7 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                             LastSeenAt = clock () }
 
                     sessions[sessionId] <- updated
+                    persist ()
                     Ok updated)
 
     member _.SelectCharacter(sessionId: SessionId, characterId: CharacterId, state: GameState) =
@@ -185,6 +207,7 @@ type SessionStore(?clock: unit -> DateTimeOffset) =
                             PendingDisambiguation = None }
 
                     sessions[sessionId] <- updated
+                    persist ()
                     Ok updated)
 
     member _.SetPendingDisambiguation(sessionId: SessionId, pending: PendingDisambiguation option) =

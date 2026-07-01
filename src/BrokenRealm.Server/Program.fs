@@ -20,8 +20,9 @@ module Program =
         let app = builder.Build()
         let contentRoot = app.Environment.ContentRootPath
         let snapshotPath = GameStoreBootstrap.resolveSnapshotPath contentRoot
+        let sessionPath = GameStoreBootstrap.resolveSessionPath contentRoot snapshotPath
         let gameStore = GameStoreBootstrap.createGameStore contentRoot snapshotPath
-        let sessionStore = SessionStore()
+        let sessionStore = SessionStore(persistPath = sessionPath)
         let connectionRegistry = ConnectionRegistry()
 
         let hubContext = app.Services.GetRequiredService<IHubContext<GameHub>>()
@@ -37,7 +38,11 @@ module Program =
         app.Lifetime.ApplicationStopping.Register(fun () ->
             lock stateLock (fun () ->
                 gameStore.Flush()
-                app.Logger.LogInformation("BrokenRealm snapshot flushed on shutdown. Snapshot={SnapshotPath}", snapshotPath)))
+                sessionStore.Flush()
+                app.Logger.LogInformation(
+                    "BrokenRealm state flushed on shutdown. Snapshot={SnapshotPath} Sessions={SessionPath}",
+                    snapshotPath,
+                    sessionPath)))
         |> ignore
 
         let sessionCookieOptions =

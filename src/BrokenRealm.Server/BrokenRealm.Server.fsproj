@@ -21,6 +21,7 @@
     <Compile Include="BehaviorGraph.fs" />
     <Compile Include="Kernel.fs" />
     <Compile Include="ObjectDatabase.fs" />
+    <Compile Include="SessionPersistence.fs" />
     <Compile Include="Sessions.fs" />
     <Compile Include="RoomBroadcast.fs" />
     <Compile Include="GameHub.fs" />

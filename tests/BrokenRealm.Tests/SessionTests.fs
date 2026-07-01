@@ -1,5 +1,7 @@
 namespace BrokenRealm.Tests
 
+open System
+open System.IO
 open BrokenRealm.Server
 open Microsoft.AspNetCore.Http
 open Xunit
@@ -86,6 +88,33 @@ module SessionTests =
             Assert.True(updated.Authenticated)
             Assert.Equal(GameSnapshots.PrototypeAccountId, updated.AccountId)
         | Error error -> Assert.True(false, error)
+
+    [<Fact>]
+    let ``Authenticated sessions persist across store restarts`` () =
+        let directory = Path.Combine(Path.GetTempPath(), "brokenrealm-sessions", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory directory |> ignore
+        let sessionPath = Path.Combine(directory, "sessions.json")
+
+        try
+            let firstStore = SessionStore(persistPath = sessionPath)
+            let session = firstStore.GetOrCreate(sessionId = "cccccccccccccccccccccccccccccccc")
+
+            match firstStore.Login(session.Id, GameSnapshots.PrototypeAccountId, "prototype", ObjectDatabase.initialState) with
+            | Error error -> Assert.True(false, error)
+            | Ok updated ->
+                Assert.True(updated.Authenticated)
+                firstStore.Flush()
+
+            let secondStore = SessionStore(persistPath = sessionPath)
+
+            match secondStore.TryGet "cccccccccccccccccccccccccccccccc" with
+            | None -> Assert.True(false, "Expected persisted session to reload.")
+            | Some reloaded ->
+                Assert.True(reloaded.Authenticated)
+                Assert.Equal(GameSnapshots.PrototypeAccountId, reloaded.AccountId)
+        finally
+            if Directory.Exists directory then
+                Directory.Delete(directory, true)
 
     [<Fact>]
     let ``Login rejects invalid passwords`` () =
