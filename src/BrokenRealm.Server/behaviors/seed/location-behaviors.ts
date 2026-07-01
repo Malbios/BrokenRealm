@@ -213,29 +213,13 @@ class LocationBehavior extends GameBehavior {
       : null;
 
     if (hare && hare.tags.includes("herbivore")) {
-      const fleeDestination = "village";
-      if (fleeDestination) {
-        const rawAi = hare.properties.ai;
-        const ai =
-          rawAi && !Array.isArray(rawAi) && typeof rawAi === "object"
-            ? rawAi as Record<string, GameValue>
-            : {};
-        const resetAi = {
-          rootGoal: typeof ai.rootGoal === "string" ? ai.rootGoal : "hareLife",
-          stack: [],
-          memory: { startled: true },
-          rngState: typeof ai.rngState === "number" ? ai.rngState : 1,
-          nextGoalId: 1
-        };
-
-        effects.push({
-          type: "replaceValue",
-          objectId: "forest-hare",
-          path: ["ai"],
-          value: resetAi as unknown as GameValue
-        });
-        effects.push({ type: "moveObject", objectId: "forest-hare", destinationId: fleeDestination });
-      }
+      effects.push({
+        type: "deliverInterrupt",
+        objectId: "forest-hare",
+        kind: "player.enteredRoom",
+        args: { roomId: destinationId ?? "" },
+        sourceId: context.actor.id
+      });
     }
   }
 

@@ -9,6 +9,7 @@ declare type ScriptEffect =
   | { type: "movePlayer"; destinationId: string }
   | { type: "replaceValue"; path: (string | number)[]; value: GameValue; objectId?: string }
   | { type: "invokeAnonymous"; path: (string | number)[]; methodName: string; args?: Record<string, string> }
+  | { type: "deliverInterrupt"; objectId: string; kind: string; args?: Record<string, string>; sourceId?: string }
   | { type: "message"; key: string; args?: Record<string, unknown> };
 
 declare type ObjectId = string;
@@ -22,11 +23,18 @@ declare interface VerbObjectSummary {
   properties: Record<string, GameValue>;
 }
 
+declare interface ActiveInterrupt {
+  kind: string;
+  args: Record<string, string>;
+  sourceId?: string;
+}
+
 declare interface TickContext {
   tick: {
     index: number;
     seconds: number;
   };
+  interrupts: ActiveInterrupt[];
   this: VerbObjectSummary & {
     properties: Record<string, GameValue>;
     references: Record<string, string>;

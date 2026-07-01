@@ -170,6 +170,7 @@ type ScriptEffect =
     | DestroyObject of objectId: ObjectId option
     | ReplaceValue of objectId: ObjectId option * path: ValuePathSegment list * value: GameValue
     | InvokeAnonymous of path: ValuePathSegment list * methodName: string * args: Map<string, string>
+    | DeliverInterrupt of objectId: ObjectId * kind: string * args: Map<string, string> * sourceId: ObjectId option
     | EmitMessage of Message
 
 [<CLIMutable>]

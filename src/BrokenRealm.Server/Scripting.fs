@@ -275,6 +275,13 @@ module Scripting =
             | Error error, _, _ -> Error error
             | _, None, _ -> Error "invokeAnonymous effects require a methodName."
             | _, _, Error error -> Error error
+        | Some "deliverInterrupt" ->
+            match readString "objectId" effect, readString "kind" effect, decodeStringArguments effect with
+            | Some objectId, Some kind, Ok args when not (System.String.IsNullOrWhiteSpace kind) ->
+                Ok(DeliverInterrupt(objectId, kind, args, readString "sourceId" effect))
+            | None, _, _ -> Error "deliverInterrupt effects require an objectId."
+            | _, None, _ -> Error "deliverInterrupt effects require a kind."
+            | _, _, Error error -> Error error
         | Some "message" ->
             match readString "key" effect, readArgs limits effect with
             | Some key, Ok args -> Ok(EmitMessage(message key args))
@@ -469,6 +476,39 @@ module Scripting =
             gameObject.LocationId = Some locationId && not (CarriedItems.isCarriedStack gameObject))
         |> List.sortBy _.Id
 
+    let private readInterruptEntries (target: GameObject) =
+        match target.Properties |> Map.tryFind "ai" with
+        | Some(MapValue ai) ->
+            match ai |> Map.tryFind "pendingInterrupts" with
+            | Some(ListValue entries) ->
+                entries
+                |> List.choose (function
+                    | MapValue entry ->
+                        match entry |> Map.tryFind "kind" with
+                        | Some(StringValue kind) ->
+                            let args =
+                                match entry |> Map.tryFind "args" with
+                                | Some(MapValue values) ->
+                                    values
+                                    |> Map.fold
+                                        (fun output key value ->
+                                            match value with
+                                            | StringValue text -> Map.add key text output
+                                            | _ -> output)
+                                        Map.empty
+                                | _ -> Map.empty
+
+                            let sourceId =
+                                match entry |> Map.tryFind "sourceId" with
+                                | Some(StringValue value) -> value
+                                | _ -> null
+
+                            Some {| kind = kind; args = args; sourceId = sourceId |}
+                        | _ -> None
+                    | _ -> None)
+            | _ -> []
+        | _ -> []
+
     let private buildTickRoomContext (state: GameState) (roomId: ObjectId) (connectedPlayers: GameObject list) =
         let room = state.Objects[roomId]
         let contents = roomContentsForTick state roomId
@@ -502,6 +542,7 @@ module Scripting =
 
             let context =
                 {| tick = {| index = tickIndex; seconds = tickSeconds |}
+                   interrupts = readInterruptEntries target |> List.toArray
                    this =
                     {| id = target.Id
                        name = target.Name
@@ -515,6 +556,43 @@ module Scripting =
                    room = buildTickRoomContext state roomId connectedPlayers |}
 
             let invocation contextJson = $"(new {className}()).tick({contextJson})"
+            executeContextWithinLimits defaultLimits invocation context source
+
+    let executeBehaviorInterrupts
+        (className: string)
+        (state: GameState)
+        (target: GameObject)
+        (roomId: ObjectId)
+        (tickIndex: int)
+        (tickSeconds: int)
+        (connectedPlayers: GameObject list)
+        (source: string)
+        =
+        if not (identifierPattern.IsMatch className) then
+            Error "Behavior class names must be valid JavaScript identifiers."
+        elif source.Length > defaultLimits.MaxSourceCharacters then
+            Error $"Behavior source may contain at most {defaultLimits.MaxSourceCharacters} characters."
+        else
+            let roomContents =
+                roomContentsForTick state roomId
+                |> List.filter (fun gameObject -> gameObject.Id <> target.Id)
+
+            let context =
+                {| tick = {| index = tickIndex; seconds = tickSeconds |}
+                   interrupts = readInterruptEntries target |> List.toArray
+                   this =
+                    {| id = target.Id
+                       name = target.Name
+                       descriptionKey = target.DescriptionKey |> Option.defaultValue ""
+                       tags = target.Tags |> Set.toArray
+                       properties = objectProperties target
+                       references = target.References
+                       contents = roomContents |> List.map objectSummary |> List.toArray
+                       storedItems = CarriedItems.itemQuantitiesInContainer state target.Id
+                       containerStorage = containerStorageMap state target.Id |}
+                   room = buildTickRoomContext state roomId connectedPlayers |}
+
+            let invocation contextJson = $"(new {className}()).handleInterrupts({contextJson})"
             executeContextWithinLimits defaultLimits invocation context source
 
     let executeAnonymousBehaviorMethodAtPath (className: string) (methodName: string) storagePath (value: AnonymousBehaviorValue) args state actor (source: string) =

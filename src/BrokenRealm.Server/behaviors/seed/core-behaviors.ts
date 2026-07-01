@@ -9,6 +9,10 @@ class GameBehavior {
   tick(_context: TickContext): VerbResult {
     return { effects: [] };
   }
+
+  handleInterrupts(_context: TickContext): VerbResult {
+    return { effects: [] };
+  }
 }
 
 const coreBehaviorClasses = { GameBehavior };

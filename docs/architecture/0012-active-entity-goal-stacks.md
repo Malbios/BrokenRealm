@@ -26,9 +26,21 @@ The design is inspired by the low-tech AI described for FromSoftware games: a cu
 
 Humanoid creatures retain their current no-op tick until a routine-oriented slice is designed.
 
+## Interrupt delivery
+
+- Scripts emit neutral `deliverInterrupt` effects with a target object id, interrupt kind, optional string args, and optional source id.
+- The kernel appends interrupts to `properties.ai.pendingInterrupts` with a bounded queue, then immediately flushes them through the target behavior's `handleInterrupts` method.
+- Autonomous ticks also pass queued interrupts through `TickContext.interrupts` before goal updates.
+- `ActiveEntityBehavior` bubbles interrupts from the stack top through `handleGoalInterrupt`, then `handleInterrupt`. A consumed interrupt may clear the stack, push a replacement sequence, emit neutral effects, and skip the normal goal update for that pulse.
+- Interrupt kinds and responses remain TypeScript behavior logic. The kernel does not interpret them.
+
+## Goal composition
+
+- Shared goal helpers (`createWaitGoal`, `createWanderGoal`, `createFleeGoal`, `pushActiveSequence`, `updateStandardGoal`) live in `active-entity-behaviors`.
+- `activateRoot` may return multi-step sequences executed in order. The seeded hare graze/wander routines and farmer work/rest routines use this pattern.
+
 ## Deferred work
 
-- Interrupt delivery requires a generic, bounded world-event boundary and is not part of the initial tick-driven slice.
 - Admin AI-state visualization and controlled single-step execution are separate tooling work.
 - Combat is not introduced by this decision.
 

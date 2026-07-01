@@ -305,9 +305,30 @@ class CreatureBehavior extends ActiveEntityBehavior {
     ]) ?? "wait";
     state.memory.lastChoice = selected;
     if (selected === "graze") {
-      return [createActiveGoal(state, context, "wait", 2, { activity: "graze" })];
+      return [createWaitGoal(state, context, 2, { activity: "graze" })];
     }
-    return [createActiveGoal(state, context, selected, selected === "wait" ? 1 : 2)];
+    if (selected === "wander") {
+      return [createWanderGoal(state, context, 1)];
+    }
+    return [createWaitGoal(state, context, 1)];
+  }
+
+  protected override handleInterrupt(
+    context: TickContext,
+    state: ActiveEntityState,
+    interrupt: ActiveInterrupt
+  ): ActiveInterruptResult {
+    if (interrupt.kind === "player.enteredRoom") {
+      clearActiveStack(state);
+      state.memory.startled = true;
+      const fleeDestination = context.room.references.north ?? "village";
+      return {
+        consumed: true,
+        skipGoalUpdate: true,
+        effects: [{ type: "moveObject", objectId: context.this.id, destinationId: fleeDestination }]
+      };
+    }
+    return { consumed: false };
   }
 
   examine(context: VerbContext): VerbResult {
@@ -364,14 +385,40 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
     state.memory.activity = selected;
 
     if (selected === "work") {
-      return [createActiveGoal(state, context, "work", 2, { targetContainer: VILLAGE_CRATE_ID })];
+      return [
+        createWaitGoal(state, context, 1),
+        createActiveGoal(state, context, "work", 2, { targetContainer: VILLAGE_CRATE_ID })
+      ];
     }
 
     if (selected === "rest") {
-      return [createActiveGoal(state, context, "rest", 2)];
+      return [
+        createWaitGoal(state, context, 1),
+        createActiveGoal(state, context, "rest", 2)
+      ];
     }
 
-    return [createActiveGoal(state, context, "wait", 1)];
+    return [createWaitGoal(state, context, 1)];
+  }
+
+  protected override handleInterrupt(
+    context: TickContext,
+    state: ActiveEntityState,
+    interrupt: ActiveInterrupt
+  ): ActiveInterruptResult {
+    if (interrupt.kind === "talk" && String(context.this.properties.activity ?? "") === "working") {
+      clearActiveStack(state);
+      state.memory.interruptedWork = true;
+      return {
+        consumed: true,
+        skipGoalUpdate: true,
+        effects: [
+          { type: "replaceValue", path: ["activity"], value: "idle" },
+          { type: "message", key: "creature.village-farmer.talk.interrupted", args: {} }
+        ]
+      };
+    }
+    return { consumed: false };
   }
 
   protected override updateGoal(context: TickContext, state: ActiveEntityState, frame: ActiveGoalFrame): ActiveGoalUpdate {
@@ -429,24 +476,15 @@ class FarmerCreatureBehavior extends HumanoidCreatureBehavior {
     const activity = String(context.this.properties.activity ?? "idle");
 
     if (activity === "working") {
-      const rawAi = context.this.properties.ai;
-      const ai =
-        rawAi && !Array.isArray(rawAi) && typeof rawAi === "object"
-          ? rawAi as Record<string, GameValue>
-          : {};
-      const resetAi = {
-        rootGoal: typeof ai.rootGoal === "string" ? ai.rootGoal : "farmerLife",
-        stack: [],
-        memory: { ...(typeof ai.memory === "object" && !Array.isArray(ai.memory) ? ai.memory as Record<string, GameValue> : {}), interruptedWork: true },
-        rngState: typeof ai.rngState === "number" ? ai.rngState : 1,
-        nextGoalId: typeof ai.nextGoalId === "number" ? ai.nextGoalId : 1
-      };
-
       return {
         effects: [
-          { type: "replaceValue", path: ["activity"], value: "idle" },
-          { type: "replaceValue", path: ["ai"], value: resetAi as unknown as GameValue },
-          { type: "message", key: "creature.village-farmer.talk.interrupted", args: {} }
+          {
+            type: "deliverInterrupt",
+            objectId: context.this.id,
+            kind: "talk",
+            args: {},
+            sourceId: context.actor.id
+          }
         ]
       };
     }

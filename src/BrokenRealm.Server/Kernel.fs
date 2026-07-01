@@ -186,6 +186,9 @@ module Kernel =
                     else
                         Ok()
 
+    let private maxPendingInterrupts = 4
+    let private maxInterruptKindLength = 64
+
     let rec private validateEffect (state: GameState) actingCharacterId targetId effect =
         match effect with
         | AddInventory(objectId, itemId, amount) when not (state.ItemIds.Contains itemId) ->
@@ -326,7 +329,24 @@ module Kernel =
                     match state.Objects |> Map.tryFind resolvedTargetId with
                     | None -> Error $"Unknown replaceValue target object id: {resolvedTargetId}"
                     | Some target -> tryReplaceObjectValue path replacement target |> Result.map ignore
-        | _ -> Ok()
+        | DeliverInterrupt(objectId, kind, args, sourceId) ->
+            if System.String.IsNullOrWhiteSpace objectId then
+                Error "deliverInterrupt effects require an objectId."
+            elif System.String.IsNullOrWhiteSpace kind || kind.Length > maxInterruptKindLength then
+                Error $"deliverInterrupt kind must be 1 to {maxInterruptKindLength} characters."
+            elif args.Count > Scripting.defaultLimits.MaxMessageArguments then
+                Error $"deliverInterrupt args may contain at most {Scripting.defaultLimits.MaxMessageArguments} entries."
+            elif args |> Map.exists (fun _ value -> value.Length > Scripting.defaultLimits.MaxMessageArgumentCharacters) then
+                Error $"deliverInterrupt argument values may contain at most {Scripting.defaultLimits.MaxMessageArgumentCharacters} characters."
+            elif not (state.Objects.ContainsKey objectId) then
+                Error($"Unknown deliverInterrupt target object id: {objectId}")
+            else
+                match sourceId with
+                | Some id when not (state.Objects.ContainsKey id) ->
+                    Error($"Unknown deliverInterrupt source object id: {id}")
+                | _ -> Ok()
+        | EmitMessage _ -> Ok()
+        | InvokeAnonymous _ -> Ok()
 
     and private validateValueReferences (state: GameState) path value =
         match value with
@@ -477,6 +497,45 @@ module Kernel =
     let private maxAnonymousInvocationDepth = 8
     let private maxAnonymousInvocations = 16
 
+    let private readAiMap (target: GameObject) =
+        match target.Properties |> Map.tryFind "ai" with
+        | Some(MapValue ai) -> ai
+        | _ -> Map.empty
+
+    let private setAiMap (target: GameObject) (ai: Map<string, GameValue>) =
+        { target with Properties = Map.add "ai" (MapValue ai) target.Properties }
+
+    let private readPendingInterrupts (ai: Map<string, GameValue>) =
+        match ai |> Map.tryFind "pendingInterrupts" with
+        | Some(ListValue values) -> values
+        | _ -> []
+
+    let private queueInterruptInAi (ai: Map<string, GameValue>) kind args sourceId =
+        let entry =
+            MapValue(
+                Map.ofList
+                    [ "kind", StringValue kind
+                      "args", MapValue(args |> Map.map (fun _ value -> StringValue value))
+                      "sourceId",
+                      sourceId
+                      |> Option.map StringValue
+                      |> Option.defaultValue NullValue ])
+
+        let pending = readPendingInterrupts ai @ [ entry ]
+
+        let bounded =
+            if List.length pending > maxPendingInterrupts then
+                pending |> List.skip (List.length pending - maxPendingInterrupts)
+            else
+                pending
+
+        Map.add "pendingInterrupts" (ListValue bounded) ai
+
+    let private roomTickIndex (state: GameState) (roomId: ObjectId) =
+        match state.Objects[roomId].Properties |> Map.tryFind "tickCount" with
+        | Some(IntegerValue value) -> int value
+        | _ -> 0
+
     let rec private applyEffect characterId targetId depth (state: GameState) (messages: Message list) remainingInvocations effect =
         match validateEffect state characterId targetId effect with
         | Error error -> Error error
@@ -587,6 +646,18 @@ module Kernel =
                                 applyEffects characterId targetId (depth + 1) effects state messages (remainingInvocations - 1))
                     | Ok _ -> Error "invokeAnonymous path does not select an anonymous behavior value."
             | EmitMessage message -> Ok(state, messages @ [ message ], remainingInvocations)
+            | DeliverInterrupt(objectId, kind, args, sourceId) ->
+                let target = state.Objects[objectId]
+                let updatedAi = queueInterruptInAi (readAiMap target) kind args sourceId
+                let queuedTarget = setAiMap target updatedAi
+
+                let queuedState =
+                    { state with
+                        Objects = Map.add objectId queuedTarget state.Objects }
+
+                flushInterrupts queuedState objectId characterId
+                |> Result.map (fun (updatedState, interruptMessages) ->
+                    updatedState, messages @ interruptMessages, remainingInvocations)
 
     and private applyEffects characterId targetId depth effects state messages remainingInvocations =
         effects
@@ -596,6 +667,56 @@ module Kernel =
                 | Error error -> Error error
                 | Ok(state, messages, remaining) -> applyEffect characterId targetId depth state messages remaining effect)
             (Ok(state, messages, remainingInvocations))
+
+    and private flushInterrupts (state: GameState) (objectId: ObjectId) (actingCharacterId: CharacterId) =
+        match state.Objects |> Map.tryFind objectId with
+        | None -> Ok(state, [])
+        | Some target ->
+            let pending = readPendingInterrupts (readAiMap target)
+
+            if List.isEmpty pending then
+                Ok(state, [])
+            else
+                match target.LocationId with
+                | None -> Ok(state, [])
+                | Some roomId ->
+                    match state.BehaviorModules |> Map.tryFind target.BehaviorModuleId with
+                    | None -> Ok(state, [])
+                    | Some behaviorModule ->
+                        let connectedPlayers =
+                            state.Objects
+                            |> Map.toList
+                            |> List.map snd
+                            |> List.filter (fun gameObject ->
+                                PlayerObjects.isPlayer gameObject
+                                && not (PlayerObjects.isInLimbo gameObject)
+                                && gameObject.LocationId = Some roomId)
+
+                        match
+                            Scripting.executeBehaviorInterrupts
+                                target.BehaviorClassName
+                                state
+                                target
+                                roomId
+                                (roomTickIndex state roomId)
+                                30
+                                connectedPlayers
+                                behaviorModule.CompiledSource
+                        with
+                        | Error _ -> Ok(state, [])
+                        | Ok effects ->
+                            let clearedTarget =
+                                setAiMap target (readAiMap target |> Map.remove "pendingInterrupts")
+
+                            let clearedState =
+                                { state with
+                                    Objects = Map.add objectId clearedTarget state.Objects }
+
+                            applyEffects actingCharacterId objectId 0 effects clearedState [] maxAnonymousInvocations
+                            |> Result.map (fun (updatedState, messages, _) -> updatedState, messages)
+                            |> Result.bind (fun (updatedState, messages) ->
+                                flushInterrupts updatedState objectId actingCharacterId
+                                |> Result.map (fun (finalState, nestedMessages) -> finalState, messages @ nestedMessages))
 
     let private applyTickEffects characterId targetId effects state =
         applyEffects characterId targetId 0 effects state [] maxAnonymousInvocations

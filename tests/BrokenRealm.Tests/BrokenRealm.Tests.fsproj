@@ -21,6 +21,7 @@
     <Compile Include="WorldEcologyTests.fs" />
     <Compile Include="FarmerRoutineTests.fs" />
     <Compile Include="ReactiveNpcTests.fs" />
+    <Compile Include="InterruptTests.fs" />
     <Compile Include="HelpTests.fs" />
   </ItemGroup>
 
